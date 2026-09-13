@@ -1,0 +1,297 @@
+# DrSG 智能体工具包使用指南
+
+> 这一篇只回答三件事：它怎么工作、怎么装起来、怎么打包给下一台机器。
+> 脚本自身的选项以各脚本头注释和 `--help` 为准；
+> 记忆层的详细说明见 [`scripts/memory-layer/README.md`](../../../scripts/memory-layer/README.md)。
+
+---
+
+## 一、架构与工作原理
+
+### 1.1 两个平面，不要混
+
+| | 代码图（code plane） | 记忆层（memory plane） |
+|---|---|---|
+| 内容 | 插件从源码解析出的符号与边 | 应用层约定的 Project / Session / Fact / Event |
+| 谁写 | `drsg serve watch`，随每次提交增量折叠 | hooks（自动）+ 模型按协议主动写（Fact/Event） |
+| 粒度 | **每仓一个** daemon、数据库、端口、plane | **全局一个**共享 daemon 和数据库，按 Project 隔离 |
+| 数据库 | `<repo>/graph.drsg`（native 后端是目录） | `~/.drsg-memory/memory.drsg` |
+| 回答什么 | 这个符号是什么、改它影响谁、A 怎么走到 B | 过去得出过什么结论、别的 agent 要我做什么 |
+
+native 后端**同一数据库只允许一个进程打开**，所以「全塞进一个进程」不是简化方案，
+而是把两套生命周期焊死。两边的数据库、端口、token 从不共用。
+
+```text
+仓库 A ── codegraph daemon A ── graph.drsg A ── plane A ─┐
+仓库 B ── codegraph daemon B ── graph.drsg B ── plane B ─┼─ router（一个 MCP 表面）
+仓库 C ── codegraph daemon C ── graph.drsg C ── plane C ─┘
+
+项目 A hooks ─┐
+项目 B hooks ─┼── memory daemon（127.0.0.1:7700）── memory.drsg ── plane `memory`
+项目 C hooks ─┘
+```
+
+### 1.2 代码图怎么来的
+
+`serve watch` 盯着仓库的提交：每次提交，语言插件把源码折成 Function / Method / Struct /
+Trait / Module / File 等节点和 CALLS / REFERENCES / USES_TYPE / IMPORTS 等边，写进该仓
+自己的 plane，并记下 `synced_commit`。解析器认不出的引用留成 `UnresolvedRef`——**它把猜
+测和已解析边分开，这是图敢说「没有」的前提**。
+
+代价有两段，别归错因：插件是 wasm，**首次加载约 13.7 秒且与仓库大小无关**（2026-08-20
+实测，6 个插件约 11.2 MB，两行 Rust 也是这个数），之后折叠才按体量算（那次约 1.36 秒）。
+所以正常启动走增量追平，只有换了插件集合才 `--force` 整库重建。
+
+### 1.3 七个动词与两条最容易违反的规矩
+
+| 你要什么 | 动词 | 给你什么 |
+|---|---|---|
+| 这个符号是什么、谁调用它 | `context` | 定义、签名、一跳调用者/被调用者 |
+| 改它 / 删它会影响谁 | `impact` | 沿入边扩散，**按距离分组并给出每组计数** |
+| A 怎么走到 B | `trace` | 逐跳路径 |
+| 签名和位置 | `describe` | 一次几百字符 |
+| 给我源码 | `snippet` | 源码正文 |
+| 日志文案、配置、注释等图不建模的文本 | `grep` | 被监视源树里的字面命中，每条命中报出所属符号 |
+| 这个仓库图里有什么、同步到哪 | `describe_plane` | 动态目录（**计数不要写进文档，下一个提交就错**） |
+
+两条规矩来自真实失误，不是风格建议：
+
+1. **`impact` 的深度要加到某一层返回空。** 默认 3 跳，没停住就截断，得到的是「前三跳」，
+   而且不同深度的两个符号不可比。实证：`Plugins::load` 在 depth 3 报 12，depth 5 报 15
+   且第 5 层为空——少的 3 个不是不存在，是没走到。上限是 6；到 6 仍非空就按工具自己声明
+   的「只数已记录的边，是下界」报告，别说成封闭。
+2. **候选超过 20 就别从清单里挑。** 歧义清单截断到前 20 且**不按相关性排序**，`plugin`
+   的 99 个候选里可见的 20 条有 6 个 CSS 类、1 个 npm 包，真正的加载器一次都没出现。
+   收窄的写法是 `类型::方法`。候选 2–10 个时先 `describe` 看签名：**返回类型指向别的
+   crate 就是包装层**，对包装层跑 `impact` 拿到的是真身的真子集。
+
+还有一条兜底：**图查不到要说图查不到**。`.sh` / `.md` / CI 配置、跨语言边界、
+未提交的工作区都不在图里；这时用 `grep` 并说明它只是「你恰好想到的那种写法」的下界。
+
+### 1.4 router：一个入口，多个图
+
+`codegraph-router.py` 是 MCP-to-MCP 转发器，不重实现任何动词。每次调用它读 registry
+（`~/.drsg-memory/graphs`，一行一个仓库路径，plane 名不等于目录名时用 TAB 补上），
+按仓库名解析目标，从**那个仓自己的 `.mcp.json`** 读地址和 token（token 不复制到第二处），
+必要时按需拉起该仓 daemon，再转发请求。对外 9 个工具：本地的 `graph_repos` 加 8 个转发动词。
+
+它解决的是「模型写错 `plane`」：默认 plane 是空的 `startup`，而空 plane 回的
+`no symbol matches` 和真·没有长得一模一样。走 router，plane 来自 registry，打不错。
+
+**失败必须不可伪装**：registry 缺失、`.mcp.json` 读不到、daemon 起不来、上游报错，
+都要报成错误，不能返回空列表冒充「图里没有」。
+
+### 1.5 记忆层：四类节点，三种边，两条读路径
+
+```text
+Project ←BELONGS_TO← Session      每次会话一个
+Project ←ABOUT←      Fact         可复用结论；没有这条边的 Fact 永远读不出来
+Project ←NOTIFY←     Event        给另一个项目的待办；独立队列，不参与排名
+```
+
+- **Project 一律按 `p.path` 定位**，不要按 key（同名节点会遮蔽）。
+- **Event 的 external key 用 `key(e)` 读**，写成 `e.key` 一条都匹配不上，却返回
+  `props_set: 0` 且不报错——待办还开着，关闭看起来成功了。
+- **时间一律 epoch 整数**。ISO 字符串不报错，但和现存整数比较会静默为假。
+
+一次会话的生命周期：
+
+```text
+SessionStart      写/恢复 Session → 聚合出常驻简报 → 列出未处理 Event（≤3）→ 注入写记忆协议
+UserPromptSubmit  按 n-gram+IDF 召回相关 Fact（≤4 条，可跨项目，标来源）→ 命中才注入 → 记遥测
+compact           再跑一次 SessionStart 重新注入，不重复建 Session
+SessionEnd        盖 ended_at，从 transcript 挖文件/命令/工具成败统计
+Stop（可选）      代码图用量报告；不由记忆层安装器装，要单独注册
+```
+
+写入分三条通道：L1 是 hooks 挖的结构事实，L2 是**模型按协议自己写的 Fact**（价值在这里，
+但它只是提示词，没有强制），L3 是 transcript 蒸馏（**当前默认关停**，它写的实体没有读路径）。
+读出只有两条：常驻简报（按项目隔离）和按 prompt 的召回（可跨项目）。
+
+简报怎么压的（`session_start.py` 的 `all_facts` / `short_tag` / `build_briefing` / `ensure_briefing`）：
+取本项目全部 Fact（`ORDER BY created_at DESC LIMIT 1000`）→ 每条按规则压成 ≤18 字符的标签
+（有 `→` 只留右边的结论侧，取第一句，超长截断；不调模型）→ 按 `kind` 聚合成
+`• <kind> ×<n>: tag; tag; …` → 存进 `Project.briefing`，**只在 Fact 数变化时重建**。
+
+所以它压的是每条 Fact，不是总长度：**简报没有长度上限，随 Fact 数线性增长**，实测约
+21 字符/Fact（本仓库遥测：26 条 Fact 时 536 字符，114 条时 2383 字符，另加固定 820 字符的协议）。
+真正硬限的只有 Event 块的 3 条。两个推论：Fact 攒多了要自己清，而**改了某条 Fact 的正文却没改
+总数时简报不会刷新**（缓存按计数失效）。
+
+---
+
+## 二、环境搭建与启用
+
+### 2.1 前置条件
+
+- 可运行的 `drsg` 二进制（带 `serve` / `/rpc` / `/mcp`）；
+- Python 3、`curl`、`openssl`；
+- Claude Code 或其他能注册 MCP 与 hooks 的 harness；
+- 确认 loopback 端口没被占用，并想好备份策略。
+
+### 2.2 装记忆层（全局共享）
+
+```bash
+scripts/memory-layer/install.sh <project-dir> --bin <path-to-drsg> --addr 127.0.0.1:7700
+```
+
+它会：确保共享 daemon 在跑（没有就起）→ 复制 hooks 到 `<project>/.claude/hooks/` →
+写 `<project>/.drsg/env`（chmod 600，只放地址、token 和 L3 变量**名**）→ 合并三个 hook 到
+`settings.local.json` → 注册 `drsg` 和 `drsg-events` 两个 MCP → **自检**（daemon 可达、
+plane 存在、Project 按 path 可定位、临时 Fact 能被召回查询读出），任一失败非零退出。
+
+**daemon 已经在跑时必须给它的 token**，否则装不进同一个库：
+
+```bash
+scripts/memory-layer/install.sh <project-dir> --bin <path-to-drsg> \
+  --addr 127.0.0.1:7700 --token "$DRSG_TOKEN"
+```
+
+注意：**hooks 是覆盖不是合并**，项目自己有 SessionStart hook 会丢，先备份。
+`<memory-home>` 不要放进任何工作树。L3 保持关停，除非你明确要它（`--l3-chat`，且只传
+key 的**变量名** `--l3-key-env`，值留在 daemon 侧）。
+
+### 2.3 装代码图（每仓一个）
+
+```bash
+scripts/codegraph.sh install --dir <repo-root> --port <port>
+```
+
+一次做完：没图就 `drsg init`，起 `serve watch`，把 sentinel 规则块写进该仓 CLAUDE.md，
+注册 SessionStart 守卫。幂等。日常命令：
+
+```bash
+scripts/codegraph.sh status  --dir <repo-root>
+scripts/codegraph.sh doctor  --dir <repo-root>   # plane 在不在、追到 HEAD 没、规则块过期没、守卫注册没
+scripts/codegraph.sh restart --dir <repo-root>   # 增量追平，约一秒
+scripts/codegraph.sh restart --dir <repo-root> --force   # 整库重建，见下
+```
+
+**`--force` 有一个会给出错误答案的窗口**（2026-08-20 毫秒级日志对齐）：前约 13.4 秒旧 plane
+还能查，但答的是旧 commit（它会自报 `synced_commit`）；随后约 1.36 秒 plane 已 drop/create
+但还没灌满。只在换插件集合时用它，别对 memory plane 用代码图脚本。
+
+不自己构建 drsg 的仓库要显式给一次二进制，之后会被记住：
+
+```bash
+DRSG_CODE_BIN=<path-to-drsg> scripts/codegraph.sh install --dir <repo-root> --port <port>
+```
+
+### 2.4 装 router 和用量报告（hub 项目）
+
+```bash
+scripts/codegraph-hub-setup.sh <project-dir>
+```
+
+注册 `codegraph` MCP（router）+ `Stop` hook（用量报告），并核对 registry 里的仓库。
+registry 由 `codegraph.sh install` 自动追加维护；只有补登记未走 install 的仓、或 plane 名
+不等于目录名时才手工编辑，**用 `>>` 不要用 `>`**：
+
+```bash
+printf '%s\n'     '<repo-a>'            >> ~/.drsg-memory/graphs
+printf '%s\t%s\n' '<repo-b>' '<plane-b>' >> ~/.drsg-memory/graphs   # 真 TAB，不是反斜杠 t
+```
+
+用自定义 registry 路径就必须让 router 的**注册配置**带上变量（`-e`），shell 里 export 一次
+不算数——router 会静默回到默认路径，只说 registry 是空的：
+
+```bash
+claude mcp add --scope local -e DRSG_GRAPHS=<registry-file> codegraph -- python3 <router-path>
+```
+
+### 2.5 验收清单
+
+装完**重启会话**（hooks 和 MCP 只在启动时读），然后逐项确认：
+
+```text
+记忆层
+[ ] /health 通，且带 Bearer token 的 /rpc 也通
+[ ] memory plane 存在，Project 按 p.path 可定位
+[ ] SessionStart 能注入简报（或明确的空结果）
+[ ] UserPromptSubmit 有 recall 记录（<project>/.drsg/recall.jsonl）
+[ ] SessionEnd 能写 ended_at
+[ ] event_post / event_list / event_done 三步都验过
+[ ] LLM key 的值没进项目配置、命令历史或文档
+[ ] 只有一个进程打开 memory 数据库
+
+代码图
+[ ] graph 数据库与 memory 数据库不是同一个
+[ ] doctor 通过：plane 存在、追到 HEAD、规则块写明了正确 plane
+[ ] graph_repos 能列出仓库
+[ ] 停掉某仓 daemon 时 router 报错，而不是返回空答案
+[ ] snippet 的来源和目标 plane 的 synced_root 对得上
+```
+
+日常还有两条只读检查：`scripts/memory-layer/install.sh --check`（各项目已部署 hooks 与
+模板是否漂移，有漂移退 1，可当 CI 闸门）和 `analyze_recall.py`（召回利用率与成本；
+**注意它有 45% 的随机底噪**，别裸读百分比）。
+
+---
+
+## 三、打包与一键安装
+
+### 3.1 为什么需要打包
+
+运行副本必须在**仓库之外**。这些脚本都被某个分支跟踪，签出别的分支就会把它们从工作区
+删掉，连带 `drsg-events` 的 MCP 命令路径指空——而 MCP 注册指向的是一个**当时不存在**的文件。
+所以 `~/.drsg-memory/tools/` 存一份运行副本，仓库里那份是源码。打包就是把「仓库里那份」
+变成可以搬到另一台机器、并原样铺成运行副本的东西。
+
+### 3.2 构建
+
+```bash
+scripts/pack.sh                 # 产出 dist/drsg-agent-kit-<version>.tar.gz 和 .sha256
+scripts/pack.sh --out /tmp/x --name my-kit
+```
+
+包内布局（`tools/` 就是 `~/.drsg-memory/tools/` 该有的样子）：
+
+```text
+drsg-agent-kit-<version>/
+  setup.sh          一键安装（下一节）
+  install-drsg.sh   没有二进制时从 GitHub release 装一个
+  tools/            memory-layer 全套（含 templates/hooks）+ codegraph.sh
+                    + codegraph-router.py + codegraph-usage.py
+                    + codegraph-hub-setup.sh + drsg-usage-report(.py)
+  skills/           codegraph skill，装到 ~/.claude/skills
+  MANIFEST          源 commit、构建时间、逐文件 sha256
+```
+
+`MANIFEST` 的用处是把「部署漂移了」和「本来就是另一个 commit 构建的」分开。
+
+### 3.3 在新机器上安装
+
+```bash
+tar xzf drsg-agent-kit-<version>.tar.gz && cd drsg-agent-kit-<version>
+./setup.sh --project /path/to/project --repo /path/to/repo --bin /path/to/drsg
+```
+
+六步，每步幂等，任一失败即退出：
+
+1. `tools/` 铺进 `${DRSG_MEM_DIR:-~/.drsg-memory}/tools` 并加执行位；
+2. `skills/` 铺进 `~/.claude/skills`（`--no-skills` 跳过）；
+3. 定位 drsg：`--bin` → PATH → `--fetch-drsg` 才联网下载（联网是外向动作，不默认替你做）；
+4. `--project`：跑记忆层安装器（含自检）；
+5. `--repo`：`codegraph.sh install --dir …`，带上刚定位到的二进制；
+6. `--hub`（缺省取 `--project`）：注册 router MCP 和用量报告 Stop hook。
+
+常用参数：`--addr` / `--token`（加入已有 daemon 必给）、`--port`（该仓代码图端口）、
+`--tools-dir`（改运行副本位置）。装完**重启会话**，再照 2.5 验收。
+
+### 3.4 升级
+
+改的永远是仓库里的源码，然后重新 `pack.sh` 出包、重跑 `setup.sh`——本机和别的机器同一条路，
+`setup.sh` 幂等，会覆盖运行副本并重跑安装器的自检。它不动数据库，也不会重启正在跑的
+daemon——那要自己显式做，并且先确认没有写入在进行。
+
+---
+
+## 四、别踩的几条
+
+- **token 不进版本库**；`.drsg/` 写进 `.gitignore`；LLM key 只传变量名。
+- **一库一进程**：hooks 走 RPC，不要再用会直接开库的 CLI。
+- **Fact 没有 `ABOUT` 边等于不存在**；Project 按 `p.path`，Event 按 `key(e)`，时间用 epoch 整数。
+- **待办写成 Event 不要写成 Fact**——Fact 走排名制召回，排名输了就永远送不到。
+- **`--force` 之前**确认 plane 名、数据库目录和备份；代码图脚本不要对 memory plane 用。
+- **量化断言必须来自图**：「只有 X 处调用」「不影响别处」这类话出现在回答里，那一刻就是
+  结构性问题，`context` 答不了影响面，要 `impact` 并把分组计数和它自己的下界声明一起带上。
