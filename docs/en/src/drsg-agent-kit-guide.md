@@ -23,15 +23,11 @@ The native backend allows **one process per database**, so "put it all in one
 process" is not a simplification — it welds two lifecycles together. The two
 halves never share a database, a port or a token.
 
-```text
-repo A ── codegraph daemon A ── graph.drsg A ── plane A ─┐
-repo B ── codegraph daemon B ── graph.drsg B ── plane B ─┼─ router (one MCP surface)
-repo C ── codegraph daemon C ── graph.drsg C ── plane C ─┘
+![Deployment topology on one machine: one shared daemon for the memory layer, one per repository for the code graph](./images/daemon-topology.svg)
 
-project A hooks ─┐
-project B hooks ─┼── memory daemon (127.0.0.1:7700) ── memory.drsg ── plane `memory`
-project C hooks ─┘
-```
+The two halves point **opposite ways**: the memory layer converges (one daemon,
+one database, projects separated by `p.path`) while the code graph spreads out
+(a port and a database per repository). Neither daemon starts at boot.
 
 ### 1.2 Where the code graph comes from
 
@@ -49,6 +45,15 @@ of repository size** (measured 2026-08-20: six plugins, ~11.2 MB, and a
 two-line Rust file costs the same); only the folding that follows scales with
 the tree (~1.36 s in that run). So a normal start catches up incrementally, and
 `--force` is for when the set of installed plugins changed.
+
+![How the code graph is built: the source tree folds through wasm plugins into a plane; the verbs read the plane, and snippet also reads the file tree](./images/code-plane-architecture.svg)
+
+One line on that diagram is worth remembering on its own: **the structural verbs
+(`context` / `impact` / `trace` / `describe`) only query the plane, which is why
+they work across repositories; `grep` and `snippet` read the file tree, and the
+file tree is the one that process was started on (`--dir`), no matter which
+`plane` you passed.** Asking another repository about structure is fine; asking
+it for source means asking that repository's own daemon.
 
 ### 1.3 The verbs, and the two rules broken most often
 
@@ -94,6 +99,8 @@ the target, reads the address and token out of **that repository's own
 repository's daemon if it has to, and forwards. Nine tools: the local
 `graph_repos` plus eight forwarded verbs.
 
+![How the router is put together: the registry holds paths only; address and token are read from each repository's own .mcp.json at call time](./images/codegraph-router-architecture.svg)
+
 What it removes is the model getting `plane` wrong: the default plane is an
 empty one named `startup`, and an empty plane answers `no symbol matches` in
 exactly the words a real miss uses. Through the router the plane comes from the
@@ -128,6 +135,16 @@ compact           SessionStart runs again and re-injects, without creating a sec
 SessionEnd        stamp ended_at, mine files / commands / tool outcomes from the transcript
 Stop (optional)   the code-graph usage report; not installed by the memory installer, register it separately
 ```
+
+![One session end to end: inject at startup, recall each turn, write during the session, close out — across six lanes](./images/memory-sharing-flow.svg)
+
+Two of those lanes are worth reading on their own. **Telemetry**
+(`recall.jsonl`) records a line whether recall hit or missed, and it is the only
+basis anyone later has for judging whether recall was worth it.
+**Cross-project** is the Event lane: it skips ranking entirely and goes to the
+terminal (`systemMessage` reaches the human only — the model never sees it),
+with `events_seen.json` making sure a to-do lights up once per session. A hook
+that fails injects less; it never blocks the session.
 
 Three ways in: L1 is what the hooks mine, L2 is **the Facts the model writes
 itself** under the injected protocol (this is where the value is, and it is
@@ -174,6 +191,14 @@ token, and the **name** of the L3 key variable), merges the three hooks into
 **self-checks** — daemon reachable, plane present, the `Project` resolvable by
 path, a temporary Fact readable through the hooks' own recall query. Any failure
 exits non-zero.
+
+![What the install leaves behind: configuration and telemetry inside the project, one daemon and one database for the whole machine](./images/memory-sharing-architecture.svg)
+
+The dividing line is the pair of boxes above: **what stays inside a project is
+`.drsg/env` (the token, `chmod 600`, gitignored), the hooks, and
+`.drsg/recall.jsonl`** — one copy per project, all with the same contents. The
+daemon and `memory.drsg` exist once per machine. So adding a project does not
+add a daemon, and removing one takes nobody else's memory with it.
 
 **Joining a daemon that is already running requires its token**, or the install
 cannot reach the same database:

@@ -1,0 +1,533 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 720 900" width="720" height="900" role="img" aria-labelledby="t d">
+<style>
+svg { font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, 'DejaVu Sans Mono', 'Liberation Mono', 'Noto Sans Mono CJK SC', 'PingFang SC', 'Microsoft YaHei', monospace; --bg: #f8fafc;
+      --grid: #e2e8f0;
+      --text: #0f172a;
+      --text-muted: #64748b;
+      --text-dim: #94a3b8;
+      --text-faint: #64748b;
+
+      --panel: #ffffff;
+      --panel-border: #e2e8f0;
+      --lane-fill: rgba(248, 250, 252, 0.65);
+      --lane-stroke: #cbd5e1;
+
+      --arrow: #94a3b8;
+      --arrow-emphasis: #059669;
+
+      --mask: #ffffff;
+
+      --frontend-fill:    rgba(34, 211, 238, 0.15);
+      --frontend-stroke:  #0891b2;
+      --backend-fill:     rgba(52, 211, 153, 0.18);
+      --backend-stroke:   #059669;
+      --database-fill:    rgba(167, 139, 250, 0.2);
+      --database-stroke:  #7c3aed;
+      --cloud-fill:       rgba(251, 191, 36, 0.18);
+      --cloud-stroke:     #d97706;
+      --security-fill:    rgba(251, 113, 133, 0.15);
+      --security-stroke:  #e11d48;
+      --messagebus-fill:  rgba(251, 146, 60, 0.15);
+      --messagebus-stroke:#ea580c;
+      --external-fill:    rgba(148, 163, 184, 0.18);
+      --external-stroke:  #64748b;
+
+      --toolbar-bg:       rgba(255, 255, 255, 0.92);
+      --toolbar-border:   #cbd5e1;
+      --toolbar-text:     #334155;
+      --toolbar-hover:    #ffffff;
+      --toolbar-menu-bg:  #ffffff; }
+@media (prefers-color-scheme: dark) { svg { --bg: #020617;
+      --grid: #1e293b;
+      --text: #ffffff;
+      --text-muted: #94a3b8;
+      --text-dim: #475569;
+      /* UI chrome (menu hints, footer) needs more contrast than SVG .t-dim accents */
+      --text-faint: #7d8da1;
+
+      --panel: rgba(15, 23, 42, 0.5);
+      --panel-border: #1e293b;
+      --lane-fill: rgba(15, 23, 42, 0.22);
+      --lane-stroke: #334155;
+
+      --arrow: #64748b;
+      --arrow-emphasis: #34d399;
+
+      /* Opaque mask color used behind semi-transparent component fills
+         so the arrows drawn underneath are properly hidden. */
+      --mask: #0f172a;
+
+      --frontend-fill:    rgba(8, 51, 68, 0.4);
+      --frontend-stroke:  #22d3ee;
+      --backend-fill:     rgba(6, 78, 59, 0.4);
+      --backend-stroke:   #34d399;
+      --database-fill:    rgba(76, 29, 149, 0.4);
+      --database-stroke:  #a78bfa;
+      --cloud-fill:       rgba(120, 53, 15, 0.3);
+      --cloud-stroke:     #fbbf24;
+      --security-fill:    rgba(136, 19, 55, 0.4);
+      --security-stroke:  #fb7185;
+      --messagebus-fill:  rgba(251, 146, 60, 0.3);
+      --messagebus-stroke:#fb923c;
+      --external-fill:    rgba(30, 41, 59, 0.5);
+      --external-stroke:  #94a3b8;
+
+      --toolbar-bg:       rgba(15, 23, 42, 0.8);
+      --toolbar-border:   #334155;
+      --toolbar-text:     #e2e8f0;
+      --toolbar-hover:    rgba(15, 23, 42, 0.95);
+      --toolbar-menu-bg:  #0f172a; } }
+.c-grid { stroke: var(--grid); fill: none;}
+.c-mask { fill: var(--mask); stroke: none;}
+.c-frontend { fill: var(--frontend-fill);   stroke: var(--frontend-stroke);}
+.c-backend { fill: var(--backend-fill);    stroke: var(--backend-stroke);}
+.c-database { fill: var(--database-fill);   stroke: var(--database-stroke);}
+.c-security { fill: var(--security-fill);   stroke: var(--security-stroke);}
+.c-messagebus { fill: var(--messagebus-fill); stroke: var(--messagebus-stroke);}
+.c-external { fill: var(--external-fill);   stroke: var(--external-stroke);}
+.t-primary { fill: var(--text);}
+.t-muted { fill: var(--text-muted);}
+.t-dim { fill: var(--text-dim);}
+.t-frontend { fill: var(--frontend-stroke);}
+.t-backend { fill: var(--backend-stroke);}
+.t-database { fill: var(--database-stroke);}
+.t-messagebus { fill: var(--messagebus-stroke);}
+.t-external { fill: var(--external-stroke);}
+svg .semantic-sigil {
+      fill: none;
+      stroke: currentColor;
+      stroke-width: 1.35;
+      stroke-linecap: round;
+      stroke-linejoin: round;
+      opacity: 0.76;
+      pointer-events: none;}
+svg .semantic-sigil > * { vector-effect: non-scaling-stroke;}
+svg .semantic-sigil .sigil-fill { fill: currentColor; stroke: none;}
+svg .s-frontend { color: var(--frontend-stroke);}
+svg .s-backend { color: var(--backend-stroke);}
+svg .s-database { color: var(--database-stroke);}
+svg .s-messagebus { color: var(--messagebus-stroke);}
+svg .s-external { color: var(--external-stroke);}
+svg [data-detail-anchor] {
+      transform-box: fill-box;
+      transform-origin: center;
+      transition: transform 160ms ease;}
+.a-default { stroke: var(--arrow); fill: none;}
+.a-emphasis { stroke: var(--arrow-emphasis); fill: none;}
+.a-dashed { stroke: var(--database-stroke); fill: none; stroke-dasharray: 4,4;}
+.m-default { fill: var(--arrow);}
+.m-emphasis { fill: var(--arrow-emphasis);}
+.m-security { fill: var(--security-stroke);}
+.m-dashed { fill: var(--database-stroke);}
+svg [data-node-id] {
+      cursor: pointer;
+      transition: opacity 0.18s ease, filter 0.18s ease;}
+svg [data-edge-from] { transition: opacity 0.18s ease, filter 0.18s ease;}
+svg [data-legend-kind][role="button"] { cursor: pointer;}
+svg [data-legend-hit] {
+      fill: transparent;
+      stroke: transparent;
+      stroke-width: 1.4;
+      pointer-events: all;
+      vector-effect: non-scaling-stroke;
+      transition: stroke 150ms ease, stroke-width 150ms ease, filter 150ms ease;}
+svg [data-legend-count-badge] { pointer-events: none;}
+svg [data-legend-count-badge] rect {
+      fill: var(--mask);
+      stroke: var(--panel-border);
+      stroke-width: 1;
+      vector-effect: non-scaling-stroke;}
+svg [data-legend-count-badge] text {
+      fill: var(--text-muted);
+      font-size: 7px;
+      font-weight: 700;
+      text-anchor: middle;}
+svg [data-legend-kind][data-legend-selected] [data-legend-hit] {
+      stroke: var(--database-stroke);
+      stroke-width: 2.2;
+      stroke-dasharray: 3 2;}
+svg [data-legend-kind][data-legend-selected] [data-legend-count-badge] rect {
+      stroke: var(--database-stroke);
+      stroke-width: 1.8;}
+svg [data-legend-kind][data-legend-zero] { opacity: 0.44;}
+.c-security-group { fill: transparent; stroke: var(--security-stroke); stroke-dasharray: 4,4;}
+.c-lane { fill: var(--lane-fill); stroke: var(--lane-stroke); stroke-dasharray: 6,6;}
+</style>
+<rect width="100%" height="100%" fill="var(--bg)"/>
+        <title id="t">跨 Agent 记忆共享 · 一次会话的完整流程</title>
+        <desc id="d">启动注入 → 每轮召回 → 会话内写入 → 收尾;任一步失败都降级,不阻塞会话</desc>
+        <!-- Definitions -->
+        <defs>
+          <marker id="arrowhead" markerWidth="10" markerHeight="7" refX="9" refY="3.5" orient="auto">
+            <polygon points="0 0, 10 3.5, 0 7" class="m-default" />
+          </marker>
+          <marker id="arrowhead-emphasis" markerWidth="10" markerHeight="7" refX="9" refY="3.5" orient="auto">
+            <polygon points="0 0, 10 3.5, 0 7" class="m-emphasis" />
+          </marker>
+          <marker id="arrowhead-security" markerWidth="10" markerHeight="7" refX="9" refY="3.5" orient="auto">
+            <polygon points="0 0, 10 3.5, 0 7" class="m-security" />
+          </marker>
+          <marker id="arrowhead-dashed" markerWidth="10" markerHeight="7" refX="9" refY="3.5" orient="auto">
+            <polygon points="0 0, 10 3.5, 0 7" class="m-dashed" />
+          </marker>
+          <pattern id="grid" width="40" height="40" patternUnits="userSpaceOnUse">
+            <path d="M 40 0 L 0 0 0 40" class="c-grid" stroke-width="0.5"/>
+          </pattern>
+        </defs>
+
+        <!-- Background Grid -->
+        <rect width="100%" height="100%" fill="url(#grid)" />
+
+        <!-- Swimlanes -->
+        <rect data-graph-role="structural-frame" data-composition-frame-kind="lane" data-composition-frame-id="lane-0" x="40" y="52" width="640" height="104" rx="10" class="c-lane" stroke-width="1"/>
+        <text x="54" y="74" class="t-dim" font-size="10" font-weight="600">01 / 用户 / 会话边界</text>
+
+        <rect data-graph-role="structural-frame" data-composition-frame-kind="lane" data-composition-frame-id="lane-1" x="40" y="176" width="640" height="104" rx="10" class="c-lane" stroke-width="1"/>
+        <text x="54" y="198" class="t-dim" font-size="10" font-weight="600">02 / Claude 上下文</text>
+
+        <rect data-graph-role="structural-frame" data-composition-frame-kind="lane" data-composition-frame-id="lane-2" x="40" y="300" width="640" height="104" rx="10" class="c-lane" stroke-width="1"/>
+        <text x="54" y="322" class="t-dim" font-size="10" font-weight="600">03 / Hooks(项目本地)</text>
+
+        <rect data-graph-role="structural-frame" data-composition-frame-kind="lane" data-composition-frame-id="lane-3" x="40" y="424" width="640" height="104" rx="10" class="c-lane" stroke-width="1"/>
+        <text x="54" y="446" class="t-dim" font-size="10" font-weight="600">04 / drsg daemon · memory plane</text>
+
+        <rect data-graph-role="structural-frame" data-composition-frame-kind="lane" data-composition-frame-id="lane-4" x="40" y="548" width="640" height="104" rx="10" class="c-lane" stroke-width="1"/>
+        <text x="54" y="570" class="t-dim" font-size="10" font-weight="600">05 / 遥测</text>
+
+        <rect data-graph-role="structural-frame" data-composition-frame-kind="lane" data-composition-frame-id="lane-5" x="40" y="672" width="640" height="104" rx="10" class="c-lane" stroke-width="1"/>
+        <text x="54" y="694" class="t-dim" font-size="10" font-weight="600">06 / 跨项目</text>
+
+        <!-- Phase headers -->
+        <line x1="42" y1="35" x2="266" y2="35" class="a-default" stroke-width="1.1"/>
+        <rect x="42" y="27" width="224" height="16" rx="4" class="c-mask"/>
+        <text x="154" y="39" class="t-muted" font-size="8" font-weight="600" text-anchor="middle">会话开始</text>
+        <line x1="254" y1="35" x2="476" y2="35" class="a-emphasis" stroke-width="1.1"/>
+        <rect x="254" y="27" width="222" height="16" rx="4" class="c-mask"/>
+        <text x="365" y="39" class="t-backend" font-size="8" font-weight="600" text-anchor="middle">每一轮对话</text>
+        <line x1="454" y1="35" x2="671" y2="35" class="a-dashed" stroke-width="1.1"/>
+        <rect x="454" y="27" width="217" height="16" rx="4" class="c-mask"/>
+        <text x="562.5" y="39" class="t-messagebus" font-size="8" font-weight="600" text-anchor="middle">写入与收尾</text>
+
+        <!-- Workflow groups -->
+
+
+        <!-- Edge paths -->
+        <path data-edge-from="t-start" data-edge-to="h-start" data-edge-label="SessionStart" data-edge-key="0" data-edge-id="e1" data-composition-points="88,145;88,228;88,228;88,333" d="M 88 145 L 88 228 L 88 228 L 88 333" class="a-default" stroke-width="1.4" marker-end="url(#arrowhead)"/>
+        <path data-edge-from="h-start" data-edge-to="e-brief" data-edge-key="1" data-edge-id="e2" data-composition-points="88,401;88,414;88,414;88,465" d="M 88 401 L 88 414 L 88 414 L 88 465" class="a-default" stroke-width="1.4" marker-end="url(#arrowhead)"/>
+        <path data-edge-from="e-brief" data-edge-to="ctx" data-edge-key="2" data-edge-id="e3" data-composition-points="134,491;154,491;154,243;174,243" d="M 134 491 L 154 491 L 154 243 L 174 243" class="a-emphasis" stroke-width="1.8" marker-end="url(#arrowhead-emphasis)"/>
+        <path data-edge-from="ctx" data-edge-to="p-in" data-edge-key="3" data-edge-id="e4" data-composition-points="220,209;220,119;254,119" d="M 220 209 L 220 119 L 254 119" class="a-default" stroke-width="1.4" marker-end="url(#arrowhead)"/>
+        <path data-edge-from="p-in" data-edge-to="h-prompt" data-edge-label="每轮触发" data-edge-key="4" data-edge-id="e5" data-composition-points="300,145;300,228;300,228;300,333" d="M 300 145 L 300 228 L 300 228 L 300 333" class="a-default" stroke-width="1.4" marker-end="url(#arrowhead)"/>
+        <path data-edge-from="h-prompt" data-edge-to="e-facts" data-edge-label="按 path 查" data-edge-key="5" data-edge-id="e6" data-composition-points="300,401;300,414;300,414;300,465" d="M 300 401 L 300 414 L 300 414 L 300 465" class="a-default" stroke-width="1.4" marker-end="url(#arrowhead)"/>
+        <path data-edge-from="h-prompt" data-edge-to="mem-in" data-edge-label="外来标出处" data-edge-key="6" data-edge-id="e7" data-composition-points="346,367;365,367;365,119;384,119" d="M 346 367 L 365 367 L 365 119 L 384 119" class="a-emphasis" stroke-width="1.8" marker-end="url(#arrowhead-emphasis)"/>
+        <path data-edge-from="mem-in" data-edge-to="tele" data-edge-label="落一行" data-edge-key="7" data-edge-id="e8" data-composition-points="430,145;430,352;430,352;430,589" d="M 430 145 L 430 352 L 430 352 L 430 589" class="a-dashed" stroke-width="1.4" marker-end="url(#arrowhead-dashed)"/>
+        <path data-edge-from="mem-in" data-edge-to="w-fact" data-edge-key="8" data-edge-id="e9" data-composition-points="476,119;500,119;500,217" d="M 476 119 L 500 119 L 500 217" class="a-default" stroke-width="1.4" marker-end="url(#arrowhead)"/>
+        <path data-edge-from="w-fact" data-edge-to="e-write" data-edge-label="幂等 key" data-edge-key="9" data-edge-id="e10" data-composition-points="500,269;500,352;500,352;500,465" d="M 500 269 L 500 352 L 500 352 L 500 465" class="a-default" stroke-width="1.4" marker-end="url(#arrowhead)"/>
+        <path data-edge-from="w-fact" data-edge-to="t-end" data-edge-key="10" data-edge-id="e11" data-composition-points="546,243;562,243;562,119;579,119" d="M 546 243 L 562 243 L 562 119 L 579 119" class="a-default" stroke-width="1.4" marker-end="url(#arrowhead)"/>
+        <path data-edge-from="t-end" data-edge-to="h-end" data-edge-label="SessionEnd" data-edge-key="11" data-edge-id="e12" data-composition-points="625,145;625,228;625,228;625,341" d="M 625 145 L 625 228 L 625 228 L 625 341" class="a-dashed" stroke-width="1.4" marker-end="url(#arrowhead-dashed)"/>
+        <path data-edge-from="h-end" data-edge-to="e-stamp" data-edge-label="结构事实" data-edge-key="12" data-edge-id="e13" data-composition-points="625,393;625,414;625,414;625,465" d="M 625 393 L 625 414 L 625 414 L 625 465" class="a-default" stroke-width="1.4" marker-end="url(#arrowhead)"/>
+        <path data-edge-from="evt-post" data-edge-to="evt" data-edge-label="留一条待办" data-edge-key="13" data-edge-id="e0" data-composition-points="134,739;174,739" d="M 134 739 L 174 739" class="a-dashed" stroke-width="1.4" marker-end="url(#arrowhead-dashed)"/>
+        <path data-edge-from="evt" data-edge-to="ctx" data-edge-label="注入给模型" data-edge-key="14" data-edge-id="e14" data-composition-points="220,705;220,476;220,476;220,277" d="M 220 705 L 220 476 L 220 476 L 220 277" class="a-dashed" stroke-width="1.4" marker-end="url(#arrowhead-dashed)"/>
+        <path data-edge-from="evt" data-edge-to="evt-seen" data-edge-label="每轮问一次" data-edge-key="15" data-edge-id="e15" data-composition-points="266,739;384,739" d="M 266 739 L 384 739" class="a-dashed" stroke-width="1.4" marker-end="url(#arrowhead-dashed)"/>
+        <path data-edge-from="evt-seen" data-edge-to="evt-term" data-edge-label="没亮过才亮" data-edge-key="16" data-edge-id="e16" data-composition-points="476,739;579,739" d="M 476 739 L 579 739" class="a-default" stroke-width="1.4" marker-end="url(#arrowhead)"/>
+
+        <!-- Nodes -->
+        <g id="node-t-start" data-node-id="t-start" data-node-label="会话开始" tabindex="0" role="button" aria-label="Focus 会话开始, startup / resume, 用户 / 会话边界 › 会话开始" aria-pressed="false" data-node-kind="external" data-node-sublabel="startup / resume" data-node-context="用户 / 会话边界 › 会话开始">
+          <title>会话开始 · startup / resume · 用户 / 会话边界 › 会话开始</title>
+          <rect x="42" y="93" width="92" height="52" rx="6" class="c-mask"/>
+          <rect x="42" y="93" width="92" height="52" rx="6" class="c-external" stroke-width="1.5"/>
+          <g aria-hidden="true" data-semantic-sigil="external" class="semantic-sigil s-external" transform="translate(48 99) scale(0.6875)">
+            <rect x="2.5" y="5" width="8.5" height="8" rx="1.5"/>
+            <path d="M8 2.5h5.5V8M13.5 2.5 7.5 8.5"/>
+          </g>
+          <text data-detail-anchor="" x="88" y="114" class="t-primary" font-size="11" font-weight="600" text-anchor="middle">会话开始</text>
+          <text data-detail="context" x="88" y="131" class="t-muted" font-size="8" text-anchor="middle">startup / resume</text>
+        </g>
+
+        <g id="node-p-in" data-node-id="p-in" data-node-label="用户提问" tabindex="0" role="button" aria-label="Focus 用户提问, 用户 / 会话边界 › 每一轮对话" aria-pressed="false" data-node-kind="frontend" data-node-context="用户 / 会话边界 › 每一轮对话">
+          <title>用户提问 · 用户 / 会话边界 › 每一轮对话</title>
+          <rect x="254" y="93" width="92" height="52" rx="6" class="c-mask"/>
+          <rect x="254" y="93" width="92" height="52" rx="6" class="c-frontend" stroke-width="1.5"/>
+          <g aria-hidden="true" data-semantic-sigil="frontend" class="semantic-sigil s-frontend" transform="translate(260 99) scale(0.6875)">
+            <rect x="2" y="3" width="12" height="10" rx="2"/>
+            <path d="M2 6.5h12"/>
+            <circle cx="4.1" cy="4.8" r=".7" class="sigil-fill"/>
+            <circle cx="6.3" cy="4.8" r=".7" class="sigil-fill"/>
+          </g>
+          <text x="300" y="114" class="t-primary" font-size="11" font-weight="600" text-anchor="middle">用户提问</text>
+        </g>
+
+        <g id="node-mem-in" data-node-id="mem-in" data-node-label="注入记忆" tabindex="0" role="button" aria-label="Focus 注入记忆, ≤4 条 Fact, 用户 / 会话边界 › 每一轮对话" aria-pressed="false" data-node-kind="backend" data-node-sublabel="≤4 条 Fact" data-node-context="用户 / 会话边界 › 每一轮对话">
+          <title>注入记忆 · ≤4 条 Fact · 用户 / 会话边界 › 每一轮对话</title>
+          <rect x="384" y="93" width="92" height="52" rx="6" class="c-mask"/>
+          <rect x="384" y="93" width="92" height="52" rx="6" class="c-backend" stroke-width="1.5"/>
+          <g aria-hidden="true" data-semantic-sigil="backend" class="semantic-sigil s-backend" transform="translate(390 99) scale(0.6875)">
+            <path d="M6 3 3 8l3 5M10 3l3 5-3 5"/>
+          </g>
+          <text data-detail-anchor="" x="430" y="114" class="t-primary" font-size="11" font-weight="600" text-anchor="middle">注入记忆</text>
+          <text data-detail="context" x="430" y="131" class="t-muted" font-size="8" text-anchor="middle">≤4 条 Fact</text>
+        </g>
+
+        <g id="node-t-end" data-node-id="t-end" data-node-label="会话结束" tabindex="0" role="button" aria-label="Focus 会话结束, 用户 / 会话边界 › 写入与收尾" aria-pressed="false" data-node-kind="external" data-node-context="用户 / 会话边界 › 写入与收尾">
+          <title>会话结束 · 用户 / 会话边界 › 写入与收尾</title>
+          <rect x="579" y="93" width="92" height="52" rx="6" class="c-mask"/>
+          <rect x="579" y="93" width="92" height="52" rx="6" class="c-external" stroke-width="1.5"/>
+          <g aria-hidden="true" data-semantic-sigil="external" class="semantic-sigil s-external" transform="translate(585 99) scale(0.6875)">
+            <rect x="2.5" y="5" width="8.5" height="8" rx="1.5"/>
+            <path d="M8 2.5h5.5V8M13.5 2.5 7.5 8.5"/>
+          </g>
+          <text x="625" y="114" class="t-primary" font-size="11" font-weight="600" text-anchor="middle">会话结束</text>
+        </g>
+
+        <g id="node-ctx" data-node-id="ctx" data-node-label="启动注入" tabindex="0" role="button" aria-label="Focus 启动注入, 简报+待办+协议, Claude 上下文 › 会话开始" aria-pressed="false" data-node-kind="backend" data-node-sublabel="简报+待办+协议" data-node-tag="长度随 Fact 数增长" data-node-context="Claude 上下文 › 会话开始">
+          <title>启动注入 · 简报+待办+协议 · Claude 上下文 › 会话开始 · 长度随 Fact 数增长</title>
+          <rect x="174" y="209" width="92" height="68" rx="6" class="c-mask"/>
+          <rect x="174" y="209" width="92" height="68" rx="6" class="c-backend" stroke-width="1.5"/>
+          <g aria-hidden="true" data-semantic-sigil="backend" class="semantic-sigil s-backend" transform="translate(180 215) scale(0.6875)">
+            <path d="M6 3 3 8l3 5M10 3l3 5-3 5"/>
+          </g>
+          <text data-detail-anchor="" x="220" y="230" class="t-primary" font-size="11" font-weight="600" text-anchor="middle">启动注入</text>
+          <text data-detail="context" x="220" y="247" class="t-muted" font-size="8" text-anchor="middle">简报+待办+协议</text>
+        <text data-detail="fine" x="220" y="265" class="t-backend" font-size="7" text-anchor="middle">长度随 Fact 数增长</text>
+        </g>
+
+        <g id="node-w-fact" data-node-id="w-fact" data-node-label="写入结论" tabindex="0" role="button" aria-label="Focus 写入结论, MCP cypher, Claude 上下文 › 写入与收尾" aria-pressed="false" data-node-kind="backend" data-node-sublabel="MCP cypher" data-node-context="Claude 上下文 › 写入与收尾">
+          <title>写入结论 · MCP cypher · Claude 上下文 › 写入与收尾</title>
+          <rect x="454" y="217" width="92" height="52" rx="6" class="c-mask"/>
+          <rect x="454" y="217" width="92" height="52" rx="6" class="c-backend" stroke-width="1.5"/>
+          <g aria-hidden="true" data-semantic-sigil="backend" class="semantic-sigil s-backend" transform="translate(460 223) scale(0.6875)">
+            <path d="M6 3 3 8l3 5M10 3l3 5-3 5"/>
+          </g>
+          <text data-detail-anchor="" x="500" y="238" class="t-primary" font-size="11" font-weight="600" text-anchor="middle">写入结论</text>
+          <text data-detail="context" x="500" y="255" class="t-muted" font-size="8" text-anchor="middle">MCP cypher</text>
+        </g>
+
+        <g id="node-h-start" data-node-id="h-start" data-node-label="启动 hook" tabindex="0" role="button" aria-label="Focus 启动 hook, session_start.py, Hooks(项目本地) › 会话开始" aria-pressed="false" data-node-kind="backend" data-node-sublabel="session_start.py" data-node-tag="探活失败即空手" data-node-context="Hooks(项目本地) › 会话开始">
+          <title>启动 hook · session_start.py · Hooks(项目本地) › 会话开始 · 探活失败即空手</title>
+          <rect x="42" y="333" width="92" height="68" rx="6" class="c-mask"/>
+          <rect x="42" y="333" width="92" height="68" rx="6" class="c-backend" stroke-width="1.5"/>
+          <g aria-hidden="true" data-semantic-sigil="backend" class="semantic-sigil s-backend" transform="translate(48 339) scale(0.6875)">
+            <path d="M6 3 3 8l3 5M10 3l3 5-3 5"/>
+          </g>
+          <text data-detail-anchor="" x="88" y="354" class="t-primary" font-size="11" font-weight="600" text-anchor="middle">启动 hook</text>
+          <text data-detail="context" x="88" y="371" class="t-muted" font-size="8" text-anchor="middle">session_start.py</text>
+        <text data-detail="fine" x="88" y="389" class="t-backend" font-size="7" text-anchor="middle">探活失败即空手</text>
+        </g>
+
+        <g id="node-h-prompt" data-node-id="h-prompt" data-node-label="召回 hook" tabindex="0" role="button" aria-label="Focus 召回 hook, user_prompt.py, Hooks(项目本地) › 每一轮对话" aria-pressed="false" data-node-kind="backend" data-node-sublabel="user_prompt.py" data-node-tag="" data-node-context="Hooks(项目本地) › 每一轮对话">
+          <title>召回 hook · user_prompt.py · Hooks(项目本地) › 每一轮对话</title>
+          <rect x="254" y="333" width="92" height="68" rx="6" class="c-mask"/>
+          <rect x="254" y="333" width="92" height="68" rx="6" class="c-backend" stroke-width="1.5"/>
+          <g aria-hidden="true" data-semantic-sigil="backend" class="semantic-sigil s-backend" transform="translate(260 339) scale(0.6875)">
+            <path d="M6 3 3 8l3 5M10 3l3 5-3 5"/>
+          </g>
+          <text data-detail-anchor="" x="300" y="354" class="t-primary" font-size="11" font-weight="600" text-anchor="middle">召回 hook</text>
+          <text data-detail="context" x="300" y="371" class="t-muted" font-size="8" text-anchor="middle">user_prompt.py</text>
+        </g>
+
+        <g id="node-h-end" data-node-id="h-end" data-node-label="收尾 hook" tabindex="0" role="button" aria-label="Focus 收尾 hook, session_end.py, Hooks(项目本地) › 写入与收尾" aria-pressed="false" data-node-kind="backend" data-node-sublabel="session_end.py" data-node-context="Hooks(项目本地) › 写入与收尾">
+          <title>收尾 hook · session_end.py · Hooks(项目本地) › 写入与收尾</title>
+          <rect x="579" y="341" width="92" height="52" rx="6" class="c-mask"/>
+          <rect x="579" y="341" width="92" height="52" rx="6" class="c-backend" stroke-width="1.5"/>
+          <g aria-hidden="true" data-semantic-sigil="backend" class="semantic-sigil s-backend" transform="translate(585 347) scale(0.6875)">
+            <path d="M6 3 3 8l3 5M10 3l3 5-3 5"/>
+          </g>
+          <text data-detail-anchor="" x="625" y="362" class="t-primary" font-size="11" font-weight="600" text-anchor="middle">收尾 hook</text>
+          <text data-detail="context" x="625" y="379" class="t-muted" font-size="8" text-anchor="middle">session_end.py</text>
+        </g>
+
+        <g id="node-e-brief" data-node-id="e-brief" data-node-label="记 Project" tabindex="0" role="button" aria-label="Focus 记 Project, 按 p.path 定位, drsg daemon · memory plane › 会话开始" aria-pressed="false" data-node-kind="database" data-node-sublabel="按 p.path 定位" data-node-context="drsg daemon · memory plane › 会话开始">
+          <title>记 Project · 按 p.path 定位 · drsg daemon · memory plane › 会话开始</title>
+          <rect x="42" y="465" width="92" height="52" rx="6" class="c-mask"/>
+          <rect x="42" y="465" width="92" height="52" rx="6" class="c-database" stroke-width="1.5"/>
+          <g aria-hidden="true" data-semantic-sigil="database" class="semantic-sigil s-database" transform="translate(48 471) scale(0.6875)">
+            <ellipse cx="8" cy="4" rx="5" ry="2"/>
+            <path d="M3 4v8c0 1.1 2.2 2 5 2s5-.9 5-2V4M3 8c0 1.1 2.2 2 5 2s5-.9 5-2"/>
+          </g>
+          <text data-detail-anchor="" x="88" y="486" class="t-primary" font-size="11" font-weight="600" text-anchor="middle">记 Project</text>
+          <text data-detail="context" x="88" y="503" class="t-muted" font-size="8" text-anchor="middle">按 p.path 定位</text>
+        </g>
+
+        <g id="node-e-facts" data-node-id="e-facts" data-node-label="取 Fact" tabindex="0" role="button" aria-label="Focus 取 Fact, 各项目最新 200, drsg daemon · memory plane › 每一轮对话" aria-pressed="false" data-node-kind="database" data-node-sublabel="各项目最新 200" data-node-context="drsg daemon · memory plane › 每一轮对话">
+          <title>取 Fact · 各项目最新 200 · drsg daemon · memory plane › 每一轮对话</title>
+          <rect x="254" y="465" width="92" height="52" rx="6" class="c-mask"/>
+          <rect x="254" y="465" width="92" height="52" rx="6" class="c-database" stroke-width="1.5"/>
+          <g aria-hidden="true" data-semantic-sigil="database" class="semantic-sigil s-database" transform="translate(260 471) scale(0.6875)">
+            <ellipse cx="8" cy="4" rx="5" ry="2"/>
+            <path d="M3 4v8c0 1.1 2.2 2 5 2s5-.9 5-2V4M3 8c0 1.1 2.2 2 5 2s5-.9 5-2"/>
+          </g>
+          <text data-detail-anchor="" x="300" y="486" class="t-primary" font-size="11" font-weight="600" text-anchor="middle">取 Fact</text>
+          <text data-detail="context" x="300" y="503" class="t-muted" font-size="8" text-anchor="middle">各项目最新 200</text>
+        </g>
+
+        <g id="node-e-write" data-node-id="e-write" data-node-label="写 Fact" tabindex="0" role="button" aria-label="Focus 写 Fact, 必须挂 ABOUT 边, drsg daemon · memory plane › 写入与收尾" aria-pressed="false" data-node-kind="database" data-node-sublabel="必须挂 ABOUT 边" data-node-context="drsg daemon · memory plane › 写入与收尾">
+          <title>写 Fact · 必须挂 ABOUT 边 · drsg daemon · memory plane › 写入与收尾</title>
+          <rect x="454" y="465" width="92" height="52" rx="6" class="c-mask"/>
+          <rect x="454" y="465" width="92" height="52" rx="6" class="c-database" stroke-width="1.5"/>
+          <g aria-hidden="true" data-semantic-sigil="database" class="semantic-sigil s-database" transform="translate(460 471) scale(0.6875)">
+            <ellipse cx="8" cy="4" rx="5" ry="2"/>
+            <path d="M3 4v8c0 1.1 2.2 2 5 2s5-.9 5-2V4M3 8c0 1.1 2.2 2 5 2s5-.9 5-2"/>
+          </g>
+          <text data-detail-anchor="" x="500" y="486" class="t-primary" font-size="11" font-weight="600" text-anchor="middle">写 Fact</text>
+          <text data-detail="context" x="500" y="503" class="t-muted" font-size="8" text-anchor="middle">必须挂 ABOUT 边</text>
+        </g>
+
+        <g id="node-e-stamp" data-node-id="e-stamp" data-node-label="补 Session" tabindex="0" role="button" aria-label="Focus 补 Session, ended_at + 统计, drsg daemon · memory plane › 写入与收尾" aria-pressed="false" data-node-kind="database" data-node-sublabel="ended_at + 统计" data-node-context="drsg daemon · memory plane › 写入与收尾">
+          <title>补 Session · ended_at + 统计 · drsg daemon · memory plane › 写入与收尾</title>
+          <rect x="579" y="465" width="92" height="52" rx="6" class="c-mask"/>
+          <rect x="579" y="465" width="92" height="52" rx="6" class="c-database" stroke-width="1.5"/>
+          <g aria-hidden="true" data-semantic-sigil="database" class="semantic-sigil s-database" transform="translate(585 471) scale(0.6875)">
+            <ellipse cx="8" cy="4" rx="5" ry="2"/>
+            <path d="M3 4v8c0 1.1 2.2 2 5 2s5-.9 5-2V4M3 8c0 1.1 2.2 2 5 2s5-.9 5-2"/>
+          </g>
+          <text data-detail-anchor="" x="625" y="486" class="t-primary" font-size="11" font-weight="600" text-anchor="middle">补 Session</text>
+          <text data-detail="context" x="625" y="503" class="t-muted" font-size="8" text-anchor="middle">ended_at + 统计</text>
+        </g>
+
+        <g id="node-tele" data-node-id="tele" data-node-label="recall.jsonl" tabindex="0" role="button" aria-label="Focus recall.jsonl, 命中与否都记, 遥测 › 每一轮对话" aria-pressed="false" data-node-kind="database" data-node-sublabel="命中与否都记" data-node-context="遥测 › 每一轮对话">
+          <title>recall.jsonl · 命中与否都记 · 遥测 › 每一轮对话</title>
+          <rect x="384" y="589" width="92" height="52" rx="6" class="c-mask"/>
+          <rect x="384" y="589" width="92" height="52" rx="6" class="c-database" stroke-width="1.5"/>
+          <g aria-hidden="true" data-semantic-sigil="database" class="semantic-sigil s-database" transform="translate(390 595) scale(0.6875)">
+            <ellipse cx="8" cy="4" rx="5" ry="2"/>
+            <path d="M3 4v8c0 1.1 2.2 2 5 2s5-.9 5-2V4M3 8c0 1.1 2.2 2 5 2s5-.9 5-2"/>
+          </g>
+          <text data-detail-anchor="" x="430" y="610" class="t-primary" font-size="11" font-weight="600" text-anchor="middle">recall.jsonl</text>
+          <text data-detail="context" x="430" y="627" class="t-muted" font-size="8" text-anchor="middle">命中与否都记</text>
+        </g>
+
+        <g id="node-evt-post" data-node-id="evt-post" data-node-label="别的项目的会话" tabindex="0" role="button" aria-label="Focus 别的项目的会话, event.py post, 跨项目 › 会话开始" aria-pressed="false" data-node-kind="external" data-node-sublabel="event.py post" data-node-tag="节点+边一条语句" data-node-context="跨项目 › 会话开始">
+          <title>别的项目的会话 · event.py post · 跨项目 › 会话开始 · 节点+边一条语句</title>
+          <rect x="42" y="705" width="92" height="68" rx="6" class="c-mask"/>
+          <rect x="42" y="705" width="92" height="68" rx="6" class="c-external" stroke-width="1.5"/>
+          <g aria-hidden="true" data-semantic-sigil="external" class="semantic-sigil s-external" transform="translate(48 711) scale(0.6875)">
+            <rect x="2.5" y="5" width="8.5" height="8" rx="1.5"/>
+            <path d="M8 2.5h5.5V8M13.5 2.5 7.5 8.5"/>
+          </g>
+          <text data-detail-anchor="" x="88" y="726" class="t-primary" font-size="10" font-weight="600" text-anchor="middle">别的项目的会话</text>
+          <text data-detail="context" x="88" y="743" class="t-muted" font-size="8" text-anchor="middle">event.py post</text>
+        <text data-detail="fine" x="88" y="761" class="t-external" font-size="7" text-anchor="middle">节点+边一条语句</text>
+        </g>
+
+        <g id="node-evt" data-node-id="evt" data-node-label="Event 待办" tabindex="0" role="button" aria-label="Focus Event 待办, status=open, 跨项目 › 会话开始" aria-pressed="false" data-node-kind="messagebus" data-node-sublabel="status=open" data-node-tag="置 done 后自动消失" data-node-context="跨项目 › 会话开始">
+          <title>Event 待办 · status=open · 跨项目 › 会话开始 · 置 done 后自动消失</title>
+          <rect x="174" y="705" width="92" height="68" rx="6" class="c-mask"/>
+          <rect x="174" y="705" width="92" height="68" rx="6" class="c-messagebus" stroke-width="1.5"/>
+          <g aria-hidden="true" data-semantic-sigil="messagebus" class="semantic-sigil s-messagebus" transform="translate(180 711) scale(0.6875)">
+            <path d="M2.5 4.5h11M2.5 8h11M2.5 11.5h11"/>
+            <circle cx="5" cy="4.5" r="1" class="sigil-fill"/>
+            <circle cx="10.5" cy="8" r="1" class="sigil-fill"/>
+            <circle cx="7" cy="11.5" r="1" class="sigil-fill"/>
+          </g>
+          <text data-detail-anchor="" x="220" y="726" class="t-primary" font-size="11" font-weight="600" text-anchor="middle">Event 待办</text>
+          <text data-detail="context" x="220" y="743" class="t-muted" font-size="8" text-anchor="middle">status=open</text>
+        <text data-detail="fine" x="220" y="761" class="t-messagebus" font-size="7" text-anchor="middle">置 done 后自动消失</text>
+        </g>
+
+        <g id="node-evt-seen" data-node-id="evt-seen" data-node-label="每轮复查" tabindex="0" role="button" aria-label="Focus 每轮复查, events_seen.json, 跨项目 › 每一轮对话" aria-pressed="false" data-node-kind="database" data-node-sublabel="events_seen.json" data-node-tag="换 sid 即失效" data-node-context="跨项目 › 每一轮对话">
+          <title>每轮复查 · events_seen.json · 跨项目 › 每一轮对话 · 换 sid 即失效</title>
+          <rect x="384" y="705" width="92" height="68" rx="6" class="c-mask"/>
+          <rect x="384" y="705" width="92" height="68" rx="6" class="c-database" stroke-width="1.5"/>
+          <g aria-hidden="true" data-semantic-sigil="database" class="semantic-sigil s-database" transform="translate(390 711) scale(0.6875)">
+            <ellipse cx="8" cy="4" rx="5" ry="2"/>
+            <path d="M3 4v8c0 1.1 2.2 2 5 2s5-.9 5-2V4M3 8c0 1.1 2.2 2 5 2s5-.9 5-2"/>
+          </g>
+          <text data-detail-anchor="" x="430" y="726" class="t-primary" font-size="11" font-weight="600" text-anchor="middle">每轮复查</text>
+          <text data-detail="context" x="430" y="743" class="t-muted" font-size="8" text-anchor="middle">events_seen.json</text>
+        <text data-detail="fine" x="430" y="761" class="t-database" font-size="7" text-anchor="middle">换 sid 即失效</text>
+        </g>
+
+        <g id="node-evt-term" data-node-id="evt-term" data-node-label="终端提示" tabindex="0" role="button" aria-label="Focus 终端提示, systemMessage, 跨项目 › 写入与收尾" aria-pressed="false" data-node-kind="frontend" data-node-sublabel="systemMessage" data-node-tag="只给人,模型看不见" data-node-context="跨项目 › 写入与收尾">
+          <title>终端提示 · systemMessage · 跨项目 › 写入与收尾 · 只给人,模型看不见</title>
+          <rect x="579" y="705" width="92" height="68" rx="6" class="c-mask"/>
+          <rect x="579" y="705" width="92" height="68" rx="6" class="c-frontend" stroke-width="1.5"/>
+          <g aria-hidden="true" data-semantic-sigil="frontend" class="semantic-sigil s-frontend" transform="translate(585 711) scale(0.6875)">
+            <rect x="2" y="3" width="12" height="10" rx="2"/>
+            <path d="M2 6.5h12"/>
+            <circle cx="4.1" cy="4.8" r=".7" class="sigil-fill"/>
+            <circle cx="6.3" cy="4.8" r=".7" class="sigil-fill"/>
+          </g>
+          <text data-detail-anchor="" x="625" y="726" class="t-primary" font-size="11" font-weight="600" text-anchor="middle">终端提示</text>
+          <text data-detail="context" x="625" y="743" class="t-muted" font-size="8" text-anchor="middle">systemMessage</text>
+        <text data-detail="fine" x="625" y="761" class="t-frontend" font-size="7" text-anchor="middle">只给人,模型看不见</text>
+        </g>
+
+        <!-- Edge labels -->
+        <g data-detail="context" data-edge-from="t-start" data-edge-to="h-start" data-edge-label="SessionStart" data-edge-key="0" data-edge-id="e1">
+          <rect x="54.2" y="208" width="67.6" height="14" rx="3" class="c-mask"/>
+          <text x="88" y="218" class="t-muted" font-size="8" text-anchor="middle">SessionStart</text>
+        </g>
+
+
+
+        <g data-detail="context" data-edge-from="p-in" data-edge-to="h-prompt" data-edge-label="每轮触发" data-edge-key="4" data-edge-id="e5">
+          <rect x="275.8" y="208" width="48.4" height="14" rx="3" class="c-mask"/>
+          <text x="300" y="218" class="t-muted" font-size="8" text-anchor="middle">每轮触发</text>
+        </g>
+        <g data-detail="context" data-edge-from="h-prompt" data-edge-to="e-facts" data-edge-label="按 path 查" data-edge-key="5" data-edge-id="e6">
+          <rect x="271" y="418" width="58" height="14" rx="3" class="c-mask"/>
+          <text x="300" y="428" class="t-muted" font-size="8" text-anchor="middle">按 path 查</text>
+        </g>
+        <g data-detail="context" data-edge-from="h-prompt" data-edge-to="mem-in" data-edge-label="外来标出处" data-edge-key="6" data-edge-id="e7">
+          <rect x="336" y="223" width="58" height="14" rx="3" class="c-mask"/>
+          <text x="365" y="233" class="t-backend" font-size="8" text-anchor="middle">外来标出处</text>
+        </g>
+        <g data-detail="context" data-edge-from="mem-in" data-edge-to="tele" data-edge-label="落一行" data-edge-key="7" data-edge-id="e8">
+          <rect x="410.6" y="332" width="38.8" height="14" rx="3" class="c-mask"/>
+          <text x="430" y="342" class="t-database" font-size="8" text-anchor="middle">落一行</text>
+        </g>
+
+        <g data-detail="context" data-edge-from="w-fact" data-edge-to="e-write" data-edge-label="幂等 key" data-edge-key="9" data-edge-id="e10">
+          <rect x="475.8" y="332" width="48.4" height="14" rx="3" class="c-mask"/>
+          <text x="500" y="342" class="t-muted" font-size="8" text-anchor="middle">幂等 key</text>
+        </g>
+
+        <g data-detail="context" data-edge-from="t-end" data-edge-to="h-end" data-edge-label="SessionEnd" data-edge-key="11" data-edge-id="e12">
+          <rect x="596" y="208" width="58" height="14" rx="3" class="c-mask"/>
+          <text x="625" y="218" class="t-database" font-size="8" text-anchor="middle">SessionEnd</text>
+        </g>
+        <g data-detail="context" data-edge-from="h-end" data-edge-to="e-stamp" data-edge-label="结构事实" data-edge-key="12" data-edge-id="e13">
+          <rect x="600.8" y="394" width="48.4" height="14" rx="3" class="c-mask"/>
+          <text x="625" y="404" class="t-muted" font-size="8" text-anchor="middle">结构事实</text>
+        </g>
+        <g data-detail="context" data-edge-from="evt-post" data-edge-to="evt" data-edge-label="留一条待办" data-edge-key="13" data-edge-id="e0">
+          <rect x="125" y="691" width="58" height="14" rx="3" class="c-mask"/>
+          <text x="154" y="701" class="t-database" font-size="8" text-anchor="middle">留一条待办</text>
+        </g>
+        <g data-detail="context" data-edge-from="evt" data-edge-to="ctx" data-edge-label="注入给模型" data-edge-key="14" data-edge-id="e14">
+          <rect x="191" y="456" width="58" height="14" rx="3" class="c-mask"/>
+          <text x="220" y="466" class="t-database" font-size="8" text-anchor="middle">注入给模型</text>
+        </g>
+        <g data-detail="context" data-edge-from="evt" data-edge-to="evt-seen" data-edge-label="每轮问一次" data-edge-key="15" data-edge-id="e15">
+          <rect x="296" y="691" width="58" height="14" rx="3" class="c-mask"/>
+          <text x="325" y="701" class="t-database" font-size="8" text-anchor="middle">每轮问一次</text>
+        </g>
+        <g data-detail="context" data-edge-from="evt-seen" data-edge-to="evt-term" data-edge-label="没亮过才亮" data-edge-key="16" data-edge-id="e16">
+          <rect x="498.5" y="691" width="58" height="14" rx="3" class="c-mask"/>
+          <text x="527.5" y="701" class="t-muted" font-size="8" text-anchor="middle">没亮过才亮</text>
+        </g>
+
+        <!-- Legend -->
+        <g data-legend-bridge="">
+          <text x="175" y="800" class="t-primary" font-size="10" font-weight="600">Legend</text>
+        <g data-legend-kind="frontend">
+          <rect x="175" y="812" width="14" height="9" rx="2" class="c-frontend" stroke-width="1"/>
+          <text x="195" y="820" class="t-muted" font-size="7">User UI</text>
+        </g>
+        <g data-legend-kind="backend">
+          <rect x="260" y="812" width="14" height="9" rx="2" class="c-backend" stroke-width="1"/>
+          <text x="280" y="820" class="t-muted" font-size="7">Agent logic</text>
+        </g>
+        <g data-legend-kind="security">
+          <rect x="370" y="812" width="14" height="9" rx="2" class="c-security" stroke-width="1"/>
+          <text x="390" y="820" class="t-muted" font-size="7">Policy</text>
+        </g>
+        <g data-legend-kind="messagebus">
+          <rect x="455" y="812" width="14" height="9" rx="2" class="c-messagebus" stroke-width="1"/>
+          <text x="475" y="820" class="t-muted" font-size="7">Tool action</text>
+        </g>
+        <g data-legend-kind="database">
+          <rect x="565" y="812" width="14" height="9" rx="2" class="c-database" stroke-width="1"/>
+          <text x="585" y="820" class="t-muted" font-size="7">Context / trace</text>
+        </g>
+        </g>
+      </svg>

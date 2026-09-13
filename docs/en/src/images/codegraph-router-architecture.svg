@@ -1,0 +1,425 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1086 1014" width="1086" height="1014" role="img" aria-labelledby="t d">
+<style>
+svg { font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, 'DejaVu Sans Mono', 'Liberation Mono', 'Noto Sans Mono CJK SC', 'PingFang SC', 'Microsoft YaHei', monospace; --bg: #f8fafc;
+      --grid: #e2e8f0;
+      --text: #0f172a;
+      --text-muted: #64748b;
+      --text-dim: #94a3b8;
+      --text-faint: #64748b;
+
+      --panel: #ffffff;
+      --panel-border: #e2e8f0;
+      --lane-fill: rgba(248, 250, 252, 0.65);
+      --lane-stroke: #cbd5e1;
+
+      --arrow: #94a3b8;
+      --arrow-emphasis: #059669;
+
+      --mask: #ffffff;
+
+      --frontend-fill:    rgba(34, 211, 238, 0.15);
+      --frontend-stroke:  #0891b2;
+      --backend-fill:     rgba(52, 211, 153, 0.18);
+      --backend-stroke:   #059669;
+      --database-fill:    rgba(167, 139, 250, 0.2);
+      --database-stroke:  #7c3aed;
+      --cloud-fill:       rgba(251, 191, 36, 0.18);
+      --cloud-stroke:     #d97706;
+      --security-fill:    rgba(251, 113, 133, 0.15);
+      --security-stroke:  #e11d48;
+      --messagebus-fill:  rgba(251, 146, 60, 0.15);
+      --messagebus-stroke:#ea580c;
+      --external-fill:    rgba(148, 163, 184, 0.18);
+      --external-stroke:  #64748b;
+
+      --toolbar-bg:       rgba(255, 255, 255, 0.92);
+      --toolbar-border:   #cbd5e1;
+      --toolbar-text:     #334155;
+      --toolbar-hover:    #ffffff;
+      --toolbar-menu-bg:  #ffffff; }
+@media (prefers-color-scheme: dark) { svg { --bg: #020617;
+      --grid: #1e293b;
+      --text: #ffffff;
+      --text-muted: #94a3b8;
+      --text-dim: #475569;
+      /* UI chrome (menu hints, footer) needs more contrast than SVG .t-dim accents */
+      --text-faint: #7d8da1;
+
+      --panel: rgba(15, 23, 42, 0.5);
+      --panel-border: #1e293b;
+      --lane-fill: rgba(15, 23, 42, 0.22);
+      --lane-stroke: #334155;
+
+      --arrow: #64748b;
+      --arrow-emphasis: #34d399;
+
+      /* Opaque mask color used behind semi-transparent component fills
+         so the arrows drawn underneath are properly hidden. */
+      --mask: #0f172a;
+
+      --frontend-fill:    rgba(8, 51, 68, 0.4);
+      --frontend-stroke:  #22d3ee;
+      --backend-fill:     rgba(6, 78, 59, 0.4);
+      --backend-stroke:   #34d399;
+      --database-fill:    rgba(76, 29, 149, 0.4);
+      --database-stroke:  #a78bfa;
+      --cloud-fill:       rgba(120, 53, 15, 0.3);
+      --cloud-stroke:     #fbbf24;
+      --security-fill:    rgba(136, 19, 55, 0.4);
+      --security-stroke:  #fb7185;
+      --messagebus-fill:  rgba(251, 146, 60, 0.3);
+      --messagebus-stroke:#fb923c;
+      --external-fill:    rgba(30, 41, 59, 0.5);
+      --external-stroke:  #94a3b8;
+
+      --toolbar-bg:       rgba(15, 23, 42, 0.8);
+      --toolbar-border:   #334155;
+      --toolbar-text:     #e2e8f0;
+      --toolbar-hover:    rgba(15, 23, 42, 0.95);
+      --toolbar-menu-bg:  #0f172a; } }
+.c-grid { stroke: var(--grid); fill: none;}
+.c-mask { fill: var(--mask); stroke: none;}
+.c-frontend { fill: var(--frontend-fill);   stroke: var(--frontend-stroke);}
+.c-backend { fill: var(--backend-fill);    stroke: var(--backend-stroke);}
+.c-database { fill: var(--database-fill);   stroke: var(--database-stroke);}
+.c-cloud { fill: var(--cloud-fill);      stroke: var(--cloud-stroke);}
+.c-security { fill: var(--security-fill);   stroke: var(--security-stroke);}
+.c-external { fill: var(--external-fill);   stroke: var(--external-stroke);}
+.t-primary { fill: var(--text);}
+.t-muted { fill: var(--text-muted);}
+.t-frontend { fill: var(--frontend-stroke);}
+.t-backend { fill: var(--backend-stroke);}
+.t-database { fill: var(--database-stroke);}
+.t-cloud { fill: var(--cloud-stroke);}
+.t-security { fill: var(--security-stroke);}
+.t-messagebus { fill: var(--messagebus-stroke);}
+.t-external { fill: var(--external-stroke);}
+svg .semantic-sigil {
+      fill: none;
+      stroke: currentColor;
+      stroke-width: 1.35;
+      stroke-linecap: round;
+      stroke-linejoin: round;
+      opacity: 0.76;
+      pointer-events: none;}
+svg .semantic-sigil > * { vector-effect: non-scaling-stroke;}
+svg .semantic-sigil .sigil-fill { fill: currentColor; stroke: none;}
+svg .s-frontend { color: var(--frontend-stroke);}
+svg .s-backend { color: var(--backend-stroke);}
+svg .s-database { color: var(--database-stroke);}
+svg .s-cloud { color: var(--cloud-stroke);}
+svg .s-security { color: var(--security-stroke);}
+svg .s-external { color: var(--external-stroke);}
+svg [data-detail-anchor] {
+      transform-box: fill-box;
+      transform-origin: center;
+      transition: transform 160ms ease;}
+.a-emphasis { stroke: var(--arrow-emphasis); fill: none;}
+.a-security { stroke: var(--security-stroke); fill: none; stroke-dasharray: 5,5;}
+.a-dashed { stroke: var(--database-stroke); fill: none; stroke-dasharray: 4,4;}
+.m-default { fill: var(--arrow);}
+.m-emphasis { fill: var(--arrow-emphasis);}
+.m-security { fill: var(--security-stroke);}
+.m-dashed { fill: var(--database-stroke);}
+svg [data-node-id] {
+      cursor: pointer;
+      transition: opacity 0.18s ease, filter 0.18s ease;}
+svg [data-edge-from] { transition: opacity 0.18s ease, filter 0.18s ease;}
+svg [data-legend-kind][role="button"] { cursor: pointer;}
+svg [data-legend-hit] {
+      fill: transparent;
+      stroke: transparent;
+      stroke-width: 1.4;
+      pointer-events: all;
+      vector-effect: non-scaling-stroke;
+      transition: stroke 150ms ease, stroke-width 150ms ease, filter 150ms ease;}
+svg [data-legend-count-badge] { pointer-events: none;}
+svg [data-legend-count-badge] rect {
+      fill: var(--mask);
+      stroke: var(--panel-border);
+      stroke-width: 1;
+      vector-effect: non-scaling-stroke;}
+svg [data-legend-count-badge] text {
+      fill: var(--text-muted);
+      font-size: 7px;
+      font-weight: 700;
+      text-anchor: middle;}
+svg [data-legend-kind][data-legend-selected] [data-legend-hit] {
+      stroke: var(--database-stroke);
+      stroke-width: 2.2;
+      stroke-dasharray: 3 2;}
+svg [data-legend-kind][data-legend-selected] [data-legend-count-badge] rect {
+      stroke: var(--database-stroke);
+      stroke-width: 1.8;}
+svg [data-legend-kind][data-legend-zero] { opacity: 0.44;}
+.c-security-group { fill: transparent; stroke: var(--security-stroke); stroke-dasharray: 4,4;}
+.c-region { fill: rgba(251, 191, 36, 0.05); stroke: var(--cloud-stroke); stroke-dasharray: 8,4;}
+</style>
+<rect width="100%" height="100%" fill="var(--bg)"/>
+        <title id="t">The code-graph router — how a session reaches another repository’s graph</title>
+        <desc id="d">No merged daemon: an MCP → MCP proxy instead. Not one credential is copied and the plane is injected from the registry, so the "wrong plane" failure mode stops existing.</desc>
+        <!-- Definitions -->
+        <defs>
+          <marker id="arrowhead" markerWidth="10" markerHeight="7" refX="9" refY="3.5" orient="auto">
+            <polygon points="0 0, 10 3.5, 0 7" class="m-default" />
+          </marker>
+          <marker id="arrowhead-emphasis" markerWidth="10" markerHeight="7" refX="9" refY="3.5" orient="auto">
+            <polygon points="0 0, 10 3.5, 0 7" class="m-emphasis" />
+          </marker>
+          <marker id="arrowhead-security" markerWidth="10" markerHeight="7" refX="9" refY="3.5" orient="auto">
+            <polygon points="0 0, 10 3.5, 0 7" class="m-security" />
+          </marker>
+          <marker id="arrowhead-dashed" markerWidth="10" markerHeight="7" refX="9" refY="3.5" orient="auto">
+            <polygon points="0 0, 10 3.5, 0 7" class="m-dashed" />
+          </marker>
+          <pattern id="grid" width="40" height="40" patternUnits="userSpaceOnUse">
+            <path d="M 40 0 L 0 0 0 40" class="c-grid" stroke-width="0.5"/>
+          </pattern>
+        </defs>
+
+        <!-- Background Grid -->
+        <rect width="100%" height="100%" fill="url(#grid)" />
+
+        <!-- Boundaries (behind everything) -->
+        <rect data-graph-role="structural-frame" data-composition-frame-kind="region" data-composition-frame-id="0" x="728" y="68" width="318" height="732" rx="12" class="c-region" stroke-width="1"/>
+        <text x="736" y="86" class="t-cloud" font-size="9" font-weight="600">Code graph — one daemon per repository, each holding one database and watching one tree</text>
+
+        <!-- Connection paths (before components for correct z-order) -->
+        <path data-edge-from="hub" data-edge-to="router" data-edge-label="stdio" data-edge-key="0" data-composition-points="246,394;330,394" d="M 246 394 L 330 394" class="a-emphasis" stroke-width="1.8" marker-end="url(#arrowhead-emphasis)"/>
+        <path data-edge-from="router" data-edge-to="registry" data-edge-label="reads: which repos · which plane" data-edge-key="1" data-composition-points="426,428;426,486.5;330,486.5;330,545" d="M 426 428 L 426 478.5 Q 426 486.5 418 486.5 L 338 486.5 Q 330 486.5 330 494.5 L 330 545" class="a-dashed" stroke-width="1.5" marker-end="url(#arrowhead-dashed)"/>
+        <path data-edge-from="router" data-edge-to="mcpjson" data-edge-label="reads address + token now" data-edge-key="2" data-composition-points="440,428;440,486.5;570,486.5;570,545" d="M 440 428 L 440 478.5 Q 440 486.5 448 486.5 L 562 486.5 Q 570 486.5 570 494.5 L 570 545" class="a-security" stroke-width="1.5" marker-end="url(#arrowhead-security)"/>
+        <path data-edge-from="hub" data-edge-to="mem" data-edge-label="memory / events" data-edge-key="3" data-composition-points="153,428;153,680" d="M 153 428 L 153 680" class="a-dashed" stroke-width="1.5" marker-end="url(#arrowhead-dashed)"/>
+        <path data-edge-from="others" data-edge-to="mem" data-edge-label="the same three hooks" data-edge-key="4" data-composition-points="430,711;246,711" d="M 430 711 L 246 711" class="a-dashed" stroke-width="1.5" marker-end="url(#arrowhead-dashed)"/>
+        <path data-edge-from="router" data-edge-to="dDr" data-edge-label="POST /mcp · SSE" data-edge-key="5" data-composition-points="536,376;658,376;658,150;780,150" d="M 536 376 L 650 376 Q 658 376 658 368 L 658 158 Q 658 150 666 150 L 780 150" class="a-emphasis" stroke-width="1.8" marker-end="url(#arrowhead-emphasis)"/>
+        <path data-edge-from="router" data-edge-to="dSafe" data-edge-key="6" data-composition-points="536,383.2;658,383.2;658,270;780,270" d="M 536 383.2 L 650 383.2 Q 658 383.2 658 375.2 L 658 278 Q 658 270 666 270 L 780 270" class="a-emphasis" stroke-width="1.8" marker-end="url(#arrowhead-emphasis)"/>
+        <path data-edge-from="router" data-edge-to="dSub" data-edge-key="7" data-composition-points="536,390.4;560,390.4;560,406.4;756,406.4;756,390;780,390" d="M 536 390.4 L 552 390.4 Q 560 390.4 560 398.4 L 560 398.4 Q 560 406.4 568 406.4 L 748 406.4 Q 756 406.4 756 398.4 L 756 398 Q 756 390 764 390 L 780 390" class="a-emphasis" stroke-width="1.8" marker-end="url(#arrowhead-emphasis)"/>
+        <path data-edge-from="router" data-edge-to="dWps" data-edge-key="8" data-composition-points="536,397.6;658,397.6;658,510;780,510" d="M 536 397.6 L 650 397.6 Q 658 397.6 658 405.6 L 658 502 Q 658 510 666 510 L 780 510" class="a-emphasis" stroke-width="1.8" marker-end="url(#arrowhead-emphasis)"/>
+        <path data-edge-from="router" data-edge-to="dZeus" data-edge-key="9" data-composition-points="536,404.8;756,404.8;756,630;780,630" d="M 536 404.8 L 748 404.8 Q 756 404.8 756 412.8 L 756 622 Q 756 630 764 630 L 780 630" class="a-emphasis" stroke-width="1.8" marker-end="url(#arrowhead-emphasis)"/>
+        <path data-edge-from="router" data-edge-to="dExt" data-edge-key="10" data-composition-points="536,412;756,412;756,750;780,750" d="M 536 412 L 748 412 Q 756 412 756 420 L 756 742 Q 756 750 764 750 L 780 750" class="a-emphasis" stroke-width="1.8" marker-end="url(#arrowhead-emphasis)"/>
+        <path data-edge-from="mem" data-edge-to="bin" data-edge-label="the same binary" data-edge-key="11" data-composition-points="153,742;153,880" d="M 153 742 L 153 880" class="a-dashed" stroke-width="1.5" marker-end="url(#arrowhead-dashed)"/>
+        <path data-edge-from="dExt" data-edge-to="bin" data-edge-label="every code-graph daemon is this binary · zero shared database" data-edge-key="12" data-composition-points="887,780;887,913;276,913" d="M 887 780 L 887 905 Q 887 913 879 913 L 276 913" class="a-dashed" stroke-width="1.5" marker-end="url(#arrowhead-dashed)"/>
+
+        <!-- Components -->
+        <g id="node-hub" data-node-id="hub" data-node-label="Session in the hub repository" tabindex="0" role="button" aria-label="Focus Session in the hub repository, has no code graph of its own, Architecture component" aria-pressed="false" data-node-kind="frontend" data-node-sublabel="has no code graph of its own" data-node-tag="" data-node-context="Architecture component">
+          <title>Session in the hub repository · has no code graph of its own · Architecture component</title>
+          <rect x="60" y="360" width="186" height="68" rx="6" class="c-mask"/>
+          <rect x="60" y="360" width="186" height="68" rx="6" class="c-frontend" stroke-width="1.5"/>
+          <g aria-hidden="true" data-semantic-sigil="frontend" class="semantic-sigil s-frontend" transform="translate(66 366) scale(0.6875)">
+            <rect x="2" y="3" width="12" height="10" rx="2"/>
+            <path d="M2 6.5h12"/>
+            <circle cx="4.1" cy="4.8" r=".7" class="sigil-fill"/>
+            <circle cx="6.3" cy="4.8" r=".7" class="sigil-fill"/>
+          </g>
+          <text data-detail-anchor="" x="153" y="392" class="t-primary" font-size="11" font-weight="600" text-anchor="middle">Session in the hub repository</text>
+        <text data-detail="context" x="153" y="408" class="t-muted" font-size="9" text-anchor="middle">has no code graph of its own</text>
+        </g>
+
+        <g id="node-router" data-node-id="router" data-node-label="codegraph-router.py" tabindex="0" role="button" aria-label="Focus codegraph-router.py, stdio MCP · 9 tools ≈1.4k tokens, Architecture component" aria-pressed="false" data-node-kind="backend" data-node-sublabel="stdio MCP · 9 tools ≈1.4k tokens" data-node-tag="" data-node-context="Architecture component">
+          <title>codegraph-router.py · stdio MCP · 9 tools ≈1.4k tokens · Architecture component</title>
+          <rect x="330" y="360" width="206" height="68" rx="6" class="c-mask"/>
+          <rect x="330" y="360" width="206" height="68" rx="6" class="c-backend" stroke-width="1.5"/>
+          <g aria-hidden="true" data-semantic-sigil="backend" class="semantic-sigil s-backend" transform="translate(336 366) scale(0.6875)">
+            <path d="M6 3 3 8l3 5M10 3l3 5-3 5"/>
+          </g>
+          <text data-detail-anchor="" x="433" y="392" class="t-primary" font-size="11" font-weight="600" text-anchor="middle">codegraph-router.py</text>
+        <text data-detail="context" x="433" y="408" class="t-muted" font-size="9" text-anchor="middle">stdio MCP · 9 tools ≈1.4k tokens</text>
+        </g>
+
+        <g id="node-registry" data-node-id="registry" data-node-label="~/.drsg-memory/graphs" tabindex="0" role="button" aria-label="Focus ~/.drsg-memory/graphs, one repo path per line · no credentials, Architecture component" aria-pressed="false" data-node-kind="database" data-node-sublabel="one repo path per line · no credentials" data-node-tag="" data-node-context="Architecture component">
+          <title>~/.drsg-memory/graphs · one repo path per line · no credentials · Architecture component</title>
+          <rect x="230" y="545" width="200" height="62" rx="6" class="c-mask"/>
+          <rect x="230" y="545" width="200" height="62" rx="6" class="c-database" stroke-width="1.5"/>
+          <g aria-hidden="true" data-semantic-sigil="database" class="semantic-sigil s-database" transform="translate(236 551) scale(0.6875)">
+            <ellipse cx="8" cy="4" rx="5" ry="2"/>
+            <path d="M3 4v8c0 1.1 2.2 2 5 2s5-.9 5-2V4M3 8c0 1.1 2.2 2 5 2s5-.9 5-2"/>
+          </g>
+          <text data-detail-anchor="" x="330" y="574" class="t-primary" font-size="11" font-weight="600" text-anchor="middle">~/.drsg-memory/graphs</text>
+        <text data-detail="context" x="330" y="590" class="t-muted" font-size="9" text-anchor="middle">one repo path per line · no credentials</text>
+        </g>
+
+        <g id="node-mcpjson" data-node-id="mcpjson" data-node-label="each repository’s .mcp.json" tabindex="0" role="button" aria-label="Focus each repository’s .mcp.json, the only source of address + token, Architecture component" aria-pressed="false" data-node-kind="security" data-node-sublabel="the only source of address + token" data-node-tag="" data-node-context="Architecture component">
+          <title>each repository’s .mcp.json · the only source of address + token · Architecture component</title>
+          <rect x="470" y="545" width="200" height="62" rx="6" class="c-mask"/>
+          <rect x="470" y="545" width="200" height="62" rx="6" class="c-security" stroke-width="1.5"/>
+          <g aria-hidden="true" data-semantic-sigil="security" class="semantic-sigil s-security" transform="translate(476 551) scale(0.6875)">
+            <path d="M8 2.2 13 4v3.5c0 3.1-1.8 5.4-5 6.5-3.2-1.1-5-3.4-5-6.5V4Z"/>
+            <path d="m5.8 8 1.5 1.5 3-3"/>
+          </g>
+          <text data-detail-anchor="" x="570" y="574" class="t-primary" font-size="11" font-weight="600" text-anchor="middle">each repository’s .mcp.json</text>
+        <text data-detail="context" x="570" y="590" class="t-muted" font-size="9" text-anchor="middle">the only source of address + token</text>
+        </g>
+
+        <g id="node-others" data-node-id="others" data-node-label="Sessions in other projects" tabindex="0" role="button" aria-label="Focus Sessions in other projects, the same hooks + drsg / drsg-events, Architecture component" aria-pressed="false" data-node-kind="frontend" data-node-sublabel="the same hooks + drsg / drsg-events" data-node-tag="" data-node-context="Architecture component">
+          <title>Sessions in other projects · the same hooks + drsg / drsg-events · Architecture component</title>
+          <rect x="430" y="680" width="280" height="62" rx="6" class="c-mask"/>
+          <rect x="430" y="680" width="280" height="62" rx="6" class="c-frontend" stroke-width="1.5"/>
+          <g aria-hidden="true" data-semantic-sigil="frontend" class="semantic-sigil s-frontend" transform="translate(436 686) scale(0.6875)">
+            <rect x="2" y="3" width="12" height="10" rx="2"/>
+            <path d="M2 6.5h12"/>
+            <circle cx="4.1" cy="4.8" r=".7" class="sigil-fill"/>
+            <circle cx="6.3" cy="4.8" r=".7" class="sigil-fill"/>
+          </g>
+          <text data-detail-anchor="" x="570" y="709" class="t-primary" font-size="11" font-weight="600" text-anchor="middle">Sessions in other projects</text>
+        <text data-detail="context" x="570" y="725" class="t-muted" font-size="9" text-anchor="middle">the same hooks + drsg / drsg-events</text>
+        </g>
+
+        <g id="node-mem" data-node-id="mem" data-node-label="Shared daemon :7700" tabindex="0" role="button" aria-label="Focus Shared daemon :7700, memory plane · shared by every project, Architecture component" aria-pressed="false" data-node-kind="cloud" data-node-sublabel="memory plane · shared by every project" data-node-tag="" data-node-context="Architecture component">
+          <title>Shared daemon :7700 · memory plane · shared by every project · Architecture component</title>
+          <rect x="60" y="680" width="186" height="62" rx="6" class="c-mask"/>
+          <rect x="60" y="680" width="186" height="62" rx="6" class="c-cloud" stroke-width="1.5"/>
+          <g aria-hidden="true" data-semantic-sigil="cloud" class="semantic-sigil s-cloud" transform="translate(66 686) scale(0.6875)">
+            <path d="M4.3 12.5h7.3a2.4 2.4 0 0 0 .2-4.8 4 4 0 0 0-7.5-1.3A3.1 3.1 0 0 0 4.3 12.5Z"/>
+          </g>
+          <text data-detail-anchor="" x="153" y="709" class="t-primary" font-size="11" font-weight="600" text-anchor="middle">Shared daemon :7700</text>
+        <text data-detail="context" x="153" y="725" class="t-muted" font-size="9" text-anchor="middle">memory plane · shared by every project</text>
+        </g>
+
+        <g id="node-dDr" data-node-id="dDr" data-node-label="drsg serve watch :7701" tabindex="0" role="button" aria-label="Focus drsg serve watch :7701, plane repo-a, Code graph — one daemon per repository, each holding one database and watching one tree" aria-pressed="false" data-node-kind="backend" data-node-sublabel="plane repo-a" data-node-tag="" data-node-context="Code graph — one daemon per repository, each holding one database and watching one tree">
+          <title>drsg serve watch :7701 · plane repo-a · Code graph — one daemon per repository, each holding one database and watching one tree</title>
+          <rect x="780" y="120" width="214" height="60" rx="6" class="c-mask"/>
+          <rect x="780" y="120" width="214" height="60" rx="6" class="c-backend" stroke-width="1.5"/>
+          <g aria-hidden="true" data-semantic-sigil="backend" class="semantic-sigil s-backend" transform="translate(786 126) scale(0.6875)">
+            <path d="M6 3 3 8l3 5M10 3l3 5-3 5"/>
+          </g>
+          <text data-detail-anchor="" x="887" y="148" class="t-primary" font-size="11" font-weight="600" text-anchor="middle">drsg serve watch :7701</text>
+        <text data-detail="context" x="887" y="164" class="t-muted" font-size="9" text-anchor="middle">plane repo-a</text>
+        </g>
+
+        <g id="node-dSafe" data-node-id="dSafe" data-node-label="drsg serve watch :7702" tabindex="0" role="button" aria-label="Focus drsg serve watch :7702, plane repo-b, Code graph — one daemon per repository, each holding one database and watching one tree" aria-pressed="false" data-node-kind="backend" data-node-sublabel="plane repo-b" data-node-tag="" data-node-context="Code graph — one daemon per repository, each holding one database and watching one tree">
+          <title>drsg serve watch :7702 · plane repo-b · Code graph — one daemon per repository, each holding one database and watching one tree</title>
+          <rect x="780" y="240" width="214" height="60" rx="6" class="c-mask"/>
+          <rect x="780" y="240" width="214" height="60" rx="6" class="c-backend" stroke-width="1.5"/>
+          <g aria-hidden="true" data-semantic-sigil="backend" class="semantic-sigil s-backend" transform="translate(786 246) scale(0.6875)">
+            <path d="M6 3 3 8l3 5M10 3l3 5-3 5"/>
+          </g>
+          <text data-detail-anchor="" x="887" y="268" class="t-primary" font-size="11" font-weight="600" text-anchor="middle">drsg serve watch :7702</text>
+        <text data-detail="context" x="887" y="284" class="t-muted" font-size="9" text-anchor="middle">plane repo-b</text>
+        </g>
+
+        <g id="node-dSub" data-node-id="dSub" data-node-label="drsg serve watch :7703" tabindex="0" role="button" aria-label="Focus drsg serve watch :7703, plane repo-c · usually stopped, Code graph — one daemon per repository, each holding one database and watching one tree" aria-pressed="false" data-node-kind="backend" data-node-sublabel="plane repo-c · usually stopped" data-node-tag="started lazily, when queried" data-node-context="Code graph — one daemon per repository, each holding one database and watching one tree">
+          <title>drsg serve watch :7703 · plane repo-c · usually stopped · Code graph — one daemon per repository, each holding one database and watching one tree · started lazily, when queried</title>
+          <rect x="780" y="360" width="214" height="60" rx="6" class="c-mask"/>
+          <rect x="780" y="360" width="214" height="60" rx="6" class="c-backend" stroke-width="1.5"/>
+          <g aria-hidden="true" data-semantic-sigil="backend" class="semantic-sigil s-backend" transform="translate(786 366) scale(0.6875)">
+            <path d="M6 3 3 8l3 5M10 3l3 5-3 5"/>
+          </g>
+          <text data-detail-anchor="" x="887" y="388" class="t-primary" font-size="11" font-weight="600" text-anchor="middle">drsg serve watch :7703</text>
+        <text data-detail="context" x="887" y="404" class="t-muted" font-size="9" text-anchor="middle">plane repo-c · usually stopped</text>
+        <text data-detail="fine" x="887" y="412" class="t-backend" font-size="7" text-anchor="middle">started lazily, when queried</text>
+        </g>
+
+        <g id="node-dWps" data-node-id="dWps" data-node-label="drsg serve watch :7704" tabindex="0" role="button" aria-label="Focus drsg serve watch :7704, plane repo-d · usually stopped, Code graph — one daemon per repository, each holding one database and watching one tree" aria-pressed="false" data-node-kind="backend" data-node-sublabel="plane repo-d · usually stopped" data-node-tag="started lazily, when queried" data-node-context="Code graph — one daemon per repository, each holding one database and watching one tree">
+          <title>drsg serve watch :7704 · plane repo-d · usually stopped · Code graph — one daemon per repository, each holding one database and watching one tree · started lazily, when queried</title>
+          <rect x="780" y="480" width="214" height="60" rx="6" class="c-mask"/>
+          <rect x="780" y="480" width="214" height="60" rx="6" class="c-backend" stroke-width="1.5"/>
+          <g aria-hidden="true" data-semantic-sigil="backend" class="semantic-sigil s-backend" transform="translate(786 486) scale(0.6875)">
+            <path d="M6 3 3 8l3 5M10 3l3 5-3 5"/>
+          </g>
+          <text data-detail-anchor="" x="887" y="508" class="t-primary" font-size="11" font-weight="600" text-anchor="middle">drsg serve watch :7704</text>
+        <text data-detail="context" x="887" y="524" class="t-muted" font-size="9" text-anchor="middle">plane repo-d · usually stopped</text>
+        <text data-detail="fine" x="887" y="532" class="t-backend" font-size="7" text-anchor="middle">started lazily, when queried</text>
+        </g>
+
+        <g id="node-dZeus" data-node-id="dZeus" data-node-label="drsg serve watch :7705" tabindex="0" role="button" aria-label="Focus drsg serve watch :7705, plane repo-e · usually stopped, Code graph — one daemon per repository, each holding one database and watching one tree" aria-pressed="false" data-node-kind="backend" data-node-sublabel="plane repo-e · usually stopped" data-node-tag="started lazily, when queried" data-node-context="Code graph — one daemon per repository, each holding one database and watching one tree">
+          <title>drsg serve watch :7705 · plane repo-e · usually stopped · Code graph — one daemon per repository, each holding one database and watching one tree · started lazily, when queried</title>
+          <rect x="780" y="600" width="214" height="60" rx="6" class="c-mask"/>
+          <rect x="780" y="600" width="214" height="60" rx="6" class="c-backend" stroke-width="1.5"/>
+          <g aria-hidden="true" data-semantic-sigil="backend" class="semantic-sigil s-backend" transform="translate(786 606) scale(0.6875)">
+            <path d="M6 3 3 8l3 5M10 3l3 5-3 5"/>
+          </g>
+          <text data-detail-anchor="" x="887" y="628" class="t-primary" font-size="11" font-weight="600" text-anchor="middle">drsg serve watch :7705</text>
+        <text data-detail="context" x="887" y="644" class="t-muted" font-size="9" text-anchor="middle">plane repo-e · usually stopped</text>
+        <text data-detail="fine" x="887" y="652" class="t-backend" font-size="7" text-anchor="middle">started lazily, when queried</text>
+        </g>
+
+        <g id="node-dExt" data-node-id="dExt" data-node-label="drsg serve watch :7706" tabindex="0" role="button" aria-label="Focus drsg serve watch :7706, plane repo-f, Code graph — one daemon per repository, each holding one database and watching one tree" aria-pressed="false" data-node-kind="backend" data-node-sublabel="plane repo-f" data-node-tag="" data-node-context="Code graph — one daemon per repository, each holding one database and watching one tree">
+          <title>drsg serve watch :7706 · plane repo-f · Code graph — one daemon per repository, each holding one database and watching one tree</title>
+          <rect x="780" y="720" width="214" height="60" rx="6" class="c-mask"/>
+          <rect x="780" y="720" width="214" height="60" rx="6" class="c-backend" stroke-width="1.5"/>
+          <g aria-hidden="true" data-semantic-sigil="backend" class="semantic-sigil s-backend" transform="translate(786 726) scale(0.6875)">
+            <path d="M6 3 3 8l3 5M10 3l3 5-3 5"/>
+          </g>
+          <text data-detail-anchor="" x="887" y="748" class="t-primary" font-size="11" font-weight="600" text-anchor="middle">drsg serve watch :7706</text>
+        <text data-detail="context" x="887" y="764" class="t-muted" font-size="9" text-anchor="middle">plane repo-f</text>
+        </g>
+
+        <g id="node-bin" data-node-id="bin" data-node-label="~/.drsg-memory/bin/drsg" tabindex="0" role="button" aria-label="Focus ~/.drsg-memory/bin/drsg, one binary · many processes · own --db, Architecture component" aria-pressed="false" data-node-kind="external" data-node-sublabel="one binary · many processes · own --db" data-node-tag="" data-node-context="Architecture component">
+          <title>~/.drsg-memory/bin/drsg · one binary · many processes · own --db · Architecture component</title>
+          <rect x="30" y="880" width="246" height="66" rx="6" class="c-mask"/>
+          <rect x="30" y="880" width="246" height="66" rx="6" class="c-external" stroke-width="1.5"/>
+          <g aria-hidden="true" data-semantic-sigil="external" class="semantic-sigil s-external" transform="translate(36 886) scale(0.6875)">
+            <rect x="2.5" y="5" width="8.5" height="8" rx="1.5"/>
+            <path d="M8 2.5h5.5V8M13.5 2.5 7.5 8.5"/>
+          </g>
+          <text data-detail-anchor="" x="153" y="911" class="t-primary" font-size="11" font-weight="600" text-anchor="middle">~/.drsg-memory/bin/drsg</text>
+        <text data-detail="context" x="153" y="927" class="t-muted" font-size="9" text-anchor="middle">one binary · many processes · own --db</text>
+        </g>
+
+        <!-- Connection labels -->
+        <g data-detail="context" data-edge-from="hub" data-edge-to="router" data-edge-label="stdio" data-edge-key="0">
+          <rect x="271.0" y="374" width="34.0" height="14" rx="3" class="c-mask"/>
+          <text x="288" y="384" class="t-backend" font-size="8" text-anchor="middle">stdio</text>
+        </g>
+        <g data-detail="context" data-edge-from="router" data-edge-to="registry" data-edge-label="reads: which repos · which plane" data-edge-key="1">
+          <rect x="296.2" y="466.5" width="163.6" height="14" rx="3" class="c-mask"/>
+          <text x="378" y="476.5" class="t-messagebus" font-size="8" text-anchor="middle">reads: which repos · which plane</text>
+        </g>
+        <g data-detail="context" data-edge-from="router" data-edge-to="mcpjson" data-edge-label="reads address + token now" data-edge-key="2">
+          <rect x="440.0" y="466.5" width="130.0" height="14" rx="3" class="c-mask"/>
+          <text x="505" y="476.5" class="t-security" font-size="8" text-anchor="middle">reads address + token now</text>
+        </g>
+        <g data-detail="context" data-edge-from="hub" data-edge-to="mem" data-edge-label="memory / events" data-edge-key="3">
+          <rect x="112.0" y="468" width="82.0" height="14" rx="3" class="c-mask"/>
+          <text x="153" y="478" class="t-messagebus" font-size="8" text-anchor="middle">memory / events</text>
+        </g>
+        <g data-detail="context" data-edge-from="others" data-edge-to="mem" data-edge-label="the same three hooks" data-edge-key="4">
+          <rect x="285.0" y="691" width="106.0" height="14" rx="3" class="c-mask"/>
+          <text x="338" y="701" class="t-messagebus" font-size="8" text-anchor="middle">the same three hooks</text>
+        </g>
+        <g data-detail="context" data-edge-from="router" data-edge-to="dDr" data-edge-label="POST /mcp · SSE" data-edge-key="5">
+          <rect x="617.0" y="243" width="82.0" height="14" rx="3" class="c-mask"/>
+          <text x="658" y="253" class="t-backend" font-size="8" text-anchor="middle">POST /mcp · SSE</text>
+        </g>
+
+
+
+
+
+        <g data-detail="context" data-edge-from="mem" data-edge-to="bin" data-edge-label="the same binary" data-edge-key="11">
+          <rect x="112.0" y="801" width="82.0" height="14" rx="3" class="c-mask"/>
+          <text x="153" y="811" class="t-messagebus" font-size="8" text-anchor="middle">the same binary</text>
+        </g>
+        <g data-detail="context" data-edge-from="dExt" data-edge-to="bin" data-edge-label="every code-graph daemon is this binary · zero shared database" data-edge-key="12">
+          <rect x="430.1" y="893" width="302.8" height="14" rx="3" class="c-mask"/>
+          <text x="581.5" y="903" class="t-messagebus" font-size="8" text-anchor="middle">every code-graph daemon is this binary · zero shared database</text>
+        </g>
+
+        <!-- Legend -->
+        <g data-legend-bridge="">
+          <text x="40" y="985" class="t-primary" font-size="9" font-weight="600">Legend</text>
+          <g data-legend-kind="frontend">
+            <rect x="40" y="990" width="14" height="9" rx="2" class="c-frontend" stroke-width="1"/>
+            <text x="60" y="998" class="t-muted" font-size="8">Frontend</text>
+          </g>
+          <g data-legend-kind="backend">
+            <rect x="144" y="990" width="14" height="9" rx="2" class="c-backend" stroke-width="1"/>
+            <text x="164" y="998" class="t-muted" font-size="8">Backend</text>
+          </g>
+          <g data-legend-kind="database">
+            <rect x="243" y="990" width="14" height="9" rx="2" class="c-database" stroke-width="1"/>
+            <text x="263" y="998" class="t-muted" font-size="8">Database</text>
+          </g>
+          <g data-legend-kind="security">
+            <rect x="347" y="990" width="14" height="9" rx="2" class="c-security" stroke-width="1"/>
+            <text x="367" y="998" class="t-muted" font-size="8">Security</text>
+          </g>
+          <g data-legend-kind="cloud">
+            <rect x="451" y="990" width="14" height="9" rx="2" class="c-cloud" stroke-width="1"/>
+            <text x="471" y="998" class="t-muted" font-size="8">Cloud</text>
+          </g>
+          <g data-legend-kind="external">
+            <rect x="540" y="990" width="14" height="9" rx="2" class="c-external" stroke-width="1"/>
+            <text x="560" y="998" class="t-muted" font-size="8">External</text>
+          </g>
+        </g>
+      </svg>

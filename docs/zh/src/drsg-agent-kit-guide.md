@@ -21,15 +21,10 @@
 native 后端**同一数据库只允许一个进程打开**，所以「全塞进一个进程」不是简化方案，
 而是把两套生命周期焊死。两边的数据库、端口、token 从不共用。
 
-```text
-仓库 A ── codegraph daemon A ── graph.drsg A ── plane A ─┐
-仓库 B ── codegraph daemon B ── graph.drsg B ── plane B ─┼─ router（一个 MCP 表面）
-仓库 C ── codegraph daemon C ── graph.drsg C ── plane C ─┘
+![一台机器上的部署拓扑：记忆层一个全局 daemon，代码图每仓一个](./images/daemon-topology.svg)
 
-项目 A hooks ─┐
-项目 B hooks ─┼── memory daemon（127.0.0.1:7700）── memory.drsg ── plane `memory`
-项目 C hooks ─┘
-```
+两边是**方向相反**的：记忆层往中间收（一个 daemon、一个库，按 `p.path` 分项目），
+代码图往外摊（一仓一端口、一仓一库）。两个 daemon 都不开机自启。
 
 ### 1.2 代码图怎么来的
 
@@ -41,6 +36,13 @@ Trait / Module / File 等节点和 CALLS / REFERENCES / USES_TYPE / IMPORTS 等�
 代价有两段，别归错因：插件是 wasm，**首次加载约 13.7 秒且与仓库大小无关**（2026-08-20
 实测，6 个插件约 11.2 MB，两行 Rust 也是这个数），之后折叠才按体量算（那次约 1.36 秒）。
 所以正常启动走增量追平，只有换了插件集合才 `--force` 整库重建。
+
+![代码图的工作原理：源码树经 wasm 插件折进 plane，动词从 plane 读，snippet 还要读文件树](./images/code-plane-architecture.svg)
+
+图里那条区别对待的线值得单独记：**结构类动词（`context` / `impact` / `trace` /
+`describe`）只查 plane，所以跨仓可用；`grep` 和 `snippet` 要读文件树，而文件树是
+进程级的那一棵（`--dir` 指的那棵），与你传的 `plane` 无关**。跨仓问结构没问题，
+跨仓要源码就得问那个仓自己的 daemon。
 
 ### 1.3 七个动词与两条最容易违反的规矩
 
@@ -75,6 +77,8 @@ Trait / Module / File 等节点和 CALLS / REFERENCES / USES_TYPE / IMPORTS 等�
 按仓库名解析目标，从**那个仓自己的 `.mcp.json`** 读地址和 token（token 不复制到第二处），
 必要时按需拉起该仓 daemon，再转发请求。对外 9 个工具：本地的 `graph_repos` 加 8 个转发动词。
 
+![router 的结构：registry 只存路径，地址与 token 现读各仓自己的 .mcp.json](./images/codegraph-router-architecture.svg)
+
 它解决的是「模型写错 `plane`」：默认 plane 是空的 `startup`，而空 plane 回的
 `no symbol matches` 和真·没有长得一模一样。走 router，plane 来自 registry，打不错。
 
@@ -103,6 +107,14 @@ compact           再跑一次 SessionStart 重新注入，不重复建 Session
 SessionEnd        盖 ended_at，从 transcript 挖文件/命令/工具成败统计
 Stop（可选）      代码图用量报告；不由记忆层安装器装，要单独注册
 ```
+
+![一次会话的完整流程：启动注入、每轮召回、会话内写入、收尾，六条泳道](./images/memory-sharing-flow.svg)
+
+图里值得单独看的是下面两条泳道。**遥测**（`recall.jsonl`）命中与否都记一行，
+这是后来判断召回有没有用的唯一依据；**跨项目**那条是 Event，它不走排名，
+由终端提示直接送到人眼前（`systemMessage` 只给人看，模型看不见），
+`events_seen.json` 保证同一条待办每会话只亮一次。任何一步 hook 失败都只是少注入，
+不阻塞会话。
 
 写入分三条通道：L1 是 hooks 挖的结构事实，L2 是**模型按协议自己写的 Fact**（价值在这里，
 但它只是提示词，没有强制），L3 是 transcript 蒸馏（**当前默认关停**，它写的实体没有读路径）。
@@ -139,6 +151,12 @@ scripts/memory-layer/install.sh <project-dir> --bin <path-to-drsg> --addr 127.0.
 写 `<project>/.drsg/env`（chmod 600，只放地址、token 和 L3 变量**名**）→ 合并三个 hook 到
 `settings.local.json` → 注册 `drsg` 和 `drsg-events` 两个 MCP → **自检**（daemon 可达、
 plane 存在、Project 按 path 可定位、临时 Fact 能被召回查询读出），任一失败非零退出。
+
+![装完之后的样子：项目里只有配置与遥测，daemon 和库全机唯一一份](./images/memory-sharing-architecture.svg)
+
+分界线就是上图那两个框：**留在项目里的只有 `.drsg/env`（token，chmod 600，已 gitignore）、
+hooks 和 `.drsg/recall.jsonl`**，每个项目一份且内容相同；daemon 和 `memory.drsg`
+全机只有一份。所以加一个项目不会多一个 daemon，删一个项目也带不走别人的记忆。
 
 **daemon 已经在跑时必须给它的 token**，否则装不进同一个库：
 
