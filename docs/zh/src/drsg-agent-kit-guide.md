@@ -1,6 +1,6 @@
 # DrSG 智能体工具包使用指南
 
-> 这一篇只回答三件事：它怎么工作、怎么装起来、怎么打包给下一台机器。
+> 本文内容：讲解工具包怎么工作、怎么安装、怎么打包。
 > 脚本自身的选项以各脚本头注释和 `--help` 为准；
 > 记忆层的详细说明见 [`scripts/memory-layer/README.md`](../../../scripts/memory-layer/README.md)。
 
@@ -8,40 +8,39 @@
 
 ## 一、架构与工作原理
 
-### 1.1 两个平面，不要混
+### 1.1 两个平面
 
 | | 代码图（code plane） | 记忆层（memory plane） |
 |---|---|---|
 | 内容 | 插件从源码解析出的符号与边 | 应用层约定的 Project / Session / Fact / Event |
-| 谁写 | `drsg serve watch`，随每次提交增量折叠 | hooks（自动）+ 模型按协议主动写（Fact/Event） |
+| 谁写 | `drsg serve watch`，随每次提交增量叠加 | hooks（自动）+ 模型按协议主动写（Fact/Event） |
 | 粒度 | **每仓一个** daemon、数据库、端口、plane | **全局一个**共享 daemon 和数据库，按 Project 隔离 |
 | 数据库 | `<repo>/graph.drsg`（native 后端是目录） | `~/.drsg-memory/memory.drsg` |
-| 回答什么 | 这个符号是什么、改它影响谁、A 怎么走到 B | 过去得出过什么结论、别的 agent 要我做什么 |
+| 回答什么 | 这个符号是什么、改它影响什么、A 怎么走到 B | 过去得出过什么结论、别的 agent 要我做什么 |
 
 native 后端**同一数据库只允许一个进程打开**，所以「全塞进一个进程」不是简化方案，
-而是把两套生命周期焊死。两边的数据库、端口、token 从不共用。
+却把两套生命周期复杂化。两边的数据库、端口、token 从不共用。
 
 ![一台机器上的部署拓扑：记忆层一个全局 daemon，代码图每仓一个](./images/daemon-topology.svg)
 
-两边是**方向相反**的：记忆层往中间收（一个 daemon、一个库，按 `p.path` 分项目），
-代码图往外摊（一仓一端口、一仓一库）。两个 daemon 都不开机自启。
+两边是**方向相反**的：记忆层聚合（一个 daemon、一个库，按 `p.path` 分项目），
+代码图独立（一仓一端口、一仓一库）。两个 daemon 都不开机自启，按需启动。
 
 ### 1.2 代码图怎么来的
 
-`serve watch` 盯着仓库的提交：每次提交，语言插件把源码折成 Function / Method / Struct /
+`serve watch` 监听仓库的提交：每次提交，语言插件把源码折成 Function / Method / Struct /
 Trait / Module / File 等节点和 CALLS / REFERENCES / USES_TYPE / IMPORTS 等边，写进该仓
-自己的 plane，并记下 `synced_commit`。解析器认不出的引用留成 `UnresolvedRef`——**它把猜
+自己的 plane，并记下 `synced_commit`。解析器识别不了的引用记录为 `UnresolvedRef`——**它把猜
 测和已解析边分开，这是图敢说「没有」的前提**。
 
-代价有两段，别归错因：插件是 wasm，**首次加载约 13.7 秒且与仓库大小无关**（2026-08-20
-实测，6 个插件约 11.2 MB，两行 Rust 也是这个数），之后折叠才按体量算（那次约 1.36 秒）。
+代价有两段，别归错因：插件是 wasm，**首次加载约 13.7 秒且与仓库大小无关**，之后叠加才按体量算（约 1.36 秒）。
 所以正常启动走增量追平，只有换了插件集合才 `--force` 整库重建。
 
 ![代码图的工作原理：源码树经 wasm 插件折进 plane，动词从 plane 读，snippet 还要读文件树](./images/code-plane-architecture.svg)
 
 图里那条区别对待的线值得单独记：**结构类动词（`context` / `impact` / `trace` /
 `describe`）只查 plane，所以跨仓可用；`grep` 和 `snippet` 要读文件树，而文件树是
-进程级的那一棵（`--dir` 指的那棵），与你传的 `plane` 无关**。跨仓问结构没问题，
+进程级的（`--dir` 指定），与调用是传的 `plane` 无关**。跨仓问结构没问题，
 跨仓要源码就得问那个仓自己的 daemon。
 
 ### 1.3 七个动词与两条最容易违反的规矩
@@ -61,18 +60,18 @@ Trait / Module / File 等节点和 CALLS / REFERENCES / USES_TYPE / IMPORTS 等�
 1. **`impact` 的深度要加到某一层返回空。** 默认 3 跳，没停住就截断，得到的是「前三跳」，
    而且不同深度的两个符号不可比。实证：`Plugins::load` 在 depth 3 报 12，depth 5 报 15
    且第 5 层为空——少的 3 个不是不存在，是没走到。上限是 6；到 6 仍非空就按工具自己声明
-   的「只数已记录的边，是下界」报告，别说成封闭。
+   的「只数已记录的边，是下限」报告，不是终止。
 2. **候选超过 20 就别从清单里挑。** 歧义清单截断到前 20 且**不按相关性排序**，`plugin`
    的 99 个候选里可见的 20 条有 6 个 CSS 类、1 个 npm 包，真正的加载器一次都没出现。
    收窄的写法是 `类型::方法`。候选 2–10 个时先 `describe` 看签名：**返回类型指向别的
-   crate 就是包装层**，对包装层跑 `impact` 拿到的是真身的真子集。
+   crate 就是包装层**，对包装层跑 `impact` 拿到的是源的真子集。
 
 还有一条兜底：**图查不到要说图查不到**。`.sh` / `.md` / CI 配置、跨语言边界、
-未提交的工作区都不在图里；这时用 `grep` 并说明它只是「你恰好想到的那种写法」的下界。
+未提交的工作区都不在图里；这时用 `grep` 并说明它是兜底。
 
 ### 1.4 router：一个入口，多个图
 
-`codegraph-router.py` 是 MCP-to-MCP 转发器，不重实现任何动词。每次调用它读 registry
+`codegraph-router.py` 是 MCP-to-MCP 转发器，不重实现任何动词。每次调用读 registry
 （`~/.drsg-memory/graphs`，一行一个仓库路径，plane 名不等于目录名时用 TAB 补上），
 按仓库名解析目标，从**那个仓自己的 `.mcp.json`** 读地址和 token（token 不复制到第二处），
 必要时按需拉起该仓 daemon，再转发请求。对外 9 个工具：本地的 `graph_repos` 加 8 个转发动词。
@@ -80,9 +79,9 @@ Trait / Module / File 等节点和 CALLS / REFERENCES / USES_TYPE / IMPORTS 等�
 ![router 的结构：registry 只存路径，地址与 token 现读各仓自己的 .mcp.json](./images/codegraph-router-architecture.svg)
 
 它解决的是「模型写错 `plane`」：默认 plane 是空的 `startup`，而空 plane 回的
-`no symbol matches` 和真·没有长得一模一样。走 router，plane 来自 registry，打不错。
+`no symbol matches` 和实际没有是一样的。走 router，plane 来自 registry，可信。
 
-**失败必须不可伪装**：registry 缺失、`.mcp.json` 读不到、daemon 起不来、上游报错，
+**失败必须不可伪造**：registry 缺失、`.mcp.json` 读不到、daemon 起不来、上游报错，
 都要报成错误，不能返回空列表冒充「图里没有」。
 
 ### 1.5 记忆层：四类节点，三种边，两条读路径
@@ -110,17 +109,17 @@ Stop（可选）      代码图用量报告；不由记忆层安装器装，要�
 
 ![一次会话的完整流程：启动注入、每轮召回、会话内写入、收尾，六条泳道](./images/memory-sharing-flow.svg)
 
-图里值得单独看的是下面两条泳道。**遥测**（`recall.jsonl`）命中与否都记一行，
-这是后来判断召回有没有用的唯一依据；**跨项目**那条是 Event，它不走排名，
-由终端提示直接送到人眼前（`systemMessage` 只给人看，模型看不见），
-`events_seen.json` 保证同一条待办每会话只亮一次。任何一步 hook 失败都只是少注入，
+图里值得单独看的是下面两条流程。**遥测**（`recall.jsonl`）命中与否都记一行，
+这是后续判断召回有没有用的唯一依据；**跨项目**那条是 Event，它不走排名，
+由终端直接提示（`systemMessage` 只给人看，模型看不见），
+`events_seen.json` 保证同一条待办每会话只提示一次。任何一步 hook 失败都只是少注入，
 不阻塞会话。
 
 写入分三条通道：L1 是 hooks 挖的结构事实，L2 是**模型按协议自己写的 Fact**（价值在这里，
-但它只是提示词，没有强制），L3 是 transcript 蒸馏（**当前默认关停**，它写的实体没有读路径）。
+但它只是提示词，不强制），L3 是 transcript 蒸馏（**当前默认关停**，它写的实体没有读路径）。
 读出只有两条：常驻简报（按项目隔离）和按 prompt 的召回（可跨项目）。
 
-简报怎么压的（`session_start.py` 的 `all_facts` / `short_tag` / `build_briefing` / `ensure_briefing`）：
+简报怎么构建（`session_start.py` 的 `all_facts` / `short_tag` / `build_briefing` / `ensure_briefing`）：
 取本项目全部 Fact（`ORDER BY created_at DESC LIMIT 1000`）→ 每条按规则压成 ≤18 字符的标签
 （有 `→` 只留右边的结论侧，取第一句，超长截断；不调模型）→ 按 `kind` 聚合成
 `• <kind> ×<n>: tag; tag; …` → 存进 `Project.briefing`，**只在 Fact 数变化时重建**。
@@ -189,7 +188,7 @@ scripts/codegraph.sh restart --dir <repo-root> --force   # 整库重建，见下
 还能查，但答的是旧 commit（它会自报 `synced_commit`）；随后约 1.36 秒 plane 已 drop/create
 但还没灌满。只在换插件集合时用它，别对 memory plane 用代码图脚本。
 
-不自己构建 drsg 的仓库要显式给一次二进制，之后会被记住：
+显式指定drsg二进制：
 
 ```bash
 DRSG_CODE_BIN=<path-to-drsg> scripts/codegraph.sh install --dir <repo-root> --port <port>
@@ -211,7 +210,7 @@ printf '%s\t%s\n' '<repo-b>' '<plane-b>' >> ~/.drsg-memory/graphs   # 真 TAB，
 ```
 
 用自定义 registry 路径就必须让 router 的**注册配置**带上变量（`-e`），shell 里 export 一次
-不算数——router 会静默回到默认路径，只说 registry 是空的：
+不算数——router 会静默回到默认路径：
 
 ```bash
 claude mcp add --scope local -e DRSG_GRAPHS=<registry-file> codegraph -- python3 <router-path>
@@ -228,7 +227,7 @@ claude mcp add --scope local -e DRSG_GRAPHS=<registry-file> codegraph -- python3
 [ ] SessionStart 能注入简报（或明确的空结果）
 [ ] UserPromptSubmit 有 recall 记录（<project>/.drsg/recall.jsonl）
 [ ] SessionEnd 能写 ended_at
-[ ] event_post / event_list / event_done 三步都验过
+[ ] event_post / event_list / event_done 三步都验通
 [ ] LLM key 的值没进项目配置、命令历史或文档
 [ ] 只有一个进程打开 memory 数据库
 
