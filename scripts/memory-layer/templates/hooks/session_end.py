@@ -41,6 +41,9 @@ PLANE = "memory"
 # Cap for how much of the transcript we scan — keep SessionEnd cheap even on
 # huge sessions. ~4k assistant lines is far beyond any single turn.
 MAX_LINES = 4000
+# Wall clock for the unbounded per-prompt phase below. This is a backstop for
+# pathological transcripts; normal files finish well under the hook timeout.
+SCAN_BUDGET_S = 3.0
 # Minimum transcript size before we bother spawning L3 distillation.
 L3_MIN_TRANSCRIPT = 40_000
 # `is_error` tool results that are not failures: the user declined the call or
@@ -132,13 +135,17 @@ def mine(transcript_path):
     per_prompt = defaultdict(Counter)   # prompt digest -> calls / errors / rejected
     pending = None                      # the prompt those results are answering
     if not transcript_path or not os.path.exists(transcript_path):
-        return files, commands, tools, failed_by, per_prompt
+        return files, commands, tools, failed_by, per_prompt, {"lines": 0, "truncated": False}
     n = 0
+    started = time.time()
+    truncated = False
     with open(transcript_path, encoding="utf-8", errors="replace") as f:
         for line in f:
-            if n >= MAX_LINES:
-                break
             n += 1
+            session_scope = n <= MAX_LINES
+            if not session_scope and time.time() - started > SCAN_BUDGET_S:
+                truncated = True
+                break
             line = line.strip()
             if not line:
                 continue
@@ -162,6 +169,8 @@ def mine(transcript_path):
                 if not isinstance(t, dict):
                     continue
                 if t.get("type") == "tool_use":
+                    if not session_scope:
+                        continue
                     name = t.get("name")
                     if t.get("id"):
                         names[t["id"]] = name
@@ -179,19 +188,22 @@ def mine(transcript_path):
                     # in the session total and out of the per-prompt split
                     # rather than being charged to whatever came next.
                     bucket = per_prompt[pending] if pending else Counter()
-                    tools["calls"] += 1
                     bucket["calls"] += 1
+                    if session_scope:
+                        tools["calls"] += 1
                     if not t.get("is_error"):
                         continue
                     text = _result_text(t)
                     if any(p in text for p in NOT_A_FAILURE):
-                        tools["rejected"] += 1
                         bucket["rejected"] += 1
+                        if session_scope:
+                            tools["rejected"] += 1
                     else:
-                        tools["errors"] += 1
                         bucket["errors"] += 1
-                        failed_by[names.get(t.get("tool_use_id"), "?")] += 1
-    return files, commands, tools, failed_by, per_prompt
+                        if session_scope:
+                            tools["errors"] += 1
+                            failed_by[names.get(t.get("tool_use_id"), "?")] += 1
+    return files, commands, tools, failed_by, per_prompt, {"lines": n, "truncated": truncated}
 
 
 def main():
@@ -214,12 +226,15 @@ def main():
 
     # L1 structural mining (best-effort).
     try:
-        files, commands, tools, failed_by, per_prompt = mine(
+        files, commands, tools, failed_by, per_prompt, scan = mine(
             data.get("transcript_path", ""))
         # Per-prompt first: it is the arm's only readout, and it must not be
         # lost to a daemon that happens to be down when the session ends.
         # Truncation note: like the session totals, these counts come from the
         # MAX_LINES window — the rate holds, the absolute count does not.
+        telemetry(proj_dir, [{"event": "scan", "session": sid,
+                              "lines": scan["lines"], "truncated": scan["truncated"],
+                              "ts": int(time.time())}])
         telemetry(proj_dir, [
             {"event": "tools", "session": sid, "prompt": pid,
              "calls": c["calls"], "errors": c["errors"],

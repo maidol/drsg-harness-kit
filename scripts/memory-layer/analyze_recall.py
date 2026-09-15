@@ -216,7 +216,7 @@ def load_turns(proj_dir):
     for name in os.listdir(d):
         if not name.endswith(".jsonl"):
             continue
-        pending, seen = None, 0
+        group, seen = [], 0
         with open(os.path.join(d, name), encoding="utf-8", errors="replace") as f:
             for line in f:
                 try:
@@ -233,12 +233,16 @@ def load_turns(proj_dir):
                     # treating it as a new prompt would cut the reply window
                     # short and undercount every multi-tool answer.
                     if text:
-                        pending, seen = prompt_id(text), 0
-                elif t == "assistant" and pending and seen < REPLY_TURNS:
+                        if group and seen == 0:
+                            group.append(prompt_id(text))
+                        else:
+                            group, seen = [prompt_id(text)], 0
+                elif t == "assistant" and group and seen < REPLY_TURNS:
                     chunk = "".join(str(i.get("text", "")) for i in (content or [])
                                     if isinstance(i, dict) and i.get("type") == "text")
                     if chunk.strip():
-                        out[pending].append(chunk)
+                        for pid_ in group:
+                            out[pid_].append(chunk)
                         seen += 1
     return out
 

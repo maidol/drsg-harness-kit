@@ -413,7 +413,14 @@ TOOLS = [
             "type": "object",
             "properties": {
                 "repo": REPO_ARG,
-                "pattern": {"type": "string"},
+                "pattern": {"type": "string", "description":
+                            "Literal text unless `regex` is set."},
+                "regex": {"type": "boolean", "description":
+                          "Treat `pattern` as a Rust regex."},
+                "path": {"type": "string", "description":
+                         "Scope to a directory, file, or extension."},
+                "context": {"type": "integer", "description":
+                            "Surrounding lines per hit."},
                 "ignore_case": {"type": "boolean"},
                 "max_results": {"type": "integer"},
             },
@@ -444,7 +451,8 @@ UPSTREAM = {
     "graph_trace": ("trace", ["from", "to"], True),
     "graph_describe": ("describe", ["name"], True),
     "graph_snippet": ("snippet", ["name", "lines"], True),
-    "graph_grep": ("grep", ["pattern", "ignore_case", "max_results"], False),
+    "graph_grep": ("grep", ["pattern", "regex", "path", "context",
+                            "ignore_case", "max_results"], False),
     "graph_cypher": ("cypher", ["query", "params"], True),
 }
 
