@@ -40,7 +40,9 @@
 #   3b. Document the Event channel in <proj>/CLAUDE.md (sentinel-delimited,
 #      refreshed on re-install; skipped if the project already explains it).
 #   4. Merge SessionStart/UserPromptSubmit/SessionEnd hooks into
-#      <proj>/.claude/settings.local.json (preserves existing content).
+#      <proj>/.claude/settings.local.json, one registration at a time —
+#      other tools' hooks on the same events are preserved, and re-running
+#      refreshes ours in place rather than adding a second copy.
 #   5. Register the drsg MCP server (project scope) at the daemon's /mcp.
 #
 # After install: restart Claude Code so hooks + MCP load.
@@ -446,20 +448,82 @@ echo "== registering hooks in $PROJECT_DIR/.claude/settings.local.json"
 SETTINGS="$PROJECT_DIR/.claude/settings.local.json"
 mkdir -p "$PROJECT_DIR/.claude"
 HOOKS_JSON="$TEMPLATES/settings-hooks.json"
+# Merged per REGISTRATION, not per event name. A dict merge keyed on
+# "SessionStart" replaces the whole list, so every other tool's registration
+# under that event is deleted — silently, because the old message named the
+# events it merged, which reads identically whether it preserved anything or
+# not. That is not hypothetical: it removed the code-graph SessionStart guard
+# from all six repositories that had one, and the guard exists precisely to
+# announce a dead daemon, so nothing was left to report its own absence.
 python3 - "$SETTINGS" "$HOOKS_JSON" <<'PYEOF'
-import json, sys
+import json, os, sys
 settings_path, hooks_path = sys.argv[1], sys.argv[2]
-import os
 if os.path.exists(settings_path):
     with open(settings_path) as f: d = json.load(f)
 else:
     d = {}
-with open(hooks_path) as f: hooks = json.load(f)
-d['hooks'] = {**(d.get('hooks') or {}), **hooks}  # our hooks win on conflicts
-with open(settings_path, 'w') as f:
+with open(hooks_path) as f: ours = json.load(f)
+
+def leaf(cmd):
+    # Identify our registrations by the script they run, not by the path that
+    # reaches it: an earlier install may have written an absolute path where
+    # the template now writes ${CLAUDE_PROJECT_DIR}.
+    #
+    # argv[0], then its basename — a registration carries arguments
+    # ("codegraph.sh hook --dir /repo"), and the last slash-separated segment
+    # of the whole string is an argument, not the program.
+    argv = (cmd or "").strip().split()
+    return argv[0].split("/")[-1] if argv else ""
+
+ours_leaves = {leaf(g["hooks"][0]["command"]) for gs in ours.values() for g in gs}
+hooks = d.get("hooks") or {}
+added, refreshed, deduped = [], [], []
+
+for event, groups in ours.items():
+    existing = hooks.get(event) or []
+    for g in groups:
+        tmpl = g["hooks"][0]
+        want = leaf(tmpl["command"])
+        mine = [(gi, hi)
+                for gi, eg in enumerate(existing)
+                for hi, h in enumerate(eg.get("hooks") or [])
+                if leaf(h.get("command")) == want]
+        if not mine:
+            existing.append(g)
+            added.append("%s/%s" % (event, want))
+            continue
+        gi, hi = mine[0]
+        existing[gi]["hooks"][hi] = dict(tmpl)
+        # Adopt the template's matcher only when our hook is alone in the
+        # group — sharing a group means re-targeting someone else's hook too.
+        if len(existing[gi]["hooks"]) == 1:
+            if "matcher" in g: existing[gi]["matcher"] = g["matcher"]
+            else: existing[gi].pop("matcher", None)
+        refreshed.append("%s/%s" % (event, want))
+        # Drop duplicates of OUR OWN registration only; two copies run the
+        # hook twice per event. Anything not ours is never touched.
+        for gi2, hi2 in reversed(mine[1:]):
+            del existing[gi2]["hooks"][hi2]
+            if not existing[gi2]["hooks"]: del existing[gi2]
+            deduped.append("%s/%s" % (event, want))
+    hooks[event] = existing
+
+d["hooks"] = hooks
+with open(settings_path, "w") as f:
     json.dump(d, f, ensure_ascii=False, indent=2)
-    f.write('\n')
-print("   merged hooks:", ", ".join(d['hooks'].keys()))
+    f.write("\n")
+
+# Name what survived as well as what changed: "merged" alone is what let the
+# clobber go unnoticed for six repositories.
+foreign = sorted({leaf(h.get("command"))
+                  for event in ours
+                  for eg in hooks.get(event) or []
+                  for h in eg.get("hooks") or []
+                  if leaf(h.get("command")) not in ours_leaves})
+if added:     print("   registered:", ", ".join(added))
+if refreshed: print("   refreshed: ", ", ".join(refreshed))
+if deduped:   print("   removed %d duplicate registration(s) of our own hooks" % len(deduped))
+print("   left untouched:", ", ".join(foreign) if foreign else "(no other hooks on these events)")
 PYEOF
 
 # ---- 5. register MCP ---------------------------------------------------------
