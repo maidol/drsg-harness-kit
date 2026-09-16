@@ -46,7 +46,7 @@ while [ $# -gt 0 ]; do
     --tools-dir)  TOOLS="${2:?--tools-dir needs a path}"; shift 2 ;;
     --fetch-drsg) FETCH=1; shift ;;
     --no-skills)  SKILLS=0; shift ;;
-    -h|--help)    sed -n '2,30p' "${BASH_SOURCE[0]}" | sed 's/^# \{0,1\}//'; exit 0 ;;
+    -h|--help)    sed -n '2,29p' "${BASH_SOURCE[0]}" | sed 's/^# \{0,1\}//'; exit 0 ;;
     *) echo "unknown argument '$1'" >&2; exit 1 ;;
   esac
 done
@@ -56,7 +56,14 @@ command -v python3 >/dev/null 2>&1 || { echo "ERROR: python3 is required (hooks 
 
 echo "== 1/6: runtime copies -> $TOOLS"
 mkdir -p "$TOOLS"
-cp -a "$HERE/tools/." "$TOOLS/"
+# When $TOOLS is a symlink back into this checkout, `cp -a x/. x/` exits 1 and
+# takes the whole script with it under `set -e`. Same inode means the copies
+# are already in place by construction — say so rather than failing.
+if [ "$(cd "$HERE/tools" && pwd -P)" = "$(cd "$TOOLS" && pwd -P)" ]; then
+  echo "   already the same directory (symlinked) — nothing to copy"
+else
+  cp -a "$HERE/tools/." "$TOOLS/"
+fi
 chmod +x "$TOOLS"/*.sh "$TOOLS"/*.py "$TOOLS/drsg-usage-report" 2>/dev/null || true
 echo "   $(find "$TOOLS" -maxdepth 1 -type f | wc -l | tr -d ' ') files in place"
 
