@@ -1,0 +1,8 @@
+[book]
+title = "drsg harness kit（中文）"
+language = "zh"
+multilingual = false
+src = "src"
+
+[output.html]
+default-theme = "light"

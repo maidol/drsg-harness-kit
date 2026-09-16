@@ -17,6 +17,9 @@
 # key change, restart the daemon to pick it up.
 set -euo pipefail
 
+# Linux only: daemon ownership is identified through /proc/<pid>/fd.
+[ -d /proc ] || { echo "ERROR: this script requires Linux (/proc is missing)." >&2; exit 1; }
+
 DRSG_MEM_DIR="${DRSG_MEM_DIR:-$HOME/.drsg-memory}"
 ENVFILE="$DRSG_MEM_DIR/env"
 # Prefer process env; fall back to values persisted in the env file, so a bare

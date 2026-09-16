@@ -72,9 +72,9 @@ arch=$(uname -m)
 case "$os $arch" in
     'Linux x86_64') target=x86_64-unknown-linux-gnu ;;
     'Linux aarch64' | 'Linux arm64') target=aarch64-unknown-linux-gnu ;;
-    'Darwin arm64') target=aarch64-apple-darwin ;;
-    'Darwin x86_64') target=x86_64-apple-darwin ;;
-    *) err "unsupported platform: $os $arch — build from source instead (https://github.com/$REPO)" ;;
+    # Linux only: daemon controllers identify the process holding the database
+    # LOCK through /proc/<pid>/fd; installing elsewhere would fail later.
+    *) err "unsupported platform: $os $arch — this kit is Linux-only (see README.md)" ;;
 esac
 
 # --- release version --------------------------------------------------------

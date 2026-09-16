@@ -5,8 +5,11 @@ Claude Code (hooks + a daemon + cross-project to-dos), a per-repository code
 graph with a router that puts several graphs behind one MCP surface, and the
 scripts that install both on a machine that has neither.
 
-**Private.** It carries one-off recovery scripts and a `setup.sh` that writes
-into `$HOME`. Before it goes anywhere, read `tools/check-no-machine-paths.py`.
+**Linux only.** The daemon controllers identify a running daemon by the process
+holding the database LOCK, found through `/proc/<pid>/fd`; there is no
+equivalent elsewhere, so `install-drsg.sh` refuses any other platform rather
+than installing a binary that would fail later. `setup.sh` writes into `$HOME` —
+read it before running it.
 
 ## Layout
 

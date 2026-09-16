@@ -52,6 +52,9 @@
 #               from the plane's synced_commit, which takes about a second.
 set -euo pipefail
 
+# Linux only: daemon ownership is identified through /proc/<pid>/fd.
+[ -d /proc ] || { echo "ERROR: this script requires Linux (/proc is missing)." >&2; exit 1; }
+
 SELF_REPO="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 # This script by absolute path: it is written into other repositories' CLAUDE.md
 # and settings.local.json, which are read from anywhere but here.
