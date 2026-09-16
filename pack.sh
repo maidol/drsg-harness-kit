@@ -35,6 +35,16 @@ NAME="${NAME:-drsg-harness-kit-$VERSION}"
 # through xargs, which cannot see a shell function.
 if command -v sha256sum >/dev/null 2>&1; then SHA=(sha256sum); else SHA=(shasum -a 256); fi
 
+# The one moment content leaves this machine. The scrubber's tree mode gates it;
+# its --history mode does not, deliberately — this repository is private and its
+# history is not being rewritten, so failing the build on it would be a gate
+# nobody could pass.
+if ! python3 "$REPO/tools/check-no-machine-paths.py" \
+    "$REPO/tools" "$REPO/skills" "$REPO/setup.sh" "$REPO/install-drsg.sh"; then
+  echo "refusing to build a bundle with machine-specific strings in it" >&2
+  exit 1
+fi
+
 STAGE="$(mktemp -d)"
 trap 'rm -rf "$STAGE"' EXIT
 ROOT="$STAGE/$NAME"
@@ -44,9 +54,6 @@ mkdir -p "$ROOT/tools"
 cp -a "$REPO/tools/." "$ROOT/tools/"
 rm -rf "$ROOT/tools/logs" "$ROOT/tools/benchmark"
 find "$ROOT/tools" -name '__pycache__' -type d -prune -exec rm -rf {} +
-
-# 2. the code graph: watcher control, router, usage analytics, hub setup
-cp -a "$REPO"/tools/codegraph*.sh "$REPO"/tools/codegraph*.py "$ROOT/tools/"
 
 # 3. the Stop-hook usage report already lives in tools/ in this standalone kit.
 #    It is copied by step 1 along with the other runtime files.

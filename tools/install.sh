@@ -336,7 +336,8 @@ chmod 600 "$PROJECT_DIR/.drsg/env"
 # .drsg/env holds the shared API token, and .drsg/ collects telemetry besides.
 # chmod 600 keeps other users out; it does nothing about `git add .`, so ignore
 # the directory in any repo we install into.
-if [ -d "$PROJECT_DIR/.git" ] && ! git -C "$PROJECT_DIR" check-ignore -q .drsg/env 2>/dev/null; then
+if git -C "$PROJECT_DIR" rev-parse --git-dir >/dev/null 2>&1 \
+    && ! git -C "$PROJECT_DIR" check-ignore -q .drsg/env 2>/dev/null; then
   echo "== adding .drsg/ to $PROJECT_DIR/.gitignore (it holds the API token)"
   printf '\n# dr-strange memory layer (API token + local telemetry)\n.drsg/\n' \
     >> "$PROJECT_DIR/.gitignore"
@@ -347,7 +348,7 @@ fi
 # together: mcp_events.py imports event.py from its own directory, so a copy of
 # one alone is a server that starts and immediately dies. Installing from the
 # parked copy itself is the common case and copies nothing.
-if [ "$SCRIPT_DIR" != "$TOOLS_DIR" ]; then
+if [ "$(cd "$SCRIPT_DIR" && pwd -P)" != "$(mkdir -p "$TOOLS_DIR" && cd "$TOOLS_DIR" && pwd -P)" ]; then
   echo "== parking the Event tooling in $TOOLS_DIR"
   mkdir -p "$TOOLS_DIR"
   cp -a "$SCRIPT_DIR/mcp_events.py" "$SCRIPT_DIR/event.py" "$TOOLS_DIR/"
