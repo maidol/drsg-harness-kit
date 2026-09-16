@@ -6,6 +6,8 @@
 logs/
 .mcp.json
 
+__pycache__
+
 # Claude Code local instructions and hooks
 .claude/
 /CLAUDE.md
