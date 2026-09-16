@@ -15,7 +15,7 @@
 #   --name NAME  bundle name without .tar.gz  (default: drsg-harness-kit-<version>)
 set -euo pipefail
 
-REPO="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
+REPO="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 OUT="$REPO/dist"
 NAME=""
 
@@ -55,7 +55,7 @@ cp -a "$REPO"/tools/codegraph*.sh "$REPO"/tools/codegraph*.py "$ROOT/tools/"
 cp -a "$REPO/setup.sh" "$ROOT/setup.sh"
 
 # 5. the binary installer, for a machine with no drsg at all
-cp -a "$REPO/install.sh" "$ROOT/install-drsg.sh"
+cp -a "$REPO/install-drsg.sh" "$ROOT/install-drsg.sh"
 
 # 6. the codegraph skill — operating the daemon, onboarding a repo, auditing
 #    usage. Installed under ~/.claude/skills, not the tools directory.
