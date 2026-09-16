@@ -3,7 +3,7 @@
 > Three questions only: how it works, how to install it, how to package it for
 > the next machine. Each script's own options are what its header comment and
 > `--help` say; the memory layer is documented in full in
-> [`scripts/memory-layer/README.md`](../../../scripts/memory-layer/README.md).
+> [`tools/README.md`](../../../tools/README.md).
 
 ---
 
@@ -181,7 +181,7 @@ the count).
 ### 2.2 The memory layer (shared)
 
 ```bash
-scripts/memory-layer/install.sh <project-dir> --bin <path-to-drsg> --addr 127.0.0.1:7700
+tools/install.sh <project-dir> --bin <path-to-drsg> --addr 127.0.0.1:7700
 ```
 
 It ensures the shared daemon runs (starting it if not), copies the hooks into
@@ -204,7 +204,7 @@ add a daemon, and removing one takes nobody else's memory with it.
 cannot reach the same database:
 
 ```bash
-scripts/memory-layer/install.sh <project-dir> --bin <path-to-drsg> \
+tools/install.sh <project-dir> --bin <path-to-drsg> \
   --addr 127.0.0.1:7700 --token "$DRSG_TOKEN"
 ```
 
@@ -216,7 +216,7 @@ key's variable **name** via `--l3-key-env` — the value stays on the daemon).
 ### 2.3 The code graph (one per repository)
 
 ```bash
-scripts/codegraph.sh install --dir <repo-root> --port <port>
+tools/codegraph.sh install --dir <repo-root> --port <port>
 ```
 
 End to end: `drsg init` if the repository has never been digested, start
@@ -224,10 +224,10 @@ End to end: `drsg init` if the repository has never been digested, start
 register the SessionStart guard. Idempotent. Day to day:
 
 ```bash
-scripts/codegraph.sh status  --dir <repo-root>
-scripts/codegraph.sh doctor  --dir <repo-root>   # plane present, folded to HEAD, rules block current, guard registered
-scripts/codegraph.sh restart --dir <repo-root>   # incremental catch-up, about a second
-scripts/codegraph.sh restart --dir <repo-root> --force   # full rebuild, see below
+tools/codegraph.sh status  --dir <repo-root>
+tools/codegraph.sh doctor  --dir <repo-root>   # plane present, folded to HEAD, rules block current, guard registered
+tools/codegraph.sh restart --dir <repo-root>   # incremental catch-up, about a second
+tools/codegraph.sh restart --dir <repo-root> --force   # full rebuild, see below
 ```
 
 **`--force` opens a window that answers wrongly** (millisecond log alignment,
@@ -240,13 +240,13 @@ A repository that does not build `drsg` itself needs the binary named once;
 it is remembered afterwards:
 
 ```bash
-DRSG_CODE_BIN=<path-to-drsg> scripts/codegraph.sh install --dir <repo-root> --port <port>
+DRSG_CODE_BIN=<path-to-drsg> tools/codegraph.sh install --dir <repo-root> --port <port>
 ```
 
 ### 2.4 The router and the usage report (a hub project)
 
 ```bash
-scripts/codegraph-hub-setup.sh <project-dir>
+tools/codegraph-hub-setup.sh <project-dir>
 ```
 
 Registers the `codegraph` MCP server (the router) and the `Stop` hook (the usage
@@ -293,7 +293,7 @@ code graph
 ```
 
 Two read-only checks are worth running regularly:
-`scripts/memory-layer/install.sh --check` (deployed hooks vs the templates they
+`tools/install.sh --check` (deployed hooks vs the templates they
 came from; exits 1 on drift, so it works as a gate) and `analyze_recall.py`
 (recall utilization and cost — **it carries a ~45% random floor**, so never read
 the percentage bare).
@@ -314,8 +314,8 @@ into something another machine can unpack into that same runtime layout.
 ### 3.2 Build
 
 ```bash
-scripts/pack.sh                 # writes dist/drsg-harness-kit-<version>.tar.gz and .sha256
-scripts/pack.sh --out /tmp/x --name my-kit
+pack.sh                 # writes dist/drsg-harness-kit-<version>.tar.gz and .sha256
+pack.sh --out /tmp/x --name my-kit
 ```
 
 Layout (`tools/` is exactly what `~/.drsg-memory/tools/` has to hold):

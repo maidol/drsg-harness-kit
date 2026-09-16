@@ -165,7 +165,7 @@ with its own `drsg-watch` already has the full 22-tool surface.
 
 ## Where these scripts live
 
-`scripts/codegraph.sh` and `scripts/codegraph-usage.py` in the repository are
+`tools/codegraph.sh` and `tools/codegraph-usage.py` in the repository are
 the **source** — they are what ships. `~/.drsg-memory/tools/` holds the copies
 that actually **run**, and this skill points at those.
 
@@ -179,7 +179,7 @@ bundle and re-running its installer — the same path used to set a new machine
 up, so there is one way to do it rather than two:
 
 ```bash
-scripts/pack.sh                     # writes dist/drsg-harness-kit-<version>.tar.gz
+pack.sh                     # writes dist/drsg-harness-kit-<version>.tar.gz
 tar xzf dist/drsg-harness-kit-*.tar.gz -C /tmp && /tmp/drsg-harness-kit-*/setup.sh
 ```
 

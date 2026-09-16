@@ -9,7 +9,7 @@
 # own db, its own port and its own token, all recorded in its own .mcp.json.
 #
 # NOT the memory layer. That is a separate global daemon on 7700 with its own
-# controller (scripts/memory-layer/serve.sh) and its own db in ~/.drsg-memory.
+# controller (tools/serve.sh) and its own db in ~/.drsg-memory.
 # No database is ever shared, so restarting either leaves the other alone.
 #
 # The bootstrap (minting a token, writing .mcp.json and the editor configs)

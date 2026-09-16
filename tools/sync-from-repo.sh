@@ -19,7 +19,7 @@ set -euo pipefail
 REPO="${1:-/path/to/maidol/dr-strange}"
 APPLY="${2:-}"
 HERE="$(cd "$(dirname "$0")" && pwd)"
-SRC="$REPO/scripts"
+SRC="$REPO"
 
 [ -d "$SRC/memory-layer" ] || {
   echo "no $SRC/memory-layer — wrong branch checked out, or wrong repo" >&2

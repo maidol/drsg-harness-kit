@@ -203,8 +203,8 @@ Both read hooks append one JSON line per decision to `<project>/.drsg/recall.jso
 Writing it can never fail a session; the record is made after the decision.
 
 ```bash
-python3 scripts/memory-layer/analyze_recall.py            # every project the daemon knows
-python3 scripts/memory-layer/analyze_recall.py --since 14
+python3 tools/analyze_recall.py            # every project the daemon knows
+python3 tools/analyze_recall.py --since 14
 ```
 
 It pairs each injection with the reply that followed it in the transcript and

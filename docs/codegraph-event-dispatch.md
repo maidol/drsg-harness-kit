@@ -42,7 +42,7 @@ drsg serve watch --dir <repo>  ← 每仓一个 daemon,7701–7705
 `codegraph-router._post` 报 `total affected 4` 且第 4 层起为空,其自带的下界声明一并适用):
 
 ```
-codegraph-router.main            scripts/codegraph-router.py:500
+codegraph-router.main            tools/codegraph-router.py:500
   → codegraph-router.call_tool           :471
       → codegraph-router.call_upstream   :226
           → codegraph-router._handshake  :186
@@ -327,7 +327,7 @@ event_post {
 ## 怎么知道它在被用
 
 ```bash
-scripts/memory-layer/analyze_events.py --verbose
+tools/analyze_events.py --verbose
 ```
 
 第一个数字（带地址的待办占比）直接回答「模型到底带没带」。

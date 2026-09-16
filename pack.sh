@@ -9,7 +9,7 @@
 # out any other branch deletes it from the working tree — the copies outside
 # the repository are the ones that RUN.
 #
-# Usage: scripts/pack.sh [--out DIR] [--name NAME]
+# Usage: pack.sh [--out DIR] [--name NAME]
 #
 #   --out DIR    where to write the tarball   (default: <repo>/dist)
 #   --name NAME  bundle name without .tar.gz  (default: drsg-harness-kit-<version>)
@@ -41,12 +41,12 @@ ROOT="$STAGE/$NAME"
 mkdir -p "$ROOT/tools"
 
 # 1. the memory layer, minus what is state rather than tooling
-cp -a "$REPO/scripts/memory-layer/." "$ROOT/tools/"
+cp -a "$REPO/tools/." "$ROOT/tools/"
 rm -rf "$ROOT/tools/logs" "$ROOT/tools/benchmark"
 find "$ROOT/tools" -name '__pycache__' -type d -prune -exec rm -rf {} +
 
 # 2. the code graph: watcher control, router, usage analytics, hub setup
-cp -a "$REPO"/scripts/codegraph*.sh "$REPO"/scripts/codegraph*.py "$ROOT/tools/"
+cp -a "$REPO"/tools/codegraph*.sh "$REPO"/tools/codegraph*.py "$ROOT/tools/"
 
 # 3. the Stop-hook usage report. This repository keeps it in .claude/hooks/
 #    because upstream tracks it there; every other project runs the copy in
@@ -55,10 +55,10 @@ cp -a "$REPO/.claude/hooks/drsg-usage-report" \
       "$REPO/.claude/hooks/drsg_usage_report.py" "$ROOT/tools/"
 
 # 4. the setup script, at the bundle root where an unpacking user will look
-cp -a "$REPO/scripts/kit-setup.sh" "$ROOT/setup.sh"
+cp -a "$REPO/setup.sh" "$ROOT/setup.sh"
 
 # 5. the binary installer, for a machine with no drsg at all
-cp -a "$REPO/scripts/install.sh" "$ROOT/install-drsg.sh"
+cp -a "$REPO/install.sh" "$ROOT/install-drsg.sh"
 
 # 6. the codegraph skill — operating the daemon, onboarding a repo, auditing
 #    usage. Installed under ~/.claude/skills, not the tools directory.

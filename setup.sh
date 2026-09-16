@@ -3,7 +3,7 @@
 # the shared memory daemon with its hooks, a per-repository code graph, and the
 # router that puts several graphs behind one MCP surface.
 #
-# This script ships at the root of the bundle built by `scripts/pack.sh`; its
+# This script ships at the root of the bundle built by `pack.sh`; its
 # `tools/` directory is what lands in ~/.drsg-memory/tools/, which is where the
 # copies that actually RUN live. They live outside any repository on purpose:
 # every one of them is tracked by a branch, so checking out another branch

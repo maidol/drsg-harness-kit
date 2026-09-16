@@ -311,7 +311,7 @@ def shadow_bm25(prompt, facts, token):
     when the gate opens rather than starting from zero then.
 
     `Fact.text` is a derived summary+detail property maintained by
-    scripts/memory-layer/backfill_text.py — `Fact.summary`'s own index is
+    tools/backfill_text.py — `Fact.summary`'s own index is
     pinned to the English analyzer and cannot be changed in place.
 
     The prompt travels as an RPC *parameter*, never interpolated into a query

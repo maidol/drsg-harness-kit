@@ -2,7 +2,7 @@
 
 > 本文内容：讲解工具包怎么工作、怎么安装、怎么打包。
 > 脚本自身的选项以各脚本头注释和 `--help` 为准；
-> 记忆层的详细说明见 [`scripts/memory-layer/README.md`](../../../scripts/memory-layer/README.md)。
+> 记忆层的详细说明见 [`tools/README.md`](../../../tools/README.md)。
 
 ---
 
@@ -143,7 +143,7 @@ Stop（可选）      代码图用量报告；不由记忆层安装器装，要�
 ### 2.2 装记忆层（全局共享）
 
 ```bash
-scripts/memory-layer/install.sh <project-dir> --bin <path-to-drsg> --addr 127.0.0.1:7700
+tools/install.sh <project-dir> --bin <path-to-drsg> --addr 127.0.0.1:7700
 ```
 
 它会：确保共享 daemon 在跑（没有就起）→ 复制 hooks 到 `<project>/.claude/hooks/` →
@@ -160,7 +160,7 @@ hooks 和 `.drsg/recall.jsonl`**，每个项目一份且内容相同；daemon �
 **daemon 已经在跑时必须给它的 token**，否则装不进同一个库：
 
 ```bash
-scripts/memory-layer/install.sh <project-dir> --bin <path-to-drsg> \
+tools/install.sh <project-dir> --bin <path-to-drsg> \
   --addr 127.0.0.1:7700 --token "$DRSG_TOKEN"
 ```
 
@@ -171,17 +171,17 @@ key 的**变量名** `--l3-key-env`，值留在 daemon 侧）。
 ### 2.3 装代码图（每仓一个）
 
 ```bash
-scripts/codegraph.sh install --dir <repo-root> --port <port>
+tools/codegraph.sh install --dir <repo-root> --port <port>
 ```
 
 一次做完：没图就 `drsg init`，起 `serve watch`，把 sentinel 规则块写进该仓 CLAUDE.md，
 注册 SessionStart 守卫。幂等。日常命令：
 
 ```bash
-scripts/codegraph.sh status  --dir <repo-root>
-scripts/codegraph.sh doctor  --dir <repo-root>   # plane 在不在、追到 HEAD 没、规则块过期没、守卫注册没
-scripts/codegraph.sh restart --dir <repo-root>   # 增量追平，约一秒
-scripts/codegraph.sh restart --dir <repo-root> --force   # 整库重建，见下
+tools/codegraph.sh status  --dir <repo-root>
+tools/codegraph.sh doctor  --dir <repo-root>   # plane 在不在、追到 HEAD 没、规则块过期没、守卫注册没
+tools/codegraph.sh restart --dir <repo-root>   # 增量追平，约一秒
+tools/codegraph.sh restart --dir <repo-root> --force   # 整库重建，见下
 ```
 
 **`--force` 有一个会给出错误答案的窗口**（2026-08-20 毫秒级日志对齐）：前约 13.4 秒旧 plane
@@ -191,13 +191,13 @@ scripts/codegraph.sh restart --dir <repo-root> --force   # 整库重建，见下
 显式指定drsg二进制：
 
 ```bash
-DRSG_CODE_BIN=<path-to-drsg> scripts/codegraph.sh install --dir <repo-root> --port <port>
+DRSG_CODE_BIN=<path-to-drsg> tools/codegraph.sh install --dir <repo-root> --port <port>
 ```
 
 ### 2.4 装 router 和用量报告（hub 项目）
 
 ```bash
-scripts/codegraph-hub-setup.sh <project-dir>
+tools/codegraph-hub-setup.sh <project-dir>
 ```
 
 注册 `codegraph` MCP（router）+ `Stop` hook（用量报告），并核对 registry 里的仓库。
@@ -239,7 +239,7 @@ claude mcp add --scope local -e DRSG_GRAPHS=<registry-file> codegraph -- python3
 [ ] snippet 的来源和目标 plane 的 synced_root 对得上
 ```
 
-日常还有两条只读检查：`scripts/memory-layer/install.sh --check`（各项目已部署 hooks 与
+日常还有两条只读检查：`tools/install.sh --check`（各项目已部署 hooks 与
 模板是否漂移，有漂移退 1，可当 CI 闸门）和 `analyze_recall.py`（召回利用率与成本；
 **注意它有 45% 的随机底噪**，别裸读百分比）。
 
@@ -257,8 +257,8 @@ claude mcp add --scope local -e DRSG_GRAPHS=<registry-file> codegraph -- python3
 ### 3.2 构建
 
 ```bash
-scripts/pack.sh                 # 产出 dist/drsg-harness-kit-<version>.tar.gz 和 .sha256
-scripts/pack.sh --out /tmp/x --name my-kit
+pack.sh                 # 产出 dist/drsg-harness-kit-<version>.tar.gz 和 .sha256
+pack.sh --out /tmp/x --name my-kit
 ```
 
 包内布局（`tools/` 就是 `~/.drsg-memory/tools/` 该有的样子）：

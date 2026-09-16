@@ -2,7 +2,7 @@
 """SessionStart hook: record this session in dr-strange and inject the
 project's compressed memory briefing into Claude's context.
 
-Design (see scripts/memory-layer/README.md):
+Design (see tools/README.md):
   * Dr-strange native backend allows ONE process per database, so hooks never
     open the DB themselves — they talk to the shared `drsg serve` daemon over
     JSON-RPC (POST /rpc), never the CLI.
@@ -313,7 +313,7 @@ def heal_text(token):
     self-heals every session start instead, so an omission cannot degrade
     anything.
 
-    Duplicated on purpose in scripts/memory-layer/backfill_text.py, which is
+    Duplicated on purpose in tools/backfill_text.py, which is
     the standalone repair tool; the hooks are byte-identical copies across
     projects and cannot import from any one repo. Keep `derive` in sync — it is
     two lines.

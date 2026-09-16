@@ -12,7 +12,7 @@
 #   5. Runs a quick self-check to ensure no silent configuration failures.
 #
 # Usage:
-#   ./scripts/codegraph-hub-setup.sh [project-dir]
+#   ./tools/codegraph-hub-setup.sh [project-dir]
 #   (default project-dir: current working directory)
 set -euo pipefail
 
@@ -32,15 +32,15 @@ echo "============================================================"
 # 1. Pre-flight checks on global tools
 if [ ! -f "$USAGE_REPORT_BIN" ]; then
   echo "ERROR: Usage report tool not found at $USAGE_REPORT_BIN" >&2
-  echo "       Install the runtime copies first: scripts/pack.sh, then the" >&2
-  echo "       bundle's setup.sh (or scripts/memory-layer/install.sh)." >&2
+  echo "       Install the runtime copies first: pack.sh, then the" >&2
+  echo "       bundle's setup.sh (or tools/install.sh)." >&2
   exit 1
 fi
 
 if [ ! -f "$ROUTER_BIN" ]; then
   echo "ERROR: CodeGraph router tool not found at $ROUTER_BIN" >&2
-  echo "       Install the runtime copies first: scripts/pack.sh, then the" >&2
-  echo "       bundle's setup.sh (or scripts/memory-layer/install.sh)." >&2
+  echo "       Install the runtime copies first: pack.sh, then the" >&2
+  echo "       bundle's setup.sh (or tools/install.sh)." >&2
   exit 1
 fi
 

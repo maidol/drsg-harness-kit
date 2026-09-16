@@ -302,7 +302,7 @@ if [ "$JOINED" = "1" ] && [ -n "$L3_KEY_VALUE" ]; then
   echo ""
   echo "   NOTE: the daemon at $ADDR was already running when '$L3_KEY_ENV' was"
   echo "         persisted. If it was started before the key existed, restart it"
-  echo "         so digest.run can authenticate:  scripts/memory-layer/serve.sh restart"
+  echo "         so digest.run can authenticate:  tools/serve.sh restart"
 fi
 
 # ---- 1b. ensure the memory plane exists -------------------------------------
@@ -651,7 +651,7 @@ if echo "$SELFCHECK" | grep -q '^RESULT=FAIL'; then
   echo "⚠️  SELF-CHECK FAILED — memory layer installed but NOT working." >&2
   echo "    The hooks will silently fail (key collision / daemon down / plane missing)." >&2
   echo "    Fix the items above, then re-run: $0 $PROJECT_DIR" >&2
-  echo "    See scripts/memory-layer/README.md for troubleshooting." >&2
+  echo "    See tools/README.md for troubleshooting." >&2
   exit 1
 else
   echo "   ✓ self-check PASSED — memory layer verified end-to-end"
