@@ -218,11 +218,11 @@ def event_notice(proj_dir, sid, token):
         if pr.get("status") != "open":
             continue
         key = n.get("external_key", "?")
-        # Every open key is remembered, not just the newly shown ones, so the
-        # file stays a complete record of what this session has been told.
-        keys.append(key)
         if key in seen or len(lines) >= MAX_EVENTS:
             continue
+        # Only events rendered in this prompt are remembered as shown; events
+        # beyond the display cap must remain eligible for the next prompt.
+        keys.append(key)
         line = "- [%s from %s] %s" % (pr.get("kind", "notice"),
                                       pr.get("from_project", "?"),
                                       (pr.get("summary") or "")[:80])

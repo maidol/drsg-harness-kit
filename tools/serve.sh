@@ -29,7 +29,16 @@ DRSG_MEM_BIN="${DRSG_MEM_BIN:-drsg}"
 DRSG_MEM_ADDR="${DRSG_MEM_ADDR:-127.0.0.1:7700}"
 PID="$DRSG_MEM_DIR/serve.pid"
 LOG="$DRSG_MEM_DIR/serve.log"
+DB="$DRSG_MEM_DIR/memory.drsg"
 cmd="${1:-status}"
+
+db_holder_pid() {
+  local lock
+  lock="$(readlink -f "$DB/LOCK" 2>/dev/null || true)"
+  [ -n "$lock" ] || return 0
+  find /proc/[0-9]*/fd -maxdepth 1 -lname "$lock" -printf '%h\n' 2>/dev/null |
+    sed -n 's|/proc/\([0-9]*\)/fd|\1|p' | head -1
+}
 
 require_bin() {
   if ! command -v "$DRSG_MEM_BIN" >/dev/null 2>&1 && [ ! -x "$DRSG_MEM_BIN" ]; then
@@ -41,7 +50,9 @@ require_bin() {
 start() {
   require_bin
   mkdir -p "$DRSG_MEM_DIR"
-  [ -f "$PID" ] && kill -0 "$(cat "$PID")" 2>/dev/null && { echo "already running (pid $(cat "$PID"))"; return 0; }
+  local holder
+  holder="$(db_holder_pid)"
+  [ -n "$holder" ] && { echo "already running (pid $holder)"; return 0; }
   # Token: reuse from env file, or generate fresh.
   ENVFILE="$DRSG_MEM_DIR/env"
   if [ -n "${DRSG_MEM_TOKEN:-}" ]; then
@@ -94,9 +105,9 @@ EOF
 }
 
 stop() {
-  if [ -f "$PID" ] && kill -0 "$(cat "$PID")" 2>/dev/null; then
-    local oldpid
-    oldpid="$(cat "$PID")"
+  local oldpid
+  oldpid="$(db_holder_pid)"
+  if [ -n "$oldpid" ]; then
     kill "$oldpid" 2>/dev/null || true
     # Graceful drain first — but a live MCP stream keeps the daemon draining
     # forever (it holds the db lock until fully exited), so escalate to SIGKILL
@@ -118,8 +129,10 @@ stop() {
 }
 
 status() {
-  if [ -f "$PID" ] && kill -0 "$(cat "$PID")" 2>/dev/null; then
-    echo "running (pid $(cat "$PID"))"
+  local live
+  live="$(db_holder_pid)"
+  if [ -n "$live" ]; then
+    echo "running (pid $live)"
     curl -sf -m 2 "http://$(echo "$DRSG_MEM_ADDR" | sed 's|^https\?://||')/health" && echo
   else
     echo "not running"
