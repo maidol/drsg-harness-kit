@@ -25,8 +25,8 @@
 ## 原理:中枢是怎么够到别人的图的
 
 ```
-my-agent-workspace 的会话
-  │  ~/.claude.json → projects["…/my-agent-workspace"].mcpServers.codegraph
+review-project 的会话
+  │  ~/.claude.json → projects["…/review-project"].mcpServers.codegraph
   │  type: stdio,  command: python3 ~/.drsg-memory/tools/codegraph-router.py
   ▼
 codegraph-router.py            ← 会话起的子进程,stdio JSON-RPC,不带参数
@@ -81,7 +81,7 @@ codegraph-router.main            tools/codegraph-router.py:500
 跨仓库的调用边**根本不存在**,假装能做就是编。
 
 > 配图三张(架构 / 时序 / 流程)在
-> `/path/to/my-agent-workspace/reviews/dr-strange/`,索引见该目录 README。
+> `/path/to/review-project/reviews/dr-strange/`,索引见该目录 README。
 
 ---
 
@@ -104,9 +104,9 @@ graph_repos {}
 
 ```
 repo           plane          address            path
-dr-strange     dr-strange     127.0.0.1:7701     /path/to/maidol/dr-strange
-data-safe      data-safe      127.0.0.1:7702     /path/to/acme/data-safe
-wps            wps            127.0.0.1:7704     /path/to/acme/wps  (down — starts on first use)
+dr-strange     dr-strange     127.0.0.1:7701     /path/to/dr-strange
+data-service      data-service      127.0.0.1:7702     /path/to/data-service
+wps            wps            127.0.0.1:7704     /path/to/wps  (down — starts on first use)
 zeus           zeus           127.0.0.1:7705     /path/to/zeus  (down — starts on first use)
 sub2api        sub2api        127.0.0.1:7703     /path/to/sub2api  (down — starts on first use)
 ```
@@ -136,7 +136,7 @@ graph_describe { "repo": "wps", "name": "Gate.ChatCompletion" }
 
 ```json
 event_post {
-  "recipient": "/path/to/acme/wps",
+  "recipient": "/path/to/wps",
   "summary": "重试策略改成指数退避，先看清爆炸半径",
   "symbols": ["Gate.ChatCompletion"],
   "verb": "impact"
@@ -146,7 +146,7 @@ event_post {
 `symbols` 给粗名字就行。收到的回执会**回显收方将要看到的那一行**：
 
 ```
-posted evt-wps-1788452230-5c9a2c to /path/to/acme/wps
+posted evt-wps-1788452230-5c9a2c to /path/to/wps
 ↳ graph first: impact `contract-review/internal/provider.Gate.ChatCompletion` (plane wps)
   (resolved against plane wps)
 ```
@@ -159,7 +159,7 @@ posted evt-wps-1788452230-5c9a2c to /path/to/acme/wps
 
 ```
 ⏳ Open for you (set the Event node's `status` to "done" once handled):
-- [handoff from my-agent-workspace] 重试策略改成指数退避，先看清爆炸半径  <evt-wps-…>
+- [handoff from review-project] 重试策略改成指数退避，先看清爆炸半径  <evt-wps-…>
   ↳ graph first: impact `contract-review/internal/provider.Gate.ChatCompletion` (plane wps)
 ```
 
@@ -183,7 +183,7 @@ event_done { "key": "evt-wps-1788452230-5c9a2c" }
 
 ```json
 event_post {
-  "recipient": "/path/to/my-agent-workspace",
+  "recipient": "/path/to/review-project",
   "summary": "回执｜插件加载路径查完了，13.7 秒在 wasm 编译不在 IO",
   "symbols": ["Plugins::load"],
   "verb": "context"
@@ -191,12 +191,12 @@ event_post {
 ```
 
 ```
-posted evt-my-agent-workspace-… to /path/to/my-agent-workspace
+posted evt-review-project-… to /path/to/review-project
 ↳ graph first: context `dr_strange_llm::preprocess::Plugins::load` (plane dr-strange)
   (resolved against plane dr-strange)
 ```
 
-平面是 **dr-strange** 不是 my-agent-workspace：收方没有图，就退到发件方的。
+平面是 **dr-strange** 不是 review-project：收方没有图，就退到发件方的。
 两边都没有图时**不写平面**（编一个平面名换来的是 `not found: plane`，
 和「图里真没有」长得一模一样）。符号既不在收方也不在发件方时，显式给 `plane`。
 
@@ -286,9 +286,9 @@ graph_describe_plane { "repo": "wps" }
 
 ```json
 event_post {
-  "recipient": "/path/to/acme/wps",
+  "recipient": "/path/to/wps",
   "summary": "review 完了，7 条建议，最要紧的是 provider 层的重试没有退避",
-  "ref": "/path/to/my-agent-workspace/reviews/wps/2026-09-03-review.md",
+  "ref": "/path/to/review-project/reviews/wps/2026-09-03-review.md",
   "symbols": ["Gate.ChatCompletion"],
   "verb": "impact"
 }

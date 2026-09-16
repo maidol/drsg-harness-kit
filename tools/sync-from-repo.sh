@@ -16,7 +16,7 @@
 #        sync-from-repo.sh [repo-dir] --apply
 set -euo pipefail
 
-REPO="${1:-/path/to/maidol/dr-strange}"
+REPO="${1:-${DRSG_REPO_DIR:-$(pwd)}}"
 APPLY="${2:-}"
 HERE="$(cd "$(dirname "$0")" && pwd)"
 SRC="$REPO"

@@ -436,7 +436,7 @@ were real gaps.
 
 **The check on an answer is the graph's own symbol key.** A structural claim
 must quote the full key the graph returned — `crate::module::Symbol`,
-`github.com/acme/repo/pkg.Type.Method` — not just a `file:line`, because grep
+`github.com/acme/example/pkg.Type.Method` — not just a `file:line`, because grep
 prints `file:line` too and so a rule written on it cannot catch its own
 violation.
 
