@@ -241,7 +241,10 @@ def event_notice(proj_dir, sid, token):
         if not pr.get("seen_at"):
             fresh.append(key)
     if lines:
-        mark_events_shown(proj_dir, sid, keys)
+        # Union, not replace: mark_events_shown truncates the file, so recording
+        # only this prompt's keys forgets earlier prompts when the open list is
+        # larger than MAX_EVENTS.
+        mark_events_shown(proj_dir, sid, seen | set(keys))
         ack_events(fresh, sid, token)
     return lines
 

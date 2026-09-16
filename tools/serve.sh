@@ -36,8 +36,13 @@ db_holder_pid() {
   local lock
   lock="$(readlink -f "$DB/LOCK" 2>/dev/null || true)"
   [ -n "$lock" ] || return 0
+  # One `find` rather than a readlink per fd: /proc has a few thousand of them.
   find /proc/[0-9]*/fd -maxdepth 1 -lname "$lock" -printf '%h\n' 2>/dev/null |
     sed -n 's|/proc/\([0-9]*\)/fd|\1|p' | head -1
+  # Found nothing is a normal answer, not a failure: callers test for empty.
+  # Without this, pipefail leaks find's /proc permission status through the
+  # command substitution and set -e kills the caller after a valid lookup.
+  return 0
 }
 
 require_bin() {
@@ -97,11 +102,18 @@ EOF
     echo $! > "$PID"
   )
   echo "started pid $(cat "$PID"); db=$DRSG_MEM_DIR/memory.drsg; addr=$DRSG_MEM_ADDR"
-  # Wait for readiness.
+  # Wait for readiness — for OUR daemon, not for whoever answers on the address.
+  # `/health` answering 200 only says the port is occupied; a squatter makes it
+  # say 200 while drsg dies on bind, and the old loop reported that as success.
   for _ in $(seq 1 20); do
-    curl -sf -m 2 "http://$(echo "$DRSG_MEM_ADDR" | sed 's|^https\?://||')/health" >/dev/null 2>&1 && break
+    [ -n "$(db_holder_pid)" ] \
+      && curl -sf -m 2 "http://$(echo "$DRSG_MEM_ADDR" | sed 's|^https\?://||')/health" >/dev/null 2>&1 \
+      && return 0
     sleep 0.3
   done
+  echo "ERROR: drsg did not come up on $DRSG_MEM_ADDR — last lines of $LOG:" >&2
+  tail -3 "$LOG" >&2
+  return 1
 }
 
 stop() {
