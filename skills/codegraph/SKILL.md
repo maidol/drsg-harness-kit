@@ -179,8 +179,8 @@ bundle and re-running its installer — the same path used to set a new machine
 up, so there is one way to do it rather than two:
 
 ```bash
-scripts/pack.sh                     # writes dist/drsg-agent-kit-<version>.tar.gz
-tar xzf dist/drsg-agent-kit-*.tar.gz -C /tmp && /tmp/drsg-agent-kit-*/setup.sh
+scripts/pack.sh                     # writes dist/drsg-harness-kit-<version>.tar.gz
+tar xzf dist/drsg-harness-kit-*.tar.gz -C /tmp && /tmp/drsg-harness-kit-*/setup.sh
 ```
 
 `setup.sh` is idempotent: it overwrites the runtime copies and re-runs the

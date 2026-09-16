@@ -12,7 +12,7 @@
 # Usage: scripts/pack.sh [--out DIR] [--name NAME]
 #
 #   --out DIR    where to write the tarball   (default: <repo>/dist)
-#   --name NAME  bundle name without .tar.gz  (default: drsg-agent-kit-<version>)
+#   --name NAME  bundle name without .tar.gz  (default: drsg-harness-kit-<version>)
 set -euo pipefail
 
 REPO="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
@@ -29,7 +29,7 @@ done
 
 VERSION="$(git -C "$REPO" describe --tags --always --dirty 2>/dev/null || date +%Y%m%d)"
 COMMIT="$(git -C "$REPO" rev-parse HEAD 2>/dev/null || echo unknown)"
-NAME="${NAME:-drsg-agent-kit-$VERSION}"
+NAME="${NAME:-drsg-harness-kit-$VERSION}"
 
 # Resolved once as a command, not wrapped in a function: the manifest pipes
 # through xargs, which cannot see a shell function.

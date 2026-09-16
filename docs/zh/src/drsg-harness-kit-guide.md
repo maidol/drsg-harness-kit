@@ -1,4 +1,4 @@
-# DrSG 智能体工具包使用指南
+# DrSG 接入工具包使用指南
 
 > 本文内容：讲解工具包怎么工作、怎么安装、怎么打包。
 > 脚本自身的选项以各脚本头注释和 `--help` 为准；
@@ -257,14 +257,14 @@ claude mcp add --scope local -e DRSG_GRAPHS=<registry-file> codegraph -- python3
 ### 3.2 构建
 
 ```bash
-scripts/pack.sh                 # 产出 dist/drsg-agent-kit-<version>.tar.gz 和 .sha256
+scripts/pack.sh                 # 产出 dist/drsg-harness-kit-<version>.tar.gz 和 .sha256
 scripts/pack.sh --out /tmp/x --name my-kit
 ```
 
 包内布局（`tools/` 就是 `~/.drsg-memory/tools/` 该有的样子）：
 
 ```text
-drsg-agent-kit-<version>/
+drsg-harness-kit-<version>/
   setup.sh          一键安装（下一节）
   install-drsg.sh   没有二进制时从 GitHub release 装一个
   tools/            memory-layer 全套（含 templates/hooks）+ codegraph.sh
@@ -279,7 +279,7 @@ drsg-agent-kit-<version>/
 ### 3.3 在新机器上安装
 
 ```bash
-tar xzf drsg-agent-kit-<version>.tar.gz && cd drsg-agent-kit-<version>
+tar xzf drsg-harness-kit-<version>.tar.gz && cd drsg-harness-kit-<version>
 ./setup.sh --project /path/to/project --repo /path/to/repo --bin /path/to/drsg
 ```
 

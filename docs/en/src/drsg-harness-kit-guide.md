@@ -1,4 +1,4 @@
-# The DrSG agent kit: a short guide
+# The DrSG harness kit: a short guide
 
 > Three questions only: how it works, how to install it, how to package it for
 > the next machine. Each script's own options are what its header comment and
@@ -314,14 +314,14 @@ into something another machine can unpack into that same runtime layout.
 ### 3.2 Build
 
 ```bash
-scripts/pack.sh                 # writes dist/drsg-agent-kit-<version>.tar.gz and .sha256
+scripts/pack.sh                 # writes dist/drsg-harness-kit-<version>.tar.gz and .sha256
 scripts/pack.sh --out /tmp/x --name my-kit
 ```
 
 Layout (`tools/` is exactly what `~/.drsg-memory/tools/` has to hold):
 
 ```text
-drsg-agent-kit-<version>/
+drsg-harness-kit-<version>/
   setup.sh          the installer (next section)
   install-drsg.sh   fetches a release binary when there is none
   tools/            the memory layer (with templates/hooks) + codegraph.sh
@@ -337,7 +337,7 @@ different commit.
 ### 3.3 Install on the new machine
 
 ```bash
-tar xzf drsg-agent-kit-<version>.tar.gz && cd drsg-agent-kit-<version>
+tar xzf drsg-harness-kit-<version>.tar.gz && cd drsg-harness-kit-<version>
 ./setup.sh --project /path/to/project --repo /path/to/repo --bin /path/to/drsg
 ```
 

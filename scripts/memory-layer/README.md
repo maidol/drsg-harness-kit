@@ -1,5 +1,12 @@
 # Long-term memory layer for Claude Code
 
+> Today this supports Claude Code only. The hook contract (`SessionStart` /
+> `UserPromptSubmit` / `SessionEnd` plus a transcript path) and the `claude mcp
+> add` registration path are Claude Code's; porting to another harness means
+> replacing `templates/hooks/` and those calls in `install.sh`, not the memory
+> layer underneath. The two MCP servers (`codegraph-router.py`, `mcp_events.py`)
+> are already harness-neutral — any stdio MCP client can register them today.
+
 A one-command install that turns Dr Strange into persistent, cross-session
 memory for [Claude Code](https://claude.com/claude-code) projects: the graph
 remembers what earlier sessions concluded, and every new session starts with a
