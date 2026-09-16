@@ -21,27 +21,16 @@ APPLY="${2:-}"
 HERE="$(cd "$(dirname "$0")" && pwd)"
 SRC="$REPO"
 
-[ -d "$SRC/memory-layer" ] || {
-  echo "no $SRC/memory-layer — wrong branch checked out, or wrong repo" >&2
+[ -d "$SRC/tools" ] || {
+  echo "no $SRC/tools — wrong branch checked out, or wrong repo" >&2
   exit 1
 }
 
 differs=0
 while IFS= read -r f; do
-  rel="${f#"$SRC"/memory-layer/}"
+  rel="${f#"$SRC"/tools/}"
   cmp -s "$f" "$HERE/$rel" || { echo "differs: $rel"; differs=1; }
-done < <(find "$SRC/memory-layer" -type f -not -path '*/__pycache__/*' -not -path '*/logs/*')
-for f in "$SRC"/codegraph*; do
-  [ -f "$f" ] || continue
-  cmp -s "$f" "$HERE/$(basename "$f")" || { echo "differs: $(basename "$f")"; differs=1; }
-done
-# The Stop-hook usage report is upstream's and lives in .claude/hooks/, which is
-# fine for this repository — upstream tracks it, so a branch switch keeps it.
-# The other projects have no such file, so they run the copy here.
-for f in "$REPO"/.claude/hooks/drsg-usage-report "$REPO"/.claude/hooks/drsg_usage_report.py; do
-  [ -f "$f" ] || continue
-  cmp -s "$f" "$HERE/$(basename "$f")" || { echo "differs: $(basename "$f")"; differs=1; }
-done
+done < <(find "$SRC/tools" -type f -not -path '*/__pycache__/*' -not -path '*/logs/*')
 # Skills install under ~/.claude/skills, not here — that is where the harness
 # looks. Same repo-is-source rule applies, and the same branch hazard: the
 # source under skills/ vanishes on checkout, the installed copy does not.
@@ -54,9 +43,7 @@ if [ -d "$REPO/skills" ]; then
 fi
 
 if [ "$APPLY" = "--apply" ]; then
-  cp -a "$SRC/memory-layer/." "$HERE/"
-  cp -a "$SRC"/codegraph* "$HERE/"
-  cp -a "$REPO"/.claude/hooks/drsg-usage-report "$REPO"/.claude/hooks/drsg_usage_report.py "$HERE/" 2>/dev/null || true
+  cp -a "$SRC/tools/." "$HERE/"
   [ -d "$REPO/skills" ] && { mkdir -p "$SKILLS"; cp -a "$REPO/skills/." "$SKILLS/"; }
   chmod +x "$HERE"/*.sh "$HERE"/*.py 2>/dev/null || true
   echo "synced from $SRC"

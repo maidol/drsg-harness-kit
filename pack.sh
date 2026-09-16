@@ -48,11 +48,8 @@ find "$ROOT/tools" -name '__pycache__' -type d -prune -exec rm -rf {} +
 # 2. the code graph: watcher control, router, usage analytics, hub setup
 cp -a "$REPO"/tools/codegraph*.sh "$REPO"/tools/codegraph*.py "$ROOT/tools/"
 
-# 3. the Stop-hook usage report. This repository keeps it in .claude/hooks/
-#    because upstream tracks it there; every other project runs the copy in
-#    the tools directory, which is why it ships here.
-cp -a "$REPO/.claude/hooks/drsg-usage-report" \
-      "$REPO/.claude/hooks/drsg_usage_report.py" "$ROOT/tools/"
+# 3. the Stop-hook usage report already lives in tools/ in this standalone kit.
+#    It is copied by step 1 along with the other runtime files.
 
 # 4. the setup script, at the bundle root where an unpacking user will look
 cp -a "$REPO/setup.sh" "$ROOT/setup.sh"
