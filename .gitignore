@@ -1,0 +1,11 @@
+# drsg — local database, logs, and the MCP config carrying a live bearer token
+*.drsg
+*.drsg.jsonl
+*.drsg.hnsw
+*.drsg.bm25
+logs/
+.mcp.json
+
+# Claude Code local instructions and hooks
+.claude/
+/CLAUDE.md
