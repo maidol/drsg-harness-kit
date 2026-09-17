@@ -20,7 +20,7 @@ MODE="both"
 case "${1:-}" in
   --router) MODE="router"; shift ;;
   --usage-report) MODE="usage-report"; shift ;;
-  --help|-h) sed -n '2,17p' "${BASH_SOURCE[0]}" | sed 's/^# \{0,1\}//'; exit 0 ;;
+  --help|-h) sed -n '2,16p' "${BASH_SOURCE[0]}" | sed 's/^# \{0,1\}//'; exit 0 ;;
 esac
 TARGET_DIR="${1:-.}"
 PROJECT_DIR="$(cd "$TARGET_DIR" 2>/dev/null && pwd || { mkdir -p "$TARGET_DIR" && cd "$TARGET_DIR" && pwd; })"
@@ -197,5 +197,12 @@ fi
 
 echo
 echo "Setup complete! In new Claude sessions in '$PROJECT_DIR':"
-[ "$MODE" != "usage-report" ] && echo "  1. 'mcp__codegraph__graph_*' tools will be available to query any registered repo."
-[ "$MODE" != "router" ] && echo "  2. End-of-turn usage statistics count native and routed graph calls."
+if [ "$MODE" != "usage-report" ]; then
+  echo "  1. 'mcp__codegraph__graph_*' tools will be available to query any registered repo."
+fi
+# An `&& echo` on the last line makes a false condition the script's exit
+# status: `set -e` exempts the left side of `&&`, so it exits 1 in silence
+# after printing the success banner. Keep these as `if`.
+if [ "$MODE" != "router" ]; then
+  echo "  2. End-of-turn usage statistics count native and routed graph calls."
+fi

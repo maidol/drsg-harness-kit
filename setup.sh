@@ -50,10 +50,18 @@ while [ $# -gt 0 ]; do
     --tools-dir)  TOOLS="${2:?--tools-dir needs a path}"; shift 2 ;;
     --fetch-drsg) FETCH=1; shift ;;
     --no-skills)  SKILLS=0; shift ;;
-    -h|--help)    sed -n '2,32p' "${BASH_SOURCE[0]}" | sed 's/^# \{0,1\}//'; exit 0 ;;
+    -h|--help)    sed -n '2,31p' "${BASH_SOURCE[0]}" | sed 's/^# \{0,1\}//'; exit 0 ;;
     *) echo "unknown argument '$1'" >&2; exit 1 ;;
   esac
 done
+
+# Argument validation happens here, before step 1: rejecting a bad combination
+# after the memory layer and the code graph are already installed is a late
+# error for a mistake that is knowable at parse time.
+if [ -n "$HUB" ] && { [ -n "$ROUTER" ] || [ -n "$USAGE_REPORT" ]; }; then
+  echo "ERROR: --hub cannot be combined with --router or --usage-report" >&2
+  exit 1
+fi
 
 [ -d "$HERE/tools" ] || { echo "ERROR: no tools/ next to $0 — run this from the unpacked bundle" >&2; exit 1; }
 command -v python3 >/dev/null 2>&1 || { echo "ERROR: python3 is required (hooks and router are Python)" >&2; exit 1; }
@@ -122,10 +130,6 @@ else
   echo "== 5/6: code graph skipped (no --repo)"
 fi
 
-if [ -n "$HUB" ] && { [ -n "$ROUTER" ] || [ -n "$USAGE_REPORT" ]; }; then
-  echo "ERROR: --hub cannot be combined with --router or --usage-report" >&2
-  exit 1
-fi
 if [ -n "$HUB" ]; then
   echo "== optional: router + usage report -> $HUB"
   DRSG_MEM_DIR="$(dirname "$TOOLS")" "$TOOLS/codegraph-hub-setup.sh" "$HUB"

@@ -300,17 +300,18 @@ drsg-harness-kit-<version>/
 ```bash
 tar xzf drsg-harness-kit-<version>.tar.gz && cd drsg-harness-kit-<version>
 ./setup.sh --project /path/to/project --repo /path/to/repo --bin /path/to/drsg
-# optional, independently: --router /path/to/hub or --usage-report /path/to/project
+# 可选，互相独立：--router /path/to/hub 或 --usage-report /path/to/project
 ```
 
-六步，每步幂等，任一失败即退出：
+五步必做 + 一步可选，每步幂等，任一失败即退出：
 
 1. `tools/` 铺进 `${DRSG_MEM_DIR:-~/.drsg-memory}/tools` 并加执行位；
 2. `skills/` 铺进 `~/.claude/skills`（`--no-skills` 跳过）；
 3. 定位 drsg：`--bin` → PATH → `--fetch-drsg` 才联网下载（联网是外向动作，不默认替你做）；
 4. `--project`：跑记忆层安装器（含自检）；
 5. `--repo`：`codegraph.sh install --dir …`，带上刚定位到的二进制；
-6. `--hub`（缺省取 `--project`）：注册 router MCP 和用量报告 Stop hook。
+6. 可选，且只在显式指定时才做：`--router DIR`、`--usage-report DIR`，或 `--hub DIR`（两者都装）。
+   `--project` / `--repo` 都不会推导出其中任何一个。
 
 常用参数：`--addr` / `--token`（加入已有 daemon 必给）、`--port`（该仓代码图端口）、
 `--tools-dir`（改运行副本位置）。装完**重启会话**，再照 2.5 验收。
