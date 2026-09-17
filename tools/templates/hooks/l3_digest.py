@@ -16,9 +16,9 @@ Usage: l3_digest.py <session_id> <transcript_path>
 """
 import json
 import os
+import socket
 import sys
 import time
-import urllib.request
 
 # --- Configuration --------------------------------------------------------
 # All values are read from the environment (populated from .drsg/env by
@@ -66,13 +66,59 @@ def load_env(proj_dir):
 
 
 def rpc(method, params, token):
+    """POST one JSON-RPC call to the local daemon over a bare socket.
+
+    Not urllib: `import urllib.request` is ~45 ms of this hook's ~90 ms
+    interpreter+import floor, because it pulls in http.client and, through
+    it, email.parser — a MIME header parser, to read one Content-Type off a
+    fixed loopback endpoint that needs no proxy, redirect, TLS or chunked
+    decoding. Anything that is not plain http still goes through urllib,
+    imported lazily so the common path never pays for it.
+
+    Behaviour is deliberately unchanged: any failure raises (every caller
+    wraps this in `except Exception` and degrades), and the timeout keeps
+    urlopen's semantics — per socket operation, not a deadline for the call.
+    """
     body = json.dumps({"jsonrpc": "2.0", "id": 1, "method": method, "params": params}).encode()
-    req = urllib.request.Request(
-        API, data=body,
-        headers={"Content-Type": "application/json", "Authorization": f"Bearer {token}"},
-    )
-    with urllib.request.urlopen(req, timeout=RPC_TIMEOUT) as r:
-        return json.load(r)["result"]
+    scheme, _, rest = API.partition("://")
+    hostport, _, path = rest.partition("/")
+    if scheme != "http" or hostport.startswith("["):
+        import urllib.request  # https, or an IPv6 literal: not the local daemon
+        req = urllib.request.Request(
+            API, data=body,
+            headers={"Content-Type": "application/json", "Authorization": f"Bearer {token}"},
+        )
+        with urllib.request.urlopen(req, timeout=RPC_TIMEOUT) as r:
+            return json.load(r)["result"]
+    host, _, port = hostport.partition(":")
+    head = (
+        f"POST /{path} HTTP/1.1\r\nHost: {hostport}\r\n"
+        f"Content-Type: application/json\r\nAuthorization: Bearer {token}\r\n"
+        f"Content-Length: {len(body)}\r\nConnection: close\r\n\r\n"
+    ).encode()
+    with socket.create_connection((host, int(port or 80)), timeout=RPC_TIMEOUT) as s:
+        s.sendall(head + body)
+        buf = b""
+        while b"\r\n\r\n" not in buf:
+            chunk = s.recv(65536)
+            if not chunk:
+                raise OSError("drsg rpc: closed before headers")
+            buf += chunk
+        raw, _, payload = buf.partition(b"\r\n\r\n")
+        lines = raw.decode("latin-1").split("\r\n")
+        if lines[0].split(" ")[1:2] != ["200"]:
+            raise OSError(f"drsg rpc: {lines[0]}")
+        length = None
+        for line in lines[1:]:
+            name, _, value = line.partition(":")
+            if name.strip().lower() == "content-length":
+                length = int(value.strip())
+        while length is None or len(payload) < length:
+            chunk = s.recv(65536)
+            if not chunk:
+                break
+            payload += chunk
+    return json.loads(payload)["result"]
 
 
 def node_key(n):
