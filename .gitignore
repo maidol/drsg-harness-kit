@@ -11,3 +11,6 @@ __pycache__
 # Claude Code local instructions and hooks
 .claude/
 /CLAUDE.md
+
+# Local planning artifacts
+/docs/superpowers/

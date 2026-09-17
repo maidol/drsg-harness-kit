@@ -23,6 +23,8 @@ read it before running it.
 | `setup.sh` | install on a fresh machine — runs from an unpacked bundle |
 | `pack.sh` | build that bundle |
 | `install-drsg.sh` | download a `drsg` binary when the machine has none |
+| `tools/codegraph-router-setup.sh` | opt-in router MCP setup for hub projects |
+| `tools/codegraph-usage-setup.sh` | opt-in native/routed usage-report Stop hook |
 
 ## Install
 
@@ -43,7 +45,9 @@ one, because a new token invalidates every client config already written.
 Edit here, then rebuild the bundle and re-run its `setup.sh`. That is the same
 path used to set a new machine up, deliberately — one way to do it rather than
 two. `setup.sh` is idempotent, re-runs the installers' self-checks, and touches
-no database.
+no database. The router and usage report are bundled but their project
+configuration is opt-in: use `--router DIR`, `--usage-report DIR`, or explicit
+`--hub DIR` for both; `--project` and `--repo` alone install neither.
 
 ## Check it is healthy
 

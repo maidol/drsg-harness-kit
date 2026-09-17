@@ -194,23 +194,41 @@ tools/codegraph.sh restart --dir <repo-root> --force   # 整库重建，见下
 DRSG_CODE_BIN=<path-to-drsg> tools/codegraph.sh install --dir <repo-root> --port <port>
 ```
 
-### 2.4 装 router 和用量报告（hub 项目）
+### 2.4 独立安装 router 和用量报告
+
+router 和用量报告是两个独立的可选组件，不会因为安装记忆层或代码图而自动启用。
+
+需要从 hub 项目跨仓访问代码图时，只装 router：
 
 ```bash
-tools/codegraph-hub-setup.sh <project-dir>
+tools/codegraph-router-setup.sh <hub-project>
 ```
 
-注册 `codegraph` MCP（router）+ `Stop` hook（用量报告），并核对 registry 里的仓库。
-registry 由 `codegraph.sh install` 自动追加维护；只有补登记未走 install 的仓、或 plane 名
-不等于目录名时才手工编辑，**用 `>>` 不要用 `>`**：
+它注册 `codegraph` MCP（router）并核对 registry。`codegraph.sh install` 会自动追加仓库；只有未走
+`install` 的仓，或 plane 名不等于目录名时才手工追加，**用 `>>`，不要用 `>`**：
 
 ```bash
 printf '%s\n'     '<repo-a>'            >> ~/.drsg-memory/graphs
-printf '%s\t%s\n' '<repo-b>' '<plane-b>' >> ~/.drsg-memory/graphs   # 真 TAB，不是反斜杠 t
+printf '%s\t%s\n' '<repo-b>' '<plane-b>' >> ~/.drsg-memory/graphs   # 真 TAB
 ```
 
-用自定义 registry 路径就必须让 router 的**注册配置**带上变量（`-e`），shell 里 export 一次
-不算数——router 会静默回到默认路径：
+需要在任何项目查看本地代码图用量时，单独装用量报告：
+
+```bash
+tools/codegraph-usage-setup.sh <project-dir>
+```
+
+它只注册 `Stop` hook，不注册 router，也不修改 MCP。一个报告工具同时统计本地 native
+`mcp__drsg*` / `drsg-watch` 调用和 router 的 `mcp__codegraph__graph_*` 跨仓调用；两条路径共用同一份
+报告，因此 hub 不需要 router 才能启用用量报告。用量报告是估算值（返回 token 带 `~`），调用次数精确。
+
+如果确实需要两者，可以显式使用组合兼容入口：
+
+```bash
+tools/codegraph-hub-setup.sh <hub-project>
+```
+
+自定义 registry 必须传入 router 的注册配置；只在 shell 中 `export` 一次不够：
 
 ```bash
 claude mcp add --scope local -e DRSG_GRAPHS=<registry-file> codegraph -- python3 <router-path>
@@ -269,6 +287,7 @@ drsg-harness-kit-<version>/
   install-drsg.sh   没有二进制时从 GitHub release 装一个
   tools/            memory-layer 全套（含 templates/hooks）+ codegraph.sh
                     + codegraph-router.py + codegraph-usage.py
+                    + codegraph-router-setup.sh + codegraph-usage-setup.sh
                     + codegraph-hub-setup.sh + drsg-usage-report(.py)
   skills/           codegraph skill，装到 ~/.claude/skills
   MANIFEST          源 commit、构建时间、逐文件 sha256
@@ -281,6 +300,7 @@ drsg-harness-kit-<version>/
 ```bash
 tar xzf drsg-harness-kit-<version>.tar.gz && cd drsg-harness-kit-<version>
 ./setup.sh --project /path/to/project --repo /path/to/repo --bin /path/to/drsg
+# optional, independently: --router /path/to/hub or --usage-report /path/to/project
 ```
 
 六步，每步幂等，任一失败即退出：

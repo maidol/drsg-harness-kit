@@ -17,8 +17,10 @@
 #
 #   --project DIR     install the memory layer into this project (hooks + MCP)
 #   --repo DIR        build and serve a code graph for this git repository
-#   --hub DIR         register the code-graph router + usage report here
-#                     (default: --project, when that is given)
+#   --hub DIR         explicitly register router + usage report here
+#   --router DIR      explicitly register only the code-graph router
+#   --usage-report DIR explicitly register only the usage report Stop hook
+#                     (none is inferred from --project or --repo)
 #   --bin PATH        the drsg binary to run (default: `drsg` on PATH)
 #   --addr host:port  memory daemon address            (default 127.0.0.1:7700)
 #   --token T         memory daemon token — REQUIRED when joining a daemon
@@ -30,7 +32,7 @@
 set -euo pipefail
 
 HERE="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
-PROJECT=""; REPO=""; HUB=""; BIN=""; ADDR=""; TOKEN=""; PORT=""
+PROJECT=""; REPO=""; HUB=""; ROUTER=""; USAGE_REPORT=""; BIN=""; ADDR=""; TOKEN=""; PORT=""
 TOOLS="${DRSG_MEM_DIR:-$HOME/.drsg-memory}/tools"
 FETCH=0; SKILLS=1
 
@@ -39,6 +41,8 @@ while [ $# -gt 0 ]; do
     --project)    PROJECT="${2:?--project needs a path}"; shift 2 ;;
     --repo)       REPO="${2:?--repo needs a path}"; shift 2 ;;
     --hub)        HUB="${2:?--hub needs a path}"; shift 2 ;;
+    --router)     ROUTER="${2:?--router needs a path}"; shift 2 ;;
+    --usage-report) USAGE_REPORT="${2:?--usage-report needs a path}"; shift 2 ;;
     --bin)        BIN="${2:?--bin needs a path}"; shift 2 ;;
     --addr)       ADDR="${2:?--addr needs host:port}"; shift 2 ;;
     --token)      TOKEN="${2:?--token needs a value}"; shift 2 ;;
@@ -46,7 +50,7 @@ while [ $# -gt 0 ]; do
     --tools-dir)  TOOLS="${2:?--tools-dir needs a path}"; shift 2 ;;
     --fetch-drsg) FETCH=1; shift ;;
     --no-skills)  SKILLS=0; shift ;;
-    -h|--help)    sed -n '2,29p' "${BASH_SOURCE[0]}" | sed 's/^# \{0,1\}//'; exit 0 ;;
+    -h|--help)    sed -n '2,32p' "${BASH_SOURCE[0]}" | sed 's/^# \{0,1\}//'; exit 0 ;;
     *) echo "unknown argument '$1'" >&2; exit 1 ;;
   esac
 done
@@ -118,10 +122,21 @@ else
   echo "== 5/6: code graph skipped (no --repo)"
 fi
 
-HUB="${HUB:-$PROJECT}"
+if [ -n "$HUB" ] && { [ -n "$ROUTER" ] || [ -n "$USAGE_REPORT" ]; }; then
+  echo "ERROR: --hub cannot be combined with --router or --usage-report" >&2
+  exit 1
+fi
 if [ -n "$HUB" ]; then
-  echo "== 6/6: router + usage report -> $HUB"
+  echo "== optional: router + usage report -> $HUB"
   DRSG_MEM_DIR="$(dirname "$TOOLS")" "$TOOLS/codegraph-hub-setup.sh" "$HUB"
+fi
+if [ -n "$ROUTER" ]; then
+  echo "== optional: router -> $ROUTER"
+  DRSG_MEM_DIR="$(dirname "$TOOLS")" "$TOOLS/codegraph-router-setup.sh" "$ROUTER"
+fi
+if [ -n "$USAGE_REPORT" ]; then
+  echo "== optional: usage report -> $USAGE_REPORT"
+  DRSG_MEM_DIR="$(dirname "$TOOLS")" "$TOOLS/codegraph-usage-setup.sh" "$USAGE_REPORT"
 fi
 
 cat <<EOF
@@ -131,7 +146,8 @@ done. Restart the Claude Code session — hooks and MCP servers are read at star
 then check, in order:
   $TOOLS/serve.sh status                     memory daemon, its db and token
   $TOOLS/codegraph.sh doctor --dir <repo>    plane exists, folded to HEAD, rules block current
-  graph_repos (MCP)                          which repositories the router can reach
+  graph_repos (MCP, when --router/--hub was selected) which repositories the router can reach
+  $TOOLS/drsg-usage-report (when --usage-report/--hub was selected) usage summary
   $TOOLS/install.sh --check                  deployed hooks vs the templates they came from
 
 to add another repository to the router later:
