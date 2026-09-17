@@ -243,26 +243,44 @@ it is remembered afterwards:
 DRSG_CODE_BIN=<path-to-drsg> tools/codegraph.sh install --dir <repo-root> --port <port>
 ```
 
-### 2.4 The router and the usage report (a hub project)
+### 2.4 Install the router and usage report independently
+
+The router and usage report are separate optional components. Installing the memory layer or a local code
+graph does not install either one automatically.
+
+For a hub project that needs cross-repository code-graph access, install only the router:
 
 ```bash
-tools/codegraph-hub-setup.sh <project-dir>
+tools/codegraph-router-setup.sh <hub-project>
 ```
 
-Registers the `codegraph` MCP server (the router) and the `Stop` hook (the usage
-report), then checks the registry. `codegraph.sh install` appends to the
-registry itself; edit it by hand only to add a repository that never went
-through `install`, or when the plane name is not the directory name — and
-append, **never `>`**:
+This registers the `codegraph` MCP server (the router) and verifies the registry. `codegraph.sh install`
+appends repositories itself; edit the registry by hand only for a repository that never went through `install`,
+or when the plane name differs from its directory name — append, **never `>`**:
 
 ```bash
 printf '%s\n'     '<repo-a>'            >> ~/.drsg-memory/graphs
 printf '%s\t%s\n' '<repo-b>' '<plane-b>' >> ~/.drsg-memory/graphs   # a real TAB
 ```
 
-A custom registry path has to be in the router's **registration** (`-e`).
-Exporting it once in a shell is not enough — the router silently falls back to
-the default path and reports an empty registry:
+For usage reporting in any project that uses code-graph tools, install the report independently:
+
+```bash
+tools/codegraph-usage-setup.sh <project-dir>
+```
+
+This registers only the `Stop` hook; it does not register the router or change MCP configuration. One report
+counts both native `mcp__drsg*` / `drsg-watch` calls and routed cross-repository
+`mcp__codegraph__graph_*` calls. Both paths use the same report, so a hub does not need the router in order to
+report native usage. Call counts are exact; returned-token counts are estimates and are marked with `~`.
+
+If both components are wanted, use the explicit compatibility convenience entry point:
+
+```bash
+tools/codegraph-hub-setup.sh <hub-project>
+```
+
+A custom registry must be included in the router's registration; exporting it once in a shell is not enough:
 
 ```bash
 claude mcp add --scope local -e DRSG_GRAPHS=<registry-file> codegraph -- python3 <router-path>
@@ -326,6 +344,7 @@ drsg-harness-kit-<version>/
   install-drsg.sh   fetches a release binary when there is none
   tools/            the memory layer (with templates/hooks) + codegraph.sh
                     + codegraph-router.py + codegraph-usage.py
+                    + codegraph-router-setup.sh + codegraph-usage-setup.sh
                     + codegraph-hub-setup.sh + drsg-usage-report(.py)
   skills/           the codegraph skill, installed under ~/.claude/skills
   MANIFEST          source commit, build time, per-file sha256
@@ -339,9 +358,10 @@ different commit.
 ```bash
 tar xzf drsg-harness-kit-<version>.tar.gz && cd drsg-harness-kit-<version>
 ./setup.sh --project /path/to/project --repo /path/to/repo --bin /path/to/drsg
+# optional, independently: --router /path/to/hub or --usage-report /path/to/project
 ```
 
-Six steps, each idempotent, any failure stopping the rest:
+Five required steps plus an optional hub phase, each idempotent, any failure stopping the rest:
 
 1. lay `tools/` into `${DRSG_MEM_DIR:-~/.drsg-memory}/tools` and make it executable;
 2. lay `skills/` into `~/.claude/skills` (`--no-skills` to skip);
@@ -349,8 +369,8 @@ Six steps, each idempotent, any failure stopping the rest:
    (reaching the network is not something to do on someone's behalf by default);
 4. `--project`: run the memory-layer installer, self-checks included;
 5. `--repo`: `codegraph.sh install --dir …` with the binary just located;
-6. `--hub` (defaulting to `--project`): register the router MCP server and the
-   usage-report Stop hook.
+6. optional, only when explicitly requested: `--router DIR`, `--usage-report DIR`, or
+   `--hub DIR` for both. No option is inferred from `--project` or `--repo`.
 
 Also: `--addr` / `--token` (required to join an existing daemon), `--port` (that
 repository's code-graph port), `--tools-dir` (move the runtime copies).

@@ -15,6 +15,15 @@ briefing instead of a blank slate.
 The whole thing is four Python hooks, an installer, and a daemon control
 script. No plugin, no service to sign up for, no data leaving the machine.
 
+## Code graph router and usage reporting
+
+The runtime bundle includes the router and usage-report binaries, but project
+configuration is opt-in. Use `codegraph-router-setup.sh` for router MCP access,
+`codegraph-usage-setup.sh` for the Stop-hook report, or the explicit combined
+`codegraph-hub-setup.sh` convenience wrapper. The usage report counts both
+native local graph calls and routed `codegraph` calls; it is not installed by
+`install.sh` or by default `setup.sh`.
+
 ## Architecture
 
 ```
