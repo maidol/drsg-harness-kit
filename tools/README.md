@@ -1,5 +1,7 @@
 # Long-term memory layer for Claude Code
 
+[中文版](README.zh-CN.md)
+
 > Today this supports Claude Code only. The hook contract (`SessionStart` /
 > `UserPromptSubmit` / `SessionEnd` plus a transcript path) and the `claude mcp
 > add` registration path are Claude Code's; porting to another harness means
