@@ -345,6 +345,24 @@ rules_version() {
   sha256sum "$RULES_TEMPLATE" | cut -c1-8
 }
 
+# What `doctor` accepts: the hash of every rules template this checkout ships,
+# plus an explicit override. A block is current when its stamp matches ANY of
+# them.
+#
+# Comparing against `rules_version` alone asked the wrong question — "was this
+# generated from the template THIS shell points at", not "from a template we
+# still ship". Generate with codegraph-rules.zh-CN.md and every later `doctor`
+# that did not re-export CODEGRAPH_RULES_TEMPLATE said `regenerate` forever,
+# the SessionStart guard repeated it every session, and taking that advice
+# replaced the Chinese block with the English one.
+rules_versions() {
+  { printf '%s\n' "$RULES_TEMPLATE"
+    ls "$SELF_REPO"/tools/templates/codegraph-rules*.md 2>/dev/null
+  } | sort -u | while read -r t; do
+        [ -f "$t" ] && sha256sum "$t" | cut -c1-8
+      done | sort -u | paste -sd,
+}
+
 # The same trick for the `codegraph` skill, which documents how to *operate*
 # this script — as opposed to the block above, which says how to ask the graph
 # questions. The two decay independently and for different reasons: the block
@@ -646,9 +664,10 @@ doctor() {
   echo "  daemon      up on $ADDR (pid $pid)$([ "$ADDR" = "$CFG_ADDR" ] || echo "  ** .mcp.json says $CFG_ADDR **")"
   [ "$ADDR" = "$CFG_ADDR" ] || rc=1
   rpc plane.list '{}' > "$STATE/planes.json" 2>/dev/null || { echo "  plane       RPC failed"; return 1; }
-  python3 - "$STATE/planes.json" "$PLANE" "$REPO" "$(git -C "$REPO" rev-parse HEAD)" "$ADDR" "$(rules_version)" <<'PY' || rc=1
+  python3 - "$STATE/planes.json" "$PLANE" "$REPO" "$(git -C "$REPO" rev-parse HEAD)" "$ADDR" "$(rules_versions)" <<'PY' || rc=1
 import json, os, sys
-path, plane, repo, head, addr, version = sys.argv[1:7]
+path, plane, repo, head, addr, versions = sys.argv[1:7]
+known = versions.split(",")
 planes = {p["name"]: p for p in json.load(open(path)).get("result", [])}
 bad = 0
 if plane not in planes:
@@ -689,10 +708,15 @@ else:
         old = ""  # hand-written sections are the author's; nothing to compare to
     elif not m:
         old = ", ** rules unversioned — predates the stamp, regenerate **"
-    elif m.group(1) != version:
-        old = f", ** rules {m.group(1)}, generator is at {version} — regenerate **"
+    elif not [v for v in known if v]:
+        # No template on disk — `rules` would fail too (it checks before
+        # writing), so "regenerate" is advice that cannot be taken. Say which
+        # thing is actually missing.
+        old = ", ** no rules template next to this script — cannot check the stamp **"
+    elif m.group(1) not in known:
+        old = f", ** rules {m.group(1)}, templates are at {versions} — regenerate **"
     else:
-        old = f", rules {version}"
+        old = f", rules {m.group(1)}"
     print(f"  CLAUDE.md   {kind}, names plane+address: {'yes' if names else '** NO **'}"
           + (f", ** stale counts: {', '.join(stale)} **" if stale else "") + old)
     bad = bad or not names or bool(stale) or "**" in old

@@ -2,7 +2,8 @@
 
 > 本文内容：讲解工具包怎么工作、怎么安装、怎么打包。
 > 脚本自身的选项以各脚本头注释和 `--help` 为准；
-> 记忆层的详细说明见 [`tools/README.md`](../../../tools/README.md)。
+> 记忆层的详细说明见仓库根目录的 `tools/README.md`；它会随 bundle 一起发布，
+> 所以装好的机器上同一份文件在 `~/.drsg-memory/tools/README.md`。
 
 ---
 
@@ -275,8 +276,8 @@ claude mcp add --scope local -e DRSG_GRAPHS=<registry-file> codegraph -- python3
 ### 3.2 构建
 
 ```bash
-pack.sh                 # 产出 dist/drsg-harness-kit-<version>.tar.gz 和 .sha256
-pack.sh --out /tmp/x --name my-kit
+./pack.sh               # 产出 dist/drsg-harness-kit-<version>.tar.gz 和 .sha256
+./pack.sh --out /tmp/x --name my-kit
 ```
 
 包内布局（`tools/` 就是 `~/.drsg-memory/tools/` 该有的样子）：
@@ -288,7 +289,7 @@ drsg-harness-kit-<version>/
   tools/            memory-layer 全套（含 templates/hooks）+ codegraph.sh
                     + codegraph-router.py + codegraph-usage.py
                     + codegraph-router-setup.sh + codegraph-usage-setup.sh
-                    + codegraph-hub-setup.sh + drsg-usage-report(.py)
+                    + codegraph-hub-setup.sh + drsg-usage-report + drsg_usage_report.py
   skills/           codegraph skill，装到 ~/.claude/skills
   MANIFEST          源 commit、构建时间、逐文件 sha256
 ```

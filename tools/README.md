@@ -102,10 +102,10 @@ memory first:
 
 ```bash
 # 1. export from the old daemon
-python3 tools/migrate.py dump --api http://127.0.0.1:7701/rpc --token <old token> \
+python3 migrate.py dump --api http://127.0.0.1:7701/rpc --token <old token> \
   --plane memory --out project-memory.json
 # 2. import into the shared one (deduplicates by external key, never overwrites)
-python3 tools/migrate.py load --api http://127.0.0.1:7700/rpc --token <new token> \
+python3 migrate.py load --api http://127.0.0.1:7700/rpc --token <new token> \
   --plane memory --in project-memory.json
 # 3. re-run the installer against the shared address (idempotent)
 ./install.sh /path/to/other-project --bin /path/to/drsg \
@@ -115,7 +115,7 @@ python3 tools/migrate.py load --api http://127.0.0.1:7700/rpc --token <new token
 ```
 
 Back up both databases first — stop the daemon, then copy the directory.
-`tools/migrate.py` warns about and skips nodes with no external key; a `dump`
+`migrate.py` warns about and skips nodes with no external key; a `dump`
 will tell you whether you have any.
 
 ## Options
@@ -213,8 +213,8 @@ Both read hooks append one JSON line per decision to `<project>/.drsg/recall.jso
 Writing it can never fail a session; the record is made after the decision.
 
 ```bash
-python3 tools/analyze_recall.py            # every project the daemon knows
-python3 tools/analyze_recall.py --since 14
+python3 analyze_recall.py            # every project the daemon knows
+python3 analyze_recall.py --since 14
 ```
 
 It pairs each injection with the reply that followed it in the transcript and

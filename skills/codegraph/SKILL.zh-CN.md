@@ -17,7 +17,7 @@ description: 运维由 drsg / drsg-watch MCP 工具使用的 dr-strange 代码�
 ~/.drsg-memory/tools/codegraph.sh doctor --dir <repo>
 ```
 
-它会向运行中的 daemon 检查五项内容，并在第一项错误时返回非零；因此也可以作为多个仓库循环检查的 gate：
+它会向运行中的 daemon 检查六项内容，把每一项出错的都报出来之后再返回非零；因此也可以作为多个仓库循环检查的 gate：
 
 | 输出项 | 失败含义 |
 |---|---|
@@ -26,6 +26,7 @@ description: 运维由 drsg / drsg-watch MCP 工具使用的 dr-strange 代码�
 | `root` | plane 是从另一个工作树解析出来的。 |
 | `CLAUDE.md` | 没有代码图规则段，或者它写了错误的 plane/地址，硬编码了已经变化的计数，或由旧版规则生成。 |
 | `guard` | `SessionStart` hook 缺失、重复注册，或指向的路径已经不存在。 |
+| `skill` | 本 skill 没有安装到 `~/.claude/skills/codegraph/SKILL.md`（`setup.sh --no-skills` 会跳过安装），或没有 `codegraph-cli` 戳，或戳与 `codegraph.sh` 当前的子命令分发不一致。这一项按机器检查、不按仓库——重新拷贝 `skills/codegraph/`，或去掉 `--no-skills` 重跑 `setup.sh`。 |
 
 这些失败项每一项都曾真实发生过。最值得单独强调的是：如果 plane 同步到了**另一个仓库**的工作树，所有查询都会自信地返回错误答案。
 
@@ -56,7 +57,7 @@ description: 运维由 drsg / drsg-watch MCP 工具使用的 dr-strange 代码�
 
 `codegraph.sh rules --dir <repo>` 会重新生成 `<!-- drsg-codegraph:begin -->` 标记之间的规则块。它被设计为**生成一次，之后不会自动刷新**，这样任何会话都不会改写 `CLAUDE.md` 并使 prompt 缓存失效。代价是内容可能无声过期，这正是版本标记存在的原因：
 
-- `<!-- rules=<8 hex> -->`：规则生成器模板区域的 hash，包含占位符但不包含占位符的实际值。同一生成器生成的所有仓库都会有相同标记；只有说明文字改变时它才改变，不需要人工记住递增。
+- `<!-- rules=<8 hex> -->`：签入的 `tools/templates/codegraph-rules.md` 模板的 hash，包含占位符但不包含占位符的实际值。使用同一份模板的所有仓库都会有相同标记；只有说明文字改变时它才改变，不需要人工记住递增。换用另一份模板（例如中文版）会得到另一个戳。
 - 本 skill 中的 `<!-- codegraph-cli=<8 hex> -->`：`codegraph.sh` 子命令分发逻辑的 hash。如果新增、重命名或删除子命令，描述旧接口的文字就会失效，`doctor` 会报告这一点。
 
 当 `doctor` 输出 `** rules <old>, generator is at <new> — regenerate **` 时，为该仓库重新运行 `rules`。当它指出本 skill 已过期时，更新 `SKILL.md`，并使用 `codegraph.sh` 报告的值刷新标记。
@@ -75,7 +76,7 @@ description: 运维由 drsg / drsg-watch MCP 工具使用的 dr-strange 代码�
 
 它从 transcript 中统计真实调用：命中、空回答和地址错误的分布，以及代码图工具明明可用时使用 grep 的频率。
 
-阅读输出时要注意样本上限：**它只能证明代码图被查询过，不能证明代码图改变了答案。** 当前没有 suppression 对照组，因此命中率不是有效性比率。引用统计数字时必须同时说明这一点。
+阅读输出时要记住它的局限：**它只能证明代码图被查询过，不能证明代码图改变了答案。** 当前没有 suppression 对照组，因此命中率不是有效性比率。引用统计数字时必须同时说明这一点。
 
 阅读原始数字时还要做两项调整：管道中的 `| grep` 过滤不是回避代码图，不应计为错失机会；并且只有形似符号的模式才会被列为候选。
 
@@ -105,11 +106,15 @@ claude mcp add --scope local codegraph -- \
 修改仓库副本后，应重新构建 bundle 并再次运行安装器来刷新运行时副本——这与新机器安装所走的是同一条路径，因此不会出现两套流程：
 
 ```bash
-pack.sh                     # 写入 dist/drsg-harness-kit-<version>.tar.gz
+./pack.sh                   # 写入 dist/drsg-harness-kit-<version>.tar.gz
 tar xzf dist/drsg-harness-kit-*.tar.gz -C /tmp && /tmp/drsg-harness-kit-*/setup.sh
 ```
 
 `setup.sh` 是幂等的：会覆盖运行时副本、重新运行各安装器的自检，但不会触碰数据库。
+
+改的是 `tools/templates/hooks/` 底下的东西时要加 `--project DIR`。不带参数的
+`setup.sh` 只刷新 `~/.drsg-memory/tools/`，各项目自己的 `.claude/hooks/` 仍停在旧
+副本上——那正是之后 `install.sh --check` 会报出来的 drift。
 
 ## 本机拓扑
 

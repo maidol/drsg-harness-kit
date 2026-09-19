@@ -47,7 +47,10 @@ one, because a new token invalidates every client config already written.
 Edit here, then rebuild the bundle and re-run its `setup.sh`. That is the same
 path used to set a new machine up, deliberately — one way to do it rather than
 two. `setup.sh` is idempotent, re-runs the installers' self-checks, and touches
-no database. The router and usage report are bundled but their project
+no database. Add `--project DIR` when what you edited was under
+`tools/templates/hooks/`: a bare run refreshes `~/.drsg-memory/tools/` only,
+leaving each project's `.claude/hooks/` on the previous copy — the drift
+`install.sh --check` reports afterwards. The router and usage report are bundled but their project
 configuration is opt-in: use `--router DIR`, `--usage-report DIR`, or explicit
 `--hub DIR` for both; `--project` and `--repo` alone install neither.
 

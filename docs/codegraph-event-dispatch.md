@@ -80,8 +80,9 @@ codegraph-router.main            tools/codegraph-router.py:500
 **它不做什么**:不合并平面,只做寻址。所以 `graph_trace` 写死单仓库内 ——
 跨仓库的调用边**根本不存在**,假装能做就是编。
 
-> 配图三张(架构 / 时序 / 流程)在
-> `/path/to/review-project/reviews/dr-strange/`,索引见该目录 README。
+> 路由器的架构图在本仓库的
+> [`docs/zh/src/images/codegraph-router-architecture.svg`](zh/src/images/codegraph-router-architecture.svg)
+> (英文版在 `docs/en/src/images/` 下同名)。
 
 ---
 

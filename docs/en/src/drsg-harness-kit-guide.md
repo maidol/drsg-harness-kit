@@ -2,8 +2,9 @@
 
 > Three questions only: how it works, how to install it, how to package it for
 > the next machine. Each script's own options are what its header comment and
-> `--help` say; the memory layer is documented in full in
-> [`tools/README.md`](../../../tools/README.md).
+> `--help` say; the memory layer is documented in full in `tools/README.md` at
+> the root of the repository — it ships inside the bundle, so on an installed
+> machine the same file is at `~/.drsg-memory/tools/README.md`.
 
 ---
 
@@ -332,8 +333,8 @@ into something another machine can unpack into that same runtime layout.
 ### 3.2 Build
 
 ```bash
-pack.sh                 # writes dist/drsg-harness-kit-<version>.tar.gz and .sha256
-pack.sh --out /tmp/x --name my-kit
+./pack.sh               # writes dist/drsg-harness-kit-<version>.tar.gz and .sha256
+./pack.sh --out /tmp/x --name my-kit
 ```
 
 Layout (`tools/` is exactly what `~/.drsg-memory/tools/` has to hold):
@@ -345,7 +346,7 @@ drsg-harness-kit-<version>/
   tools/            the memory layer (with templates/hooks) + codegraph.sh
                     + codegraph-router.py + codegraph-usage.py
                     + codegraph-router-setup.sh + codegraph-usage-setup.sh
-                    + codegraph-hub-setup.sh + drsg-usage-report(.py)
+                    + codegraph-hub-setup.sh + drsg-usage-report + drsg_usage_report.py
   skills/           the codegraph skill, installed under ~/.claude/skills
   MANIFEST          source commit, build time, per-file sha256
 ```
