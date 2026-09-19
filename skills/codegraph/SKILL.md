@@ -3,6 +3,8 @@ name: codegraph
 description: Operate the dr-strange code-graph daemon that backs the drsg / drsg-watch MCP tools — diagnose it, restart it, onboard a new repository, and audit whether it is actually being used. Use this whenever the graph tools misbehave or go quiet (`not found: plane`, `no symbol matches` on something that plainly exists, a tool that returns nothing at all, an MCP server listed but not answering), whenever a session starts by reporting the daemon is down or that `doctor` found something, whenever someone wants a code graph set up for a repository that has none, whenever the CLAUDE.md rules block needs regenerating or is reported stale, and whenever the question is how much the graph is being used or whether it is earning its keep. Reach for it on phrasings like "the graph is broken", "drsg isn't responding", "set up the code graph for <repo>", "regenerate the rules", "is anyone actually using this thing" — and also when a graph call fails silently and the temptation is to shrug and fall back to grep, because a silent failure is the one condition this skill exists to catch.
 ---
 
+[中文版](SKILL.zh-CN.md)
+
 # Operating the code graph
 
 This skill is about **keeping the graph alive and honest**: the daemon, the

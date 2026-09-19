@@ -1,5 +1,7 @@
 # drsg-harness-kit
 
+[中文版](README.zh-CN.md)
+
 The agent side of DrSG, as one repository: a shared long-term memory layer for
 Claude Code (hooks + a daemon + cross-project to-dos), a per-repository code
 graph with a router that puts several graphs behind one MCP surface, and the
