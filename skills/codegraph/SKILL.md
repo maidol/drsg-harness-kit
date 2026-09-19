@@ -15,7 +15,7 @@ repository's `CLAUDE.md`, unconditionally, because a question about call
 relationships rarely announces itself as one — by the time you would think to
 load a skill, you have already answered from impression. Do not treat having
 read this file as having read those rules, and do not restate them from here.
-The full prose is in `docs/{en,zh}/src/coding-agent-codegraph.md`.
+The full prose is generated into each project's `CLAUDE.md` from this repository's `tools/templates/codegraph-rules.md`; the Chinese translation is `tools/templates/codegraph-rules.zh-CN.md`. Set `CODEGRAPH_RULES_TEMPLATE` to select the translated template. The generated block is the complete questioning rule set, and it is not duplicated here.
 
 ## Start with `doctor`
 
@@ -88,10 +88,11 @@ refreshed automatically** — deliberately, so that no session rewrites
 `CLAUDE.md` and invalidates the prompt cache. The cost of that choice is silent
 decay, which is what the stamps are for:
 
-- `<!-- rules=<8 hex> -->` — a hash of the generator's own template region,
-  placeholders included but never their values. Every repository on the same
-  generator therefore shows the same stamp, and it moves only when the prose
-  moves. No one has to remember to bump it.
+- `<!-- rules=<8 hex> -->` — a hash of the checked-in
+  `tools/templates/codegraph-rules.md` template, placeholders included but
+  never their values. Every repository using the same template therefore shows
+  the same stamp, and it moves only when the prose moves. No one has to
+  remember to bump it.
 - `<!-- codegraph-cli=<8 hex> -->` in this skill — a hash of `codegraph.sh`'s
   subcommand dispatch. If a subcommand is added, renamed or dropped, prose
   describing the old surface is wrong, and `doctor` says so.

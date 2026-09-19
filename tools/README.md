@@ -82,7 +82,8 @@ L3 distillation is off unless you name a chat provider:
 
 `--l3-chat` also takes a raw OpenAI-compatible base URL — a self-hosted proxy,
 say — but only against a daemon whose `digest.run` accepts one; with the preset
-names above, any daemon will do.
+names above, any daemon will do. The provider contract is implemented by the
+memory daemon, not by this repository.
 
 ## Joining an existing daemon
 
@@ -101,10 +102,10 @@ memory first:
 
 ```bash
 # 1. export from the old daemon
-python3 migrate.py dump --api http://127.0.0.1:7701/rpc --token <old token> \
+python3 tools/migrate.py dump --api http://127.0.0.1:7701/rpc --token <old token> \
   --plane memory --out project-memory.json
 # 2. import into the shared one (deduplicates by external key, never overwrites)
-python3 migrate.py load --api http://127.0.0.1:7700/rpc --token <new token> \
+python3 tools/migrate.py load --api http://127.0.0.1:7700/rpc --token <new token> \
   --plane memory --in project-memory.json
 # 3. re-run the installer against the shared address (idempotent)
 ./install.sh /path/to/other-project --bin /path/to/drsg \
@@ -114,8 +115,8 @@ python3 migrate.py load --api http://127.0.0.1:7700/rpc --token <new token> \
 ```
 
 Back up both databases first — stop the daemon, then copy the directory.
-`migrate.py` warns about and skips nodes with no external key; a `dump` will
-tell you whether you have any.
+`tools/migrate.py` warns about and skips nodes with no external key; a `dump`
+will tell you whether you have any.
 
 ## Options
 

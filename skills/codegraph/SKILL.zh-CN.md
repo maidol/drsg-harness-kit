@@ -7,7 +7,7 @@ description: 运维由 drsg / drsg-watch MCP 工具使用的 dr-strange 代码�
 
 本 skill 负责让代码图**保持运行且诚实**：daemon、插件生成的 plane、规则块、会话守卫和使用量审计。
 
-**本 skill 不是代码图提问规则。** 那些规则无条件写在仓库的 `CLAUDE.md` 中，因为调用关系问题很少会明确说“这是结构问题”——等你想到加载 skill 时，往往已经凭印象回答了。不要把读过本文件当成读过那些规则，也不要在这里重复它们。完整说明见 `docs/{en,zh}/src/coding-agent-codegraph.md`。
+**本 skill 不是代码图提问规则。** 那些规则无条件写在仓库的 `CLAUDE.md` 中，因为调用关系问题很少会明确说“这是结构问题”——等你想到加载 skill 时，往往已经凭印象回答了。不要把读过本文件当成读过那些规则，也不要在这里重复它们。完整说明由本仓库的 `tools/templates/codegraph-rules.md` 生成到各项目的 `CLAUDE.md` 中；中文翻译模板是 `tools/templates/codegraph-rules.zh-CN.md`，可通过 `CODEGRAPH_RULES_TEMPLATE` 选择。生成后的规则块就是完整的提问规则集，本 skill 不重复维护它。
 
 ## 从 `doctor` 开始
 

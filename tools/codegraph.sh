@@ -56,6 +56,7 @@ set -euo pipefail
 [ -d /proc ] || { echo "ERROR: this script requires Linux (/proc is missing)." >&2; exit 1; }
 
 SELF_REPO="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
+RULES_TEMPLATE="${CODEGRAPH_RULES_TEMPLATE:-$SELF_REPO/tools/templates/codegraph-rules.md}"
 # This script by absolute path: it is written into other repositories' CLAUDE.md
 # and settings.local.json, which are read from anywhere but here.
 SELF_PATH="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)/$(basename "${BASH_SOURCE[0]}")"
@@ -105,7 +106,7 @@ LOG="$STATE/log"
 BIN_MEMO="$STATE/bin"
 
 # Where drsg is, in the order that stays true wherever this script is run from.
-# `$SELF_REPO` assumes the script sits in a checkout's `scripts/` — which stops
+# `$SELF_REPO` assumes the script sits in a checkout's `tools/` — which stops
 # being true the moment a copy is kept outside the repository (a copy exists
 # precisely because a branch that does not track this file deletes it). The
 # target repo is tried first for the same reason: with `--dir`, the repo being
@@ -336,16 +337,12 @@ rpc() {
     -d "{\"jsonrpc\":\"2.0\",\"id\":1,\"method\":\"$1\",\"params\":$2}"
 }
 
-# The version stamped into every generated block: a hash of the block's own
-# template, taken from the source of this script between the two anchors below.
-#
-# Derived rather than hand-kept because a version number you have to remember to
-# bump gets forgotten in exactly the edit that mattered — which is the decay this
-# is here to catch. The region hashed is the template, placeholders and all, so
-# `{plane}` and `{addr}` never enter it: every repository on the same generator
+# The version stamped into every generated block: a hash of the checked-in
+# template, placeholders and all. Keep the prose in one inspectable file rather
+# than hiding it inside this shell script; every repository on the same template
 # gets the same version, and it moves when and only when the prose moves.
 rules_version() {
-  sed -n '/^block = f"""{BEGIN}$/,/^{END}"""$/p' "$SELF_PATH" | sha256sum | cut -c1-8
+  sha256sum "$RULES_TEMPLATE" | cut -c1-8
 }
 
 # The same trick for the `codegraph` skill, which documents how to *operate*
@@ -399,12 +396,16 @@ rules() {
     echo "       or no installed plugin claims any file here (\`$BIN plugin list\`)." >&2
     exit 1
   fi
-  # Absolute: the block is read from inside a different repository than the one
-  # this script happened to be invoked from, where `./scripts/...` means nothing.
-  python3 - "$REPO" "$PLANE" "$ADDR" "$SELF_PATH" "$catalog" "$(rules_version)" <<'PY'
+  # The prose lives in a checked-in template; only repository-specific values
+  # and the live label list are filled in here.
+  if [ ! -f "$RULES_TEMPLATE" ]; then
+    echo "ERROR: code-graph rules template not found: $RULES_TEMPLATE" >&2
+    exit 1
+  fi
+  python3 - "$REPO" "$PLANE" "$ADDR" "$SELF_PATH" "$RULES_TEMPLATE" "$catalog" "$(rules_version)" <<'PY'
 import json, os, sys
 
-repo, plane, addr, ctl, catalog_path, version = sys.argv[1:7]
+repo, plane, addr, ctl, template_path, catalog_path, version = sys.argv[1:8]
 with open(catalog_path, encoding="utf-8") as fh:
     cat = json.load(fh).get("result") or {}
 labels = {k: v.get("count", 0) for k, v in (cat.get("labels") or {}).items()}
@@ -418,95 +419,23 @@ askable = [n for n, c in sorted(labels.items(), key=lambda kv: -kv[1])
            if n not in ("UnresolvedRef", "External") and c]
 named = ", ".join(askable[:10]) + (f", +{len(askable) - 10} more" if len(askable) > 10 else "")
 
+with open(template_path, encoding="utf-8") as fh:
+    template = fh.read()
+replacements = {
+    "@BEGIN@": "<!-- drsg-codegraph:begin -->",
+    "@END@": "<!-- drsg-codegraph:end -->",
+    "@RULES_VERSION@": version,
+    "@CTL@": ctl,
+    "@REPO@": repo,
+    "@PLANE@": plane,
+    "@ADDR@": addr,
+    "@LABELS@": named,
+}
+block = template
+for marker, value in replacements.items():
+    block = block.replace(marker, value)
 BEGIN = "<!-- drsg-codegraph:begin -->"
 END = "<!-- drsg-codegraph:end -->"
-
-block = f"""{BEGIN}
-<!-- rules={version} — regenerate with `{ctl} rules --dir {repo}` -->
-## Code graph (structural questions go through the graph first)
-
-This repository is folded into the **`{plane}`** plane, re-folded on every
-commit, and served by the `drsg-watch` MCP tools on `http://{addr}/mcp`. It
-models: {named}. For its current size and the commit it is synced up to, ask
-`describe_plane` or run `{ctl} status --dir {repo}` — no count is written down
-here, because a count in a document is wrong one commit later.
-
-**Every call must pass `plane: "{plane}"`.** The tools default to `startup`,
-which is an empty plane, and its answer — `no symbol matches` — is
-indistinguishable from the graph genuinely not knowing. In the first audit of
-this setup, plane addressing accounted for 6 of the 8 empty answers; only 2
-were real gaps.
-
-**The check on an answer is the graph's own symbol key.** A structural claim
-must quote the full key the graph returned — `crate::module::Symbol`,
-`github.com/acme/example/pkg.Type.Method` — not just a `file:line`, because grep
-prints `file:line` too and so a rule written on it cannot catch its own
-violation.
-
-**The trigger is in the answer, not in the question.** The moment a reply
-contains a quantified structural claim — "only X callers", "nothing uses it",
-"nothing else is affected", "these are the places to change" — that claim has
-to come from the graph, however casual the question sounded.
-
-| Question | Verb |
-|---|---|
-| who calls X / all of X at once | `context` (start here) |
-| what does changing X affect | `impact` |
-| how does A reach B | `trace` |
-| where is X, what is its signature | `describe` |
-| give me the source of X | `snippet` |
-| what is in the plane at all | `describe_plane`, `cypher` |
-| text the graph does not model | `grep` (searches the watched tree) |
-
-**A change question is not answered until `impact` has run.** Asking what
-changing, renaming or deleting X reaches is a different question from who calls
-X, and `context` cannot answer it: it walks one hop. Any reply about the reach
-of a change must quote `impact`, which groups what it found by distance and
-counts each group — a caller list does not have that shape, so pasting one is a
-visible substitution, not an answer. `impact` finding nothing past distance 1 is
-itself the answer; say so. It counts recorded edges only and says as much in its
-own output — carry that caveat with the number, it is a lower bound. The same
-rule holds for `trace`: a claim that A reaches B quotes the path `trace`
-returned, hop by hop.
-
-Expect to break this one. Over the first month of this setup `context` was
-called 46 times, `impact` once, and `trace` never — every question about blast
-radius was answered by the verb that only sees one hop, and none of those
-answers looked wrong at the time.
-
-**Ask with a symbol name, not a description.** `context` resolves a string in
-three passes (exact key, then `::name`/`.name` suffix, then case-insensitive
-substring). Naming a file sends the answer to `Read`; naming a symbol goes to
-the graph. The third pass is the boundary: a descriptive word works only if it
-is a substring of some symbol's name, so `plugin` resolves and a phrase in prose
-— or in a language the code is not written in — does not. That is `grep`'s job,
-and the answer has to say so.
-
-**An ambiguous name is not a failure, but the candidate list is capped at 20 and
-is not ranked by relevance.** Past about 20 candidates, do not pick from what is
-shown — narrow and ask again, because the right symbol may be in the part that
-was folded away. `Type::method` is the narrowing that usually lands in one call.
-With 2–10 candidates, `describe` each and choose from the signatures: a function
-returning another crate's type is usually a wrapper, and running `impact` on the
-wrapper reports a strictly smaller blast radius than the thing it delegates to.
-
-**Raise `impact`'s depth until a group comes back empty.** It walks 3 hops by
-default, and cutting off where propagation has not stopped yields the first
-three hops rather than the reach; two symbols measured at different depths are
-not comparable. The empty group is the evidence that the answer is complete.
-
-**The graph will also tell you it does not know**, and that is worth more than
-a guess: the `UnresolvedRef` nodes are exactly where the parsers gave up (there
-are thousands — `describe_plane` counts them), and cross-language edges are
-generally broken. Comments (`//`), string
-literals, and files no plugin claims (`.md`, `.sh`, CI config) are not modelled
-at all. Use `grep` there and **say that the answer came from grep** — an empty
-graph result is a finding to report, never a reason to fall back to impressions.
-
-Daemon: `{ctl} {{start|stop|restart|status|rules}} --dir {repo}`. One per
-repository; the address and token both live in `.mcp.json`, so never mint a new
-token — that invalidates every client config `drsg init` wrote.
-{END}"""
 
 path = os.path.join(repo, "CLAUDE.md")
 existing = ""

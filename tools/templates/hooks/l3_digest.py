@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""L3 memory distillation (see docs/memory-layer-setup.md §3.8).
+"""L3 memory distillation.
 
 Reads the tail of a session transcript and, via the shared daemon's
 `digest.run` + `digest.write`, distills it into graph entities in the memory
