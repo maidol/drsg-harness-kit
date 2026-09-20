@@ -70,6 +70,75 @@ Trait / Module / File 等节点和 CALLS / REFERENCES / USES_TYPE / IMPORTS 等�
 还有一条兜底：**图查不到要说图查不到**。`.sh` / `.md` / CI 配置、跨语言边界、
 未提交的工作区都不在图里；这时用 `grep` 并说明它是兜底。
 
+### 1.3.1 使用案例：定位符号并返回源码
+
+假设用户提出：「给我 `searches` 的实现源码。」按下面的顺序调用，并且每次
+都传入这个仓库实际使用的 plane：
+
+```text
+context("searches", plane="drsg-harness-kit")
+grep(pattern="def searches", path="tools/codegraph-usage.py",
+     context=2, plane="drsg-harness-kit")
+snippet(name="tools/codegraph-usage.py:131-142", plane="drsg-harness-kit")
+```
+
+三次调用各自负责不同的事情：
+
+| 调用 | 作用 | 本例结果 |
+| --- | --- | --- |
+| `context` | 把用户给的名称解析成代码图符号 | `codegraph-usage.searches`，位于 `tools/codegraph-usage.py:131-142` 的 `Function` |
+| `grep` | 在受监视的源码树中确认文本定义 | 第 131 行命中 `def searches(cmd):` |
+| `snippet` | 读取已经确认的源码范围 | 返回第 131–142 行的实现和文档字符串 |
+
+`context` 提供符号身份和关系，`grep` 确认文本与位置，真正返回源码正文的
+是 `snippet`。「3 calls」统计的是 MCP 调用次数，不是读取了三遍源码。
+
+#### 不用代码图：纯文本搜索路径
+
+如果不知道符号在哪个文件，不用代码图时要从文件系统开始：
+
+```bash
+rg -n --glob '*.py' '^def searches\(' .
+sed -n '131,142p' tools/codegraph-usage.py
+```
+
+它的路径是：
+
+```text
+目录 → 文本匹配 → 文件和行范围 → 源码正文
+```
+
+文本搜索匹配的是字符，不是已经解析的符号。要找调用者，还得再搜一次，
+然后人工排除函数定义、注释、文档字符串、字符串内容和无关的同名文本：
+
+```bash
+rg -n '\bsearches\s*\(' tools
+```
+
+#### 代码图增加了什么
+
+代码图的路径是：
+
+```text
+符号名 → 规范 key → 结构关系与位置 → 源码正文
+```
+
+在这个例子里，`context` 把 `searches` 解析为 `codegraph-usage.searches`，
+识别出它是 `Function`，并报告已记录的调用者 `codegraph-usage.main`。
+`grep` 确认源码树中的文本，`snippet` 读取实现。
+
+| 对比项 | 代码图 | 仅纯文本搜索 |
+| --- | --- | --- |
+| 输入 | 符号名 | 路径、目录或文本模式 |
+| 符号身份 | 规范 key 和类型 | 只有文本命中 |
+| 调用者与被调用者 | 从已记录的结构边返回 | 需要再次搜索并人工筛选 |
+| 变更分析 | 可继续用 `impact` 或 `trace` | 手工追踪引用 |
+| 适合场景 | 结构和关系 | 注释、配置、日志、未建模文件或代码图不可用时 |
+| 主要限制 | 依赖 plane 新鲜度和解析器覆盖范围 | 可能误匹配或漏掉引用 |
+
+如果文件和行范围已经知道，`sed` 更短。代码图多出的调用成本，只有在请求需要
+可靠的符号身份或结构上下文，而不只是几行源码时才真正有价值。
+
 ### 1.4 router：一个入口，多个图
 
 `codegraph-router.py` 是 MCP-to-MCP 转发器，不重实现任何动词。每次调用读 registry

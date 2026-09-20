@@ -90,6 +90,80 @@ config, cross-language boundaries and uncommitted work are not in it. Use
 `grep` there, and say that it is a lower bound over the spelling you happened
 to think of.
 
+### 1.3.1 Use case: locate a symbol and return its source
+
+Suppose the request is: “Give me the implementation of `searches`.” Use the
+calls in this order, passing the repository's actual plane every time:
+
+```text
+context("searches", plane="drsg-harness-kit")
+grep(pattern="def searches", path="tools/codegraph-usage.py",
+     context=2, plane="drsg-harness-kit")
+snippet(name="tools/codegraph-usage.py:131-142", plane="drsg-harness-kit")
+```
+
+The three calls have different jobs:
+
+| Call | Job | Result in this example |
+| --- | --- | --- |
+| `context` | Resolve a human-supplied name to a graph symbol | `codegraph-usage.searches`, a `Function` at `tools/codegraph-usage.py:131-142` |
+| `grep` | Confirm the textual definition in the watched source tree | The `def searches(cmd):` hit at line 131 |
+| `snippet` | Read the source for the confirmed range | The implementation and docstring from lines 131-142 |
+
+`context` supplies identity and relationships, while `grep` confirms the text
+and location. `snippet` is the call that actually returns the source body. The
+“3 calls” count is an MCP-call count, not three source reads.
+
+#### Without the code graph: the text-search path
+
+If the symbol location is unknown, the non-graph path starts from the file
+system:
+
+```bash
+rg -n --glob '*.py' '^def searches\(' .
+sed -n '131,142p' tools/codegraph-usage.py
+```
+
+The flow is:
+
+```text
+directory → text match → file and line range → source text
+```
+
+Text search finds matching characters, not a resolved symbol. To find callers,
+search again and manually discard definitions, comments, docstrings, strings,
+and unrelated names:
+
+```bash
+rg -n '\bsearches\s*\(' tools
+```
+
+#### What the code graph adds
+
+The code-graph path is:
+
+```text
+symbol name → canonical key → structural relationships and location → source text
+```
+
+For this example, `context` resolves `searches` to
+`codegraph-usage.searches`, identifies it as a `Function`, and reports the
+recorded caller `codegraph-usage.main`. `grep` confirms the source-tree text,
+and `snippet` reads the implementation.
+
+| Concern | Code graph | Text search only |
+| --- | --- | --- |
+| Input | Symbol name | Path, directory, or text pattern |
+| Symbol identity | Canonical key and type | Text hit only |
+| Callers and callees | Returned from recorded edges | Require another search and manual filtering |
+| Change analysis | Continue with `impact` or `trace` | Manually follow references |
+| Best use | Structure and relationships | Comments, config, logs, unsupported files, or an unavailable graph |
+| Main limitation | Depends on plane freshness and parser coverage | Can over-match or miss references |
+
+If the file and line range are already known, `sed` is shorter. The code graph
+earns its extra calls when the request needs reliable symbol identity or
+structural context, not merely a few lines of source.
+
 ### 1.4 The router: one entrance, many graphs
 
 `codegraph-router.py` forwards MCP to MCP and reimplements no verb. On every
