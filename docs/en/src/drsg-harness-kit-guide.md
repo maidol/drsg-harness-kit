@@ -186,6 +186,63 @@ registry and cannot be typed wrong.
 as an error. None of them may come back as an empty list wearing the face of
 "the graph does not have it".
 
+#### Cross-repository use case: fetch source from `drsg-harness-kit`
+
+Suppose the user is working in `my-agent-workspace` and asks:
+“Give me the implementation of `searches`; the target project is
+`drsg-harness-kit`.” The router-facing calls are:
+
+```text
+graph_context(repo="drsg-harness-kit", name="searches")
+graph_grep(repo="drsg-harness-kit", pattern="def searches",
+           path="tools/codegraph-usage.py", context=2)
+graph_snippet(repo="drsg-harness-kit", name="codegraph-usage.searches")
+```
+
+The cross-repository path is:
+
+```text
+my-agent-workspace question
+  → codegraph-router
+    → repo="drsg-harness-kit"
+    → drsg-harness-kit/.mcp.json
+    → drsg-harness-kit drsg-watch daemon
+    → drsg-harness-kit plane and source tree
+    → router response
+    → my-agent-workspace
+```
+
+The router uses `repo`, not a caller-supplied `plane`, to choose the target.
+It resolves the repository from `~/.drsg-memory/graphs`, reads the target
+repository's own `.mcp.json` for its MCP URL and authorization header, and
+adds that repository's plane to structural calls such as `graph_context` and
+`graph_snippet`. `graph_grep` is also sent to the selected target; the target
+daemon searches its own watched source tree, even though the router does not
+itself open or copy any source file.
+
+For this example, the target daemon returns the symbol from
+`drsg-harness-kit`:
+
+```text
+# drsg-harness-kit · plane drsg-harness-kit
+codegraph-usage.searches  Function  tools/codegraph-usage.py:131-142
+```
+
+If the target daemon is down, the router may lazily run
+`codegraph.sh start --dir <drsg-harness-kit-path>` and retry the request. A
+missing registry entry, unusable target `.mcp.json`, failed daemon start, or
+upstream MCP error is a routing error — it is not a local search and must not
+be reported as `no symbol matches`.
+
+| Access path | How the target is selected | Who reads the source |
+| --- | --- | --- |
+| Direct MCP | The caller supplies the repository's `plane` | The daemon serving that plane |
+| Router MCP | The caller supplies `repo`; the router resolves its plane | The selected repository's daemon |
+
+The router therefore provides one MCP surface for several repositories; it does
+not centralize their source trees. `my-agent-workspace` asks the question, but
+`drsg-harness-kit`'s daemon reads `tools/codegraph-usage.py`.
+
 ### 1.5 The memory layer: four node kinds, three edges, two read paths
 
 ```text

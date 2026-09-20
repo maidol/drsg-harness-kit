@@ -154,6 +154,62 @@ rg -n '\bsearches\s*\(' tools
 **失败必须不可伪造**：registry 缺失、`.mcp.json` 读不到、daemon 起不来、上游报错，
 都要报成错误，不能返回空列表冒充「图里没有」。
 
+#### 跨仓库案例：从 `drsg-harness-kit` 获取源码
+
+假设用户正在 `my-agent-workspace` 中工作，并提出：「给我 `searches` 的实现源码，
+目标项目是 `drsg-harness-kit`。」面向 router 的调用是：
+
+```text
+graph_context(repo="drsg-harness-kit", name="searches")
+graph_grep(repo="drsg-harness-kit", pattern="def searches",
+           path="tools/codegraph-usage.py", context=2)
+graph_snippet(repo="drsg-harness-kit", name="codegraph-usage.searches")
+```
+
+跨仓库路径如下：
+
+```text
+my-agent-workspace 中的问题
+  → codegraph-router
+    → repo="drsg-harness-kit"
+    → drsg-harness-kit/.mcp.json
+    → drsg-harness-kit 的 drsg-watch daemon
+    → drsg-harness-kit 的 plane 与源码树
+    → router 返回结果
+    → my-agent-workspace
+```
+
+router 用 `repo` 选择目标，不接受调用方手写 `plane`。它从
+`~/.drsg-memory/graphs` 解析目标仓库，读取目标仓库自己的 `.mcp.json` 获取 MCP
+地址和授权头，并为 `graph_context`、`graph_snippet` 这样的结构调用自动补上目标
+plane。`graph_grep` 也会发送到选中的目标；真正搜索的是目标 daemon 监视的源码树，
+router 自己不会打开或复制任何源码文件。
+
+本例中，目标 daemon 返回的是 `drsg-harness-kit` 的符号：
+
+```text
+# drsg-harness-kit · plane drsg-harness-kit
+codegraph-usage.searches  Function  tools/codegraph-usage.py:131-142
+```
+
+如果目标 daemon 没有运行，router 可以懒启动：
+
+```text
+codegraph.sh start --dir <drsg-harness-kit-path>
+```
+
+随后重试请求。registry 没有目标、目标 `.mcp.json` 不可用、daemon 启动失败或上游
+MCP 报错，都属于路由错误，不是本地搜索，不能伪装成 `no symbol matches`。
+
+| 访问路径 | 如何选择目标 | 谁读取源码 |
+| --- | --- | --- |
+| 直接 MCP | 调用方传入该仓库的 `plane` | 提供该 plane 的 daemon |
+| Router MCP | 调用方传入 `repo`，router 解析对应 plane | 被选中仓库自己的 daemon |
+
+所以 router 提供的是多个仓库共用的 MCP 入口，并不集中存放源码。问题由
+`my-agent-workspace` 提出，但读取 `tools/codegraph-usage.py` 的是
+`drsg-harness-kit` 自己的 daemon。
+
 ### 1.5 记忆层：四类节点，三种边，两条读路径
 
 ```text
