@@ -167,6 +167,13 @@ posted evt-wps-1788452230-5c9a2c to /path/to/wps
 第二行由 `event.py` 在**发件时**从字段渲染，两个渲染器逐字照抄，
 所以新开会话和 resume 会话看到的是同一句。
 
+**同一条待办，一个会话里只显示一次，不是每条 prompt 都显示。** 两个 hook 共用
+`.drsg/events_seen.json`（记着 session id 和已显示的 key）：新开会话由
+`session_start.py` 显示并写入，之后 `user_prompt.py` 看到 key 已在里面就跳过。
+所以会话中途 prompt 末尾没有待办块，**不等于待办已关或 hook 坏了**。
+`user_prompt.py` 只补两种情况：resume 进来的会话（session id 不同），
+以及会话中途才送到的新 Event。想确认还开着什么，直接 `event_list`。
+
 ### 4. 收方做完
 
 ```json
