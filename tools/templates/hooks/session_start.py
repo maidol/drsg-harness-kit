@@ -389,6 +389,9 @@ def heal_text(token):
     Plane-wide, not per-project: every install shares one plane, so whichever
     session starts first heals it for all of them. Returns the repair count.
     """
+    # Whole nodes on purpose, unlike orphan_facts below: the update addresses
+    # each Fact by node id, the query language has no `id(f)`, and addressing
+    # by key instead would miss keyless Facts and hit shadows (see project_id).
     res = rpc("plane.cypher", {"plane": PLANE, "query": "MATCH (f:Fact) RETURN f",
                                "params": {}}, token)
     fixed = 0
@@ -419,13 +422,19 @@ def orphan_facts(token):
 
     Returns the orphan keys, newest-looking first is not worth the sort — the
     count is the signal and the keys are for the human who investigates.
+
+    Keys only, not whole nodes. `RETURN f` brought every Fact back with its
+    `detail`, twice — about 1 MB per query at 344 Facts, 55–66 ms of every
+    session start spent on two sets of strings. `key(f)` is the same value as
+    the node's `external_key` (341 of 341 on the live plane, 2026-09-29), and a
+    Fact with no key comes back as a `[null]` row and is dropped, as before.
     """
     def keys(query):
         res = rpc("plane.cypher", {"plane": PLANE, "query": query, "params": {}}, token)
-        return {n.get("external_key") for n in res.get("nodes", []) if n.get("external_key")}
+        return {row[0] for row in res.get("rows", []) if row and row[0]}
 
-    everything = keys("MATCH (f:Fact) RETURN f")
-    reachable = keys("MATCH (p:Project)<-[:ABOUT]-(f:Fact) RETURN f")
+    everything = keys("MATCH (f:Fact) RETURN key(f)")
+    reachable = keys("MATCH (p:Project)<-[:ABOUT]-(f:Fact) RETURN key(f)")
     return sorted(everything - reachable)
 
 

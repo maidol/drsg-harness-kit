@@ -1,5 +1,5 @@
 #!/bin/sh
-# Dr Strange installer for Linux and macOS.
+# Dr Strange installer for Linux.
 #
 #   curl -fsSL https://raw.githubusercontent.com/wangyingsm/dr-strange/master/scripts/install.sh | sh
 #   curl -fsSL https://raw.githubusercontent.com/wangyingsm/dr-strange/master/scripts/install.sh | sh -s -- --bin drsg-mcp
@@ -29,7 +29,7 @@ usage() {
     # Spelled out rather than read back from "$0": when the script is piped to
     # `sh` there is no file to read.
     cat <<'EOF'
-Dr Strange installer for Linux and macOS.
+Dr Strange installer for Linux.
 
   --bin <drsg|drsg-mcp|all>   binary to install       (DRSG_INSTALL_BIN, default drsg)
   --version <vX.Y.Z|latest>   release to install      (DRSG_VERSION,     default latest)
