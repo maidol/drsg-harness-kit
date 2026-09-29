@@ -72,6 +72,7 @@ import argparse
 import bisect
 import hashlib
 import json
+import math
 import os
 import sys
 import time
@@ -370,6 +371,101 @@ def percentile(xs, p):
     return xs[min(len(xs) - 1, int(len(xs) * p / 100.0))]
 
 
+# Sessions with both arms joined before phase 3 may be read. Assignment is per
+# prompt, so the gate counts sessions that hold a within-session comparison,
+# not sessions that merely logged a prompt.
+ARM_GATE = 100
+
+
+def sign_test(worse, better):
+    """Two-sided exact binomial p for `worse` vs `better` paired sessions,
+    ties already dropped. 1.0 when there is nothing to test."""
+    n = worse + better
+    if not n:
+        return 1.0
+    k = max(worse, better)
+    return min(1.0, 2 * sum(math.comb(n, i) for i in range(k, n + 1)) / 2 ** n)
+
+
+def control_arm(records, recalls):
+    print("-- control arm " + "-" * 56)
+    # Phase 3's question — did having the memory make the work better — needs an
+    # outcome the utilization proxy cannot give (it scores rank 4 as highly as
+    # rank 3, so it is blind to injection itself). The outcome is tool failures,
+    # attributed to the prompt they followed by session_end.py and joined here on
+    # (session, prompt). Assignment is per prompt, so both arms accrue inside
+    # every session and the between-session spread (0.9%–14% at baseline) cancels
+    # — but only if the comparison is made *within* each session. The pooled
+    # rate below does not do that: a few heavy sessions decide it. It is kept as
+    # the series it has always been; the paired line is the one to read.
+    tool_rows = {(r.get("session"), r.get("prompt")): r
+                 for r in records if r.get("event") == "tools"}
+    arms = defaultdict(lambda: [0, 0, 0])   # arm -> prompts, calls, errors
+    assigned = defaultdict(int)
+    # session -> arm -> [calls, errors, infra]
+    per_session = defaultdict(lambda: defaultdict(lambda: [0, 0, 0]))
+    with_infra = joined = 0
+    for r in recalls:
+        a = r.get("arm")
+        # Only prompts that had something to inject. `no_match` and `no_facts`
+        # are identical on both sides, and counting them would dilute the
+        # contrast with turns where the arm made no difference by construction.
+        if not a or r.get("status") not in ("injected", "suppressed"):
+            continue
+        assigned[a] += 1
+        t = tool_rows.get((r.get("session"), r.get("prompt")))
+        if not t:
+            continue
+        s = arms[a]
+        s[0] += 1
+        s[1] += t.get("calls", 0)
+        s[2] += t.get("errors", 0)
+        ps = per_session[r.get("session")][a]
+        ps[0] += t.get("calls", 0)
+        ps[1] += t.get("errors", 0)
+        # `infra` exists only on rows written after session_end.py learned it.
+        # A row without it counts as 0 — which is what `errors` meant for it —
+        # and the line that uses it says how many rows actually carried it.
+        ps[2] += t.get("infra", 0)
+        joined += 1
+        with_infra += "infra" in t
+    if not assigned:
+        print("  not running — no prompt carries an `arm`. Until then every")
+        print("  number above describes the treated population only.")
+        return
+    print(f"  assigned      : " + "  ".join(
+        f"{a}={n}" for a, n in sorted(assigned.items())))
+    if not arms:
+        print("  no outcomes joined yet — session_end.py writes them when a")
+        print("  session ends, so the first rows appear one session from now.")
+        return
+    print(f"  {'arm':<12} {'prompts':>8} {'calls':>8} {'errors':>8}   rate")
+    for a, (n, c, e) in sorted(arms.items()):
+        print(f"  {a:<12} {n:>8} {c:>8} {e:>8}   {pct(e, c)}")
+
+    both = {sid: v for sid, v in per_session.items()
+            if v["treated"][0] and v["suppressed"][0]}
+    print(f"  sessions      : treated={sum(1 for v in per_session.values() if v['treated'][0])}"
+          f"  suppressed={sum(1 for v in per_session.values() if v['suppressed'][0])}"
+          f"  both={len(both)}   (phase-3 gate: {len(both)}/{ARM_GATE})")
+    for label, drop_infra in (("all errors", False), ("minus infra", True)):
+        worse = better = tie = 0
+        for v in both.values():
+            def rate(a):
+                c, e, i = v[a]
+                return (e - i if drop_infra else e) / c
+            d = rate("treated") - rate("suppressed")
+            worse += d > 0
+            better += d < 0
+            tie += d == 0
+        note = f"   ({with_infra}/{joined} rows carry infra)" if drop_infra else ""
+        print(f"  paired {label:<12}: treated worse in {worse}, better in {better},"
+              f" tied {tie}  → sign test p={sign_test(worse, better):.3f}{note}")
+    print("  Not a verdict: the phase-3 gate is 100 sessions of arm data,")
+    print("  and the session-start briefing is never suppressed, so the")
+    print("  contrast is per-prompt recall only — a floor on the effect.")
+
+
 def main():
     ap = argparse.ArgumentParser()
     ap.add_argument("--project", action="append", default=[],
@@ -635,48 +731,7 @@ def main():
         print(f"hook latency  : p50 {percentile(ms,50)}ms  p95 {percentile(ms,95)}ms")
 
     print()
-    print("-- control arm " + "-" * 56)
-    # Phase 3's question — did having the memory make the work better — needs an
-    # outcome the utilization proxy cannot give (it scores rank 4 as highly as
-    # rank 3, so it is blind to injection itself). The outcome is tool failures,
-    # attributed to the prompt they followed by session_end.py and joined here on
-    # (session, prompt). Assignment is per prompt, so both arms accrue inside
-    # every session and the between-session spread (0.9%–14% at baseline) cancels.
-    tool_rows = {(r.get("session"), r.get("prompt")): r
-                 for r in records if r.get("event") == "tools"}
-    arms = defaultdict(lambda: [0, 0, 0])   # arm -> prompts, calls, errors
-    assigned = defaultdict(int)
-    for r in recalls:
-        a = r.get("arm")
-        # Only prompts that had something to inject. `no_match` and `no_facts`
-        # are identical on both sides, and counting them would dilute the
-        # contrast with turns where the arm made no difference by construction.
-        if not a or r.get("status") not in ("injected", "suppressed"):
-            continue
-        assigned[a] += 1
-        t = tool_rows.get((r.get("session"), r.get("prompt")))
-        if not t:
-            continue
-        s = arms[a]
-        s[0] += 1
-        s[1] += t.get("calls", 0)
-        s[2] += t.get("errors", 0)
-    if not assigned:
-        print("  not running — no prompt carries an `arm`. Until then every")
-        print("  number above describes the treated population only.")
-    else:
-        print(f"  assigned      : " + "  ".join(
-            f"{a}={n}" for a, n in sorted(assigned.items())))
-        if not arms:
-            print("  no outcomes joined yet — session_end.py writes them when a")
-            print("  session ends, so the first rows appear one session from now.")
-        else:
-            print(f"  {'arm':<12} {'prompts':>8} {'calls':>8} {'errors':>8}   rate")
-            for a, (n, c, e) in sorted(arms.items()):
-                print(f"  {a:<12} {n:>8} {c:>8} {e:>8}   {pct(e, c)}")
-            print("  Not a verdict: the phase-3 gate is 100 sessions of arm data,")
-            print("  and the session-start briefing is never suppressed, so the")
-            print("  contrast is per-prompt recall only — a floor on the effect.")
+    control_arm(records, recalls)
 
     print()
     print("-- read against the pre-registered thresholds " + "-" * 26)

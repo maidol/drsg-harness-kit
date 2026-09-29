@@ -49,6 +49,12 @@ BRIEFING_FACT_CAP = 1000
 # in recall.jsonl), because changing the read path now resets that sample. Times
 # are integer Unix seconds — every created_at in the plane already is, and an
 # Int/Str comparison silently evaluates to false instead of erroring.
+#
+# The "not progress" clause is the one clause aimed at what gets written rather
+# than how: on 2026-09-29, 69 of 320 Facts had never reached even the logged
+# top-5, and most of them were "X accepted" / "X committed" / "X verified".
+# A status is stale by the next session and already lives in an Event receipt
+# or a commit; as a Fact it only dilutes the IDF every other Fact ranks on.
 def protocol(slug, plane, path):
     return (
         f"[write-memory protocol] Persist this session's durable conclusions, "
@@ -59,6 +65,8 @@ def protocol(slug, plane, path):
         "decision / gotcha / workflow), `summary` as a ONE-LINE conclusion (only its "
         "first ~18 chars reach the briefing), `detail` for the rest, "
         "`created_at` as the current Unix time (integer seconds);\n"
+        "- not progress: \"X accepted / committed / tests pass\" is a status, "
+        "not a conclusion — it goes in the Event receipt or the commit, not a Fact;\n"
         f"- linked with an `ABOUT` edge to the Project matched by "
         f"`p.path = \"{path}\"` (by path, not key; a Fact unreachable that "
         "way is invisible);\n"

@@ -19,8 +19,8 @@ Two things that a single unfiltered query got wrong, both silent:
     can push another project's older facts out of the candidate pool entirely,
     and nothing shows that it happened. The cap is now applied per project,
     so each project always gets its own newest n into the ranking.
-Cost: one query per project instead of one total (2 projects today, local
-daemon, ~ms each) — well inside the hook's budget.
+Cost: two queries per prompt, whatever the number of projects — see
+`fetch_facts` for why it is no longer one per project.
 
 Matching strategy — character n-gram reverse match (CJK-friendly, zero-dep):
   * A server-side substring search (`plane.find`) requires the *query* to be a
@@ -88,6 +88,13 @@ MAX_EVENTS = 3
 # still accrue inside every session — which is what lets the comparison cancel
 # the 5x spread in failure rate between sessions.
 SUPPRESS_PCT = 15
+# Inputs that reach UserPromptSubmit without anyone typing them: a subagent
+# handing back, a background task finishing, another session's message. None
+# of them is a question, so recall has nothing to answer — and the transcript
+# records them as queue operations rather than user turns, so an injection
+# here can never be judged either. Measured 2026-09-29: ~10% of all logged
+# prompts, 31% in one project. They are logged, not injected.
+MACHINE_PREFIXES = ("<agent-message", "<task-notification", "<cross-session-message")
 
 
 def telemetry(proj_dir, record):
@@ -395,18 +402,27 @@ def fetch_facts(token):
     """Every project's Facts, newest-first *per project*, each carrying the
     project it belongs to.
 
-    One query per project rather than one over the union: the query language
-    requires RETURN to name the pattern's last variable, so a single
-    `(p)<-[:ABOUT]-(f)` cannot hand back both the fact and its project — and
-    the origin is exactly what we need to label with.
+    Two queries, not one per project. This used to ask each project for
+    `RETURN f` in turn, because the query language once required RETURN to
+    name the pattern's last variable; it has since learned projections, and
+    the per-project loop had become the hook's whole latency — 11 round trips
+    and 666 KB of `detail` to rank on `summary` alone, measured at 110–176 ms
+    of a 200 ms p50 on 2026-09-29. A projection brings back only the four
+    columns ranking reads, for every project at once. The per-project cap and
+    the newest-first order are applied here instead of in the query, so the
+    candidate list comes out the same as before, item for item.
 
     Projects are matched on `p.path`, NOT on `key(p)`. The external-key index
     is not trustworthy here: digest.run has twice written a second node with an
     existing project's key (see the `fact-key-collision-incident` Fact), and
     once that happens `key(p) = "data-safe"` resolves to the shadowing node —
     which has no ABOUT edges, so every key-filtered query silently returns
-    nothing. Filtering on a property walks the real nodes instead, and the
-    junk duplicates drop out for free: only session_start.py sets `path`."""
+    nothing. Grouping on a property walks the real nodes instead, and the
+    junk duplicates drop out for free: only session_start.py sets `path`.
+
+    The first query is kept for the project *order*: it decides which project
+    a Fact ABOUT two of them is labelled with, and which of two equal scores
+    ranks first."""
     res = rpc("plane.cypher", {"plane": PLANE, "query": "MATCH (p:Project) RETURN p",
                                "params": {}}, token)
     paths = []
@@ -415,26 +431,35 @@ def fetch_facts(token):
         if path and path not in paths:
             paths.append(path)
 
+    res = rpc("plane.cypher", {"plane": PLANE,
+        "query": ("MATCH (p:Project)<-[:ABOUT]-(f:Fact) "
+                  "RETURN p.path, key(f), f.summary, f.created_at"),
+        "params": {}}, token)
+    rows = res.get("rows", [])
+    # plane.cypher returns every row today. If it ever pages, a short list
+    # would rank against part of the corpus and look exactly like a normal
+    # prompt; raising turns that into status=error in recall.jsonl instead.
+    if res.get("total", len(rows)) != len(rows):
+        raise OSError(f"drsg rpc: {len(rows)} of {res.get('total')} fact rows")
+    by_path = {}
+    for path, key, summary, created in rows:
+        by_path.setdefault(path, []).append((created or 0, key or "?", summary))
+
     facts, seen = [], set()
     for path in paths:
         pk = os.path.basename(os.path.normpath(path))
-        res = rpc("plane.cypher", {"plane": PLANE,
-            "query": ("MATCH (p:Project)<-[:ABOUT]-(f:Fact) "
-                      "WHERE p.path = $path "
-                      "RETURN f ORDER BY f.created_at DESC LIMIT %d") % FACT_CAP,
-            "params": {"path": path}}, token)
-        for n in res.get("nodes", []):
-            pr = n.get("properties", {})
-            key = n.get("external_key", "?")
+        # Stable sort: equal created_at keep the order the rows came in.
+        newest = sorted(by_path.get(path, []), key=lambda t: t[0], reverse=True)
+        for _, key, summary in newest[:FACT_CAP]:
             # A Fact ABOUT two projects would otherwise be ranked twice.
-            if not pr.get("summary") or key in seen:
+            if not summary or key in seen:
                 continue
             seen.add(key)
             facts.append({
                 "key": key,
                 "origin": pk,
-                "clean": clean(pr["summary"]),
-                "tag": (pr["summary"].split("→")[-1].split("。")[0].strip() or pr["summary"])[:60],
+                "clean": clean(summary),
+                "tag": (summary.split("→")[-1].split("。")[0].strip() or summary)[:60],
             })
     return facts
 
@@ -491,6 +516,13 @@ def main():
         rec.update(extra)
         rec["ms"] = int((time.time() - t0) * 1000)
         telemetry(proj_dir, rec)
+
+    # After event_notice, so a to-do still reaches the terminal; before any
+    # RPC for Facts, so skipping recall also skips its cost.
+    if prompt.startswith(MACHINE_PREFIXES):
+        done("agent_message")
+        hook_out()
+        return
 
     try:
         facts = fetch_facts(token)

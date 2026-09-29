@@ -50,6 +50,13 @@ L3_MIN_TRANSCRIPT = 40_000
 # interrupted it. The agent proposed something reasonable, so these must not
 # land in tool_errors — they are counted separately, never silently dropped.
 NOT_A_FAILURE = ("the user doesn't want", "tool use was rejected", "interrupted by user")
+# `is_error` results caused by the harness rather than by what the agent chose
+# to do: the auto-mode classifier's own model was down, so the call was refused
+# unread. Still counted in `errors` — the series keeps its meaning — and also
+# in `infra`, a subset, so the arm comparison can take them back out. They
+# arrive in bursts inside a few sessions, which is exactly what a per-prompt
+# arm cannot average away. (Matched on lowercased text: see _result_text.)
+INFRA_FAILURE = ("is temporarily unavailable, so auto mode cannot determine",)
 
 
 def rpc(method, params, token):
@@ -246,6 +253,8 @@ def mine(transcript_path):
                             tools["rejected"] += 1
                     else:
                         bucket["errors"] += 1
+                        if any(p in text for p in INFRA_FAILURE):
+                            bucket["infra"] += 1
                         if session_scope:
                             tools["errors"] += 1
                             failed_by[names.get(t.get("tool_use_id"), "?")] += 1
@@ -284,7 +293,8 @@ def main():
         telemetry(proj_dir, [
             {"event": "tools", "session": sid, "prompt": pid,
              "calls": c["calls"], "errors": c["errors"],
-             "rejected": c["rejected"], "ts": int(time.time())}
+             "rejected": c["rejected"], "infra": c["infra"],
+             "ts": int(time.time())}
             for pid, c in per_prompt.items()])
         if files:
             props["files_touched"] = ",".join(f"{k}×{v}" for k, v in files.most_common(6))
