@@ -55,6 +55,16 @@ BRIEFING_FACT_CAP = 1000
 # top-5, and most of them were "X accepted" / "X committed" / "X verified".
 # A status is stale by the next session and already lives in an Event receipt
 # or a commit; as a Fact it only dilutes the IDF every other Fact ranks on.
+#
+# The "scope" clause splits the work with Claude Code's own auto-memory, which
+# is on by default and loads a project's MEMORY.md in full every session. With
+# both writing, one lesson landed twice: on 2026-09-29 about 40 of the 68 Facts
+# of my-agent-workspace had a twin in its MEMORY.md, and one such pair went
+# stale on both sides after a fix without either copy saying so. The plane is
+# the only one of the two another project can read, so it keeps what crosses
+# projects. The fallback is for a session without auto-memory, where "goes
+# there" would silently lose the lesson; the model can see which case it is in
+# from its own system prompt, so the hook does not try to detect it.
 def protocol(slug, plane, path):
     return (
         f"[write-memory protocol] Persist this session's durable conclusions, "
@@ -67,6 +77,10 @@ def protocol(slug, plane, path):
         "`created_at` as the current Unix time (integer seconds);\n"
         "- not progress: \"X accepted / committed / tests pass\" is a status, "
         "not a conclusion — it goes in the Event receipt or the commit, not a Fact;\n"
+        "- scope: a Fact is for what would help work in ANOTHER project. If your "
+        "system prompt names an auto-memory directory, a lesson that matters only "
+        "inside this project goes there, not in both — two copies drift apart and "
+        "nothing reports it; without one, write it here;\n"
         f"- linked with an `ABOUT` edge to the Project matched by "
         f"`p.path = \"{path}\"` (by path, not key; a Fact unreachable that "
         "way is invisible);\n"
