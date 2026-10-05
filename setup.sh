@@ -28,7 +28,7 @@
 #   --port N          port for this repository's code-graph daemon
 #   --tools-dir DIR   where the runtime copies go   (default ~/.drsg-memory/tools)
 #   --fetch-drsg      download a release binary if none is found (network)
-#   --no-skills       do not install the bundled skills
+#   --no-skills       do not install the bundled skills or AGENT-EFFICIENCY.md
 set -euo pipefail
 
 HERE="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
@@ -84,6 +84,19 @@ if [ "$SKILLS" -eq 1 ] && [ -d "$HERE/skills" ]; then
   echo "== 2/6: skills -> $SKILLS_DIR"
   mkdir -p "$SKILLS_DIR"
   cp -a "$HERE/skills/." "$SKILLS_DIR/"
+  # Agent efficiency rules: loaded every session through an @-import in the
+  # global CLAUDE.md, the same way RTK.md is. The copy is overwritten on every
+  # run — edit claude/AGENT-EFFICIENCY.md in the repository, not the copy.
+  if [ -f "$HERE/claude/AGENT-EFFICIENCY.md" ]; then
+    CLAUDE_DIR="${CLAUDE_CONFIG_DIR:-$HOME/.claude}"
+    mkdir -p "$CLAUDE_DIR"
+    cp "$HERE/claude/AGENT-EFFICIENCY.md" "$CLAUDE_DIR/AGENT-EFFICIENCY.md"
+    touch "$CLAUDE_DIR/CLAUDE.md"
+    if ! grep -qx '@AGENT-EFFICIENCY.md' "$CLAUDE_DIR/CLAUDE.md"; then
+      printf '\n@AGENT-EFFICIENCY.md\n' >> "$CLAUDE_DIR/CLAUDE.md"
+      echo "   @AGENT-EFFICIENCY.md appended to $CLAUDE_DIR/CLAUDE.md"
+    fi
+  fi
 else
   echo "== 2/6: skills skipped"
 fi

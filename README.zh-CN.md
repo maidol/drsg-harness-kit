@@ -13,6 +13,9 @@ DrSG 的智能体侧工具集，集中在一个仓库中：为 Claude Code 提�
 | `tools/` | 所有实际运行的内容。该目录会被安装到 `~/.drsg-memory/tools/`。 |
 | `tools/templates/hooks/` | 四个 Claude Code hook，由 `tools/install.sh` 复制到各个项目。 |
 | `skills/codegraph/` | 代码图运维 skill，安装到 `~/.claude/skills/`。 |
+| `skills/agent-efficiency-retro/` | 会话效率复盘 skill：统计工具调用、一轮多调用比例、单轮耗时随上下文的变化，安装到 `~/.claude/skills/`。 |
+| `skills/diagram-conventions/` | 出图约定 skill：按句子里的连接词选架构图/流程图/时序图，安装到 `~/.claude/skills/`。第三方的 `archify` 不归本仓库分发，它指向本 skill 的那段是手工追加在其 SKILL.md 末尾的 `<!-- local: diagram-conventions -->`，重装 archify 后要补回。 |
+| `claude/AGENT-EFFICIENCY.md` | Agent 执行效率规则，复制到 `~/.claude/` 并由全局 CLAUDE.md 用 `@` 引入（setup 第 2 步）；由来见 `docs/agent-efficiency-guidelines.md`。 |
 | `docs/{en,zh}/src/` | 使用指南，包含五张图。 |
 | `docs/codegraph-event-dispatch.md` | hub 项目如何访问其他仓库的代码图，以及如何交接工作。 |
 | `setup.sh` | 在新机器上安装；从解包后的 bundle 中运行。 |

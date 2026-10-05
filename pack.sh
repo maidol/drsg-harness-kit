@@ -40,7 +40,7 @@ if command -v sha256sum >/dev/null 2>&1; then SHA=(sha256sum); else SHA=(shasum 
 # history is not being rewritten, so failing the build on it would be a gate
 # nobody could pass.
 if ! python3 "$REPO/tools/check-no-machine-paths.py" \
-    "$REPO/tools" "$REPO/skills" "$REPO/setup.sh" "$REPO/install-drsg.sh"; then
+    "$REPO/tools" "$REPO/skills" "$REPO/claude" "$REPO/setup.sh" "$REPO/install-drsg.sh"; then
   echo "refusing to build a bundle with machine-specific strings in it" >&2
   exit 1
 fi
@@ -70,6 +70,13 @@ if [ -d "$REPO/skills" ]; then
   mkdir -p "$ROOT/skills"
   cp -a "$REPO/skills/." "$ROOT/skills/"
   find "$ROOT/skills" -name '__pycache__' -type d -prune -exec rm -rf {} +
+fi
+
+# 7. the agent efficiency rules, installed to ~/.claude/ and @-imported by
+#    the global CLAUDE.md (setup.sh step 2)
+if [ -d "$REPO/claude" ]; then
+  mkdir -p "$ROOT/claude"
+  cp -a "$REPO/claude/." "$ROOT/claude/"
 fi
 
 chmod +x "$ROOT/setup.sh" "$ROOT/install-drsg.sh"

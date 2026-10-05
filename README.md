@@ -20,6 +20,9 @@ read it before running it.
 | `tools/` | everything that RUNS. This directory is what lands in `~/.drsg-memory/tools/`. |
 | `tools/templates/hooks/` | the four Claude Code hooks, copied into each project by `tools/install.sh` |
 | `skills/codegraph/` | operating the code graph — installed under `~/.claude/skills/` |
+| `skills/agent-efficiency-retro/` | retrospective on why a session was slow: tool-call counts, calls per turn, latency vs context size — installed under `~/.claude/skills/` |
+| `skills/diagram-conventions/` | choosing architecture / workflow / sequence diagrams by the connective in the sentence — installed under `~/.claude/skills/`. The third-party `archify` skill is not ours to ship, so its pointer to this one is a hand-added `<!-- local: diagram-conventions -->` block at the end of its SKILL.md; re-add it after reinstalling archify |
+| `claude/AGENT-EFFICIENCY.md` | agent efficiency rules, copied to `~/.claude/` and `@`-imported by the global CLAUDE.md (setup step 2); rationale in `docs/agent-efficiency-guidelines.md` |
 | `docs/{en,zh}/src/` | the guide, with five diagrams |
 | `docs/codegraph-event-dispatch.md` | how a hub project reaches another repository's graph, and how to hand work over |
 | `setup.sh` | install on a fresh machine — runs from an unpacked bundle |
