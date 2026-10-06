@@ -1,7 +1,7 @@
 # Agent 执行效率（全局，适用于所有项目）
 
 > 由 drsg-harness-kit 的 `claude/AGENT-EFFICIENCY.md` 安装到 `~/.claude/`，全局 CLAUDE.md 用 `@AGENT-EFFICIENCY.md` 引入。**改动请改仓库里那份**，这里的副本会被 `setup.sh` 覆盖。
-> 每条规则的由来与参考线见仓库 `docs/agent-efficiency-guidelines.md`；复盘用 `agent-efficiency-retro` skill。
+> 复盘用 `agent-efficiency-retro` skill。
 
 ## 工具调用：互相独立的放在同一轮里发
 

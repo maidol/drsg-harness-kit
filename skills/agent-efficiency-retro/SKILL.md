@@ -7,7 +7,7 @@ description: 复盘 Claude Code 会话「为什么这么慢 / 为什么调用了
 
 **一句话**：总耗时 ≈ **轮数 × 单轮耗时**。复盘就是分别量这两个乘数，再按原因归类。不要凭印象下结论，结论要来自统计数字。
 
-准则全文（每条规则的由来和参考线）见 drsg-harness-kit 的 `docs/agent-efficiency-guidelines.md`；执行方规则装在 `~/.claude/AGENT-EFFICIENCY.md`，由全局 CLAUDE.md 引入。
+执行方规则装在 `~/.claude/AGENT-EFFICIENCY.md`，由全局 CLAUDE.md 引入。
 
 ## 用法
 
