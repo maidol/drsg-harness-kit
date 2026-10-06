@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """Poll this project's open Events without ever calling the model.
 
-Registered as an `asyncRewake` command hook on SessionStart, Stop and
+Registered as an `asyncRewake` command hook on SessionStart, Stop, StopFailure and
 SessionEnd. Claude Code runs an asyncRewake hook in the background and wakes
 the model only when it exits with code 2, so every idle round here costs no
 model call at all: the loop sleeps, asks the memory daemon over RPC, and stays
@@ -18,7 +18,7 @@ poller takes it over only when that process is gone, so a session that exits
 session (under `claude bg-pty-host`): `/exit` there only detaches it and its
 process lives on, so a foreground session takes the lease from it.
 
-  SessionStart / Stop   start this session's poller unless it is running
+  SessionStart / Stop / StopFailure   start this session's poller unless it is running
   SessionEnd            stop it and give the lease back
 
 Silent by design: no .drsg/env, a daemon that is down, a malformed answer —
@@ -80,8 +80,23 @@ def proc_start(pid):
         return None
 
 
+def proc_state(pid):
+    """One-letter state of `pid` from /proc/<pid>/stat, "" when it is gone."""
+    try:
+        with open("/proc/%d/stat" % pid) as f:
+            return f.read().rsplit(")", 1)[1].split()[0]
+    except (OSError, IndexError):
+        return ""
+
+
 def alive(pid, start):
-    return bool(pid) and proc_start(pid) == start
+    """The same process (pid + start time), and one that can still act on a
+    wake-up. A stopped (T/t) or zombie (Z/X) Claude Code counts as gone: on
+    2026-10-06 a session suspended with Ctrl+Z whose terminal was then closed
+    (PPid 1, state T) kept the lease for an hour and swallowed a wake-up that
+    nobody would ever read."""
+    return (bool(pid) and proc_start(pid) == start
+            and proc_state(pid) not in ("T", "t", "Z", "X"))
 
 
 def mtime(path):

@@ -107,6 +107,9 @@ def add(event, entry):
 bg = {"type": "command", "command": cmd, "asyncRewake": True, "timeout": 604800}
 add("SessionStart", dict(bg))
 add("Stop", dict(bg))
+# A turn that ends in an API error fires StopFailure instead of Stop; without
+# this the poller that woke that turn is never started again.
+add("StopFailure", dict(bg))
 add("SessionEnd", {"type": "command", "command": cmd, "timeout": 10})
 if added:
     tmp = path + ".tmp"

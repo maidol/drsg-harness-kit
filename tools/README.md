@@ -238,12 +238,13 @@ sessions the script refuses to draw a conclusion at all.
 
 ## To-do poller (`event-poller.py`)
 
-`setup.sh` registers it as three **global** hooks in `~/.claude/settings.json`
+`setup.sh` registers it as four **global** hooks in `~/.claude/settings.json`
 (skip with `--no-event-poller`). Every session then checks its project's open
 Events every 15 minutes **without a model call**, and wakes the model only when
 there is one this session has not been told about yet.
 
-- **How it stays model-free.** `SessionStart` and `Stop` run it as an
+- **How it stays model-free.** `SessionStart`, `Stop` and `StopFailure` (a turn
+  that ended in an API error) run it as an
   `asyncRewake` hook: Claude Code keeps it in the background and wakes the model
   only on exit code 2. Idle rounds sleep, ask the daemon over RPC, and print
   nothing. The wake-up text lists the Events and repeats that commit / push / PR
@@ -254,7 +255,9 @@ there is one this session has not been told about yet.
   held by the poller: the poller has to exit to wake its model, and a lock that
   died with it would hand the project over exactly when the first session starts
   working. A waiting session takes the lease over within a minute of the holder's
-  process disappearing — clean exit (`SessionEnd` releases it) or not.
+  process disappearing — clean exit (`SessionEnd` releases it) or not. A holder
+  that is stopped (`Ctrl+Z`, state `T`) or a zombie counts as gone too: it can no
+  longer act on a wake-up.
 - **A background session yields to a foreground one.** In a background session
   (`claude --bg`, under `claude bg-pty-host`) `/exit` only detaches; the process
   lives on and so would its lease. Whether a client is attached is not exposed,

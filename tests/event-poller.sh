@@ -97,5 +97,31 @@ check "no post, no early look (INTERVAL holds)"   "$(late_event quiet)" 124
 reset; post_to "$T/elsewhere"
 check "post to an unpolled project writes nothing" "$(ls "$T/mem/poller" 2>/dev/null | wc -l)" 0
 
+# 6. a stopped holder (Ctrl+Z, terminal gone) counts as gone: it can act on no wake-up
+reset; fg_owner; A=$OWNER; fg_owner; B=$OWNER
+run A $A >/dev/null
+kill -STOP $A
+check "stopped holder: B takes over and wakes" "$(run B $B)" 2
+check "lease moved off the stopped holder"     "$(holder)" B
+check "a stopped session's own poller exits"   "$(run A $A Stop 3)" 0
+kill -CONT $A
+
+# 7. setup.sh registers the poller on StopFailure too: a turn that ends in an API error
+#    fires StopFailure, not Stop, and the poller it woke must still be started again
+HOME="$T/home" DRSG_MEM_DIR="$T/setup-mem" CLAUDE_CONFIG_DIR="$T/claude" \
+  bash "$HERE/../setup.sh" --no-skills >/dev/null 2>&1
+stopfailure_hook() {
+  python3 - "$T/claude/settings.json" <<'PY'
+import json, sys
+try:
+    groups = json.load(open(sys.argv[1])).get("hooks", {}).get("StopFailure", [])
+except (OSError, ValueError):
+    groups = []
+hooks = [h for g in groups for h in g.get("hooks", []) if "event-poller.py" in h.get("command", "")]
+print("missing" if not hooks else "asyncRewake" if hooks[0].get("asyncRewake") else "sync")
+PY
+}
+check "setup registers StopFailure as asyncRewake" "$(stopfailure_hook)" asyncRewake
+
 echo "PASS $OK/$RAN"
-[ "$RAN" -eq 20 ] && [ "$OK" -eq "$RAN" ]
+[ "$RAN" -eq 24 ] && [ "$OK" -eq "$RAN" ]
