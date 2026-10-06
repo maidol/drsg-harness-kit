@@ -30,12 +30,13 @@
 #   --fetch-drsg      download a release binary if none is found (network)
 #   --no-skills       do not install the bundled skills or AGENT-EFFICIENCY.md
 #   --no-event-poller do not register the global to-do poller hooks
+#   --no-streak-hint do not register the global single-tool reminder hook
 set -euo pipefail
 
 HERE="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 PROJECT=""; REPO=""; HUB=""; ROUTER=""; USAGE_REPORT=""; BIN=""; ADDR=""; TOKEN=""; PORT=""
 TOOLS="${DRSG_MEM_DIR:-$HOME/.drsg-memory}/tools"
-FETCH=0; SKILLS=1; POLLER=1
+FETCH=0; SKILLS=1; POLLER=1; STREAK_HINT=1
 
 while [ $# -gt 0 ]; do
   case "$1" in
@@ -52,7 +53,8 @@ while [ $# -gt 0 ]; do
     --fetch-drsg) FETCH=1; shift ;;
     --no-skills)  SKILLS=0; shift ;;
     --no-event-poller) POLLER=0; shift ;;
-    -h|--help)    sed -n '2,32p' "${BASH_SOURCE[0]}" | sed 's/^# \{0,1\}//'; exit 0 ;;
+    --no-streak-hint) STREAK_HINT=0; shift ;;
+    -h|--help)    sed -n '2,33p' "${BASH_SOURCE[0]}" | sed 's/^# \{0,1\}//'; exit 0 ;;
     *) echo "unknown argument '$1'" >&2; exit 1 ;;
   esac
 done
@@ -85,39 +87,48 @@ echo "   $(find "$TOOLS" -maxdepth 1 -type f | wc -l | tr -d ' ') files in place
 # open Events every 15 minutes without a model call, and wakes the model only
 # when there is one it has not been told about. Projects without .drsg/env are
 # skipped by the script itself. Idempotent: an existing registration is kept.
-if [ "$POLLER" -eq 1 ]; then
+if [ "$POLLER" -eq 1 ] || [ "$STREAK_HINT" -eq 1 ]; then
   CLAUDE_DIR="${CLAUDE_CONFIG_DIR:-$HOME/.claude}"
   mkdir -p "$CLAUDE_DIR"
-  python3 - "$CLAUDE_DIR/settings.json" "$TOOLS/event-poller.py" <<'PY'
+  python3 - "$CLAUDE_DIR/settings.json" "$TOOLS/event-poller.py" "$TOOLS/single-tool-streak.py" "$POLLER" "$STREAK_HINT" <<'PY'
 import json, os, sys
-path, script = sys.argv[1], sys.argv[2]
+path, script, streak_script = sys.argv[1], sys.argv[2], sys.argv[3]
+poller_enabled, streak_hint = sys.argv[4] == "1", sys.argv[5] == "1"
 d = json.load(open(path)) if os.path.exists(path) and os.path.getsize(path) else {}
 cmd = "python3 " + script
 hooks = d.setdefault("hooks", {})
 added = []
-def add(event, entry):
+def add(event, entry, marker):
     groups = hooks.setdefault(event, [])
-    if any("event-poller.py" in h.get("command", "") for g in groups for h in g.get("hooks", [])):
+    if any(marker in h.get("command", "") for g in groups for h in g.get("hooks", [])):
         return
     groups.append({"matcher": "*", "hooks": [entry]})
-    added.append(event)
+    added.append(event + "/" + marker)
 # asyncRewake: runs in the background, wakes the model only on exit code 2.
 # The timeout is the background lifetime; the poller exits on its own when its
 # Claude Code process is gone.
 bg = {"type": "command", "command": cmd, "asyncRewake": True, "timeout": 604800}
-add("SessionStart", dict(bg))
-add("Stop", dict(bg))
-# A turn that ends in an API error fires StopFailure instead of Stop; without
-# this the poller that woke that turn is never started again.
-add("StopFailure", dict(bg))
-add("SessionEnd", {"type": "command", "command": cmd, "timeout": 10})
+if streak_hint:
+    add("PostToolUse", {
+        "type": "command", "command": "python3 " + streak_script, "timeout": 5
+    }, "single-tool-streak.py")
+if poller_enabled:
+    add("SessionStart", dict(bg), "event-poller.py")
+    add("Stop", dict(bg), "event-poller.py")
+    # A turn that ends in an API error fires StopFailure instead of Stop; without
+    # this the poller that woke that turn is never started again.
+    add("StopFailure", dict(bg), "event-poller.py")
+    add("SessionEnd", {"type": "command", "command": cmd, "timeout": 10},
+        "event-poller.py")
 if added:
     tmp = path + ".tmp"
     with open(tmp, "w") as f:
         json.dump(d, f, indent=2, ensure_ascii=False)
         f.write("\n")
+    if os.path.exists(path):
+        os.chmod(tmp, os.stat(path).st_mode & 0o7777)
     os.replace(tmp, path)
-print("   event poller hooks: " + (", ".join(added) + " added" if added else "already registered")
+print("   global hooks: " + (", ".join(added) + " added" if added else "already registered")
       + " in " + path)
 PY
 fi
