@@ -36,6 +36,8 @@ import time
 
 INTERVAL = int(os.environ.get("EVENT_POLL_INTERVAL", "900"))   # 15 minutes
 TICK = int(os.environ.get("EVENT_POLL_TICK", "60"))             # takeover latency
+LOG_MAX = int(os.environ.get("EVENT_POLL_LOG_MAX", "262144"))   # bytes before poller.log rotates
+SEEN_MAX_AGE = 14 * 86400                                       # orphaned seen files, seconds
 STATE_ROOT = os.path.join(os.environ.get("DRSG_MEM_DIR") or
                           os.path.expanduser("~/.drsg-memory"), "poller")
 HERE = os.path.dirname(os.path.realpath(__file__))
@@ -46,6 +48,23 @@ def log(state, msg):
     try:
         with open(os.path.join(state, "poller.log"), "a", encoding="utf-8") as f:
             f.write("%s %d %s\n" % (time.strftime("%Y-%m-%dT%H:%M:%S"), os.getpid(), msg))
+    except OSError:
+        pass
+
+
+def rotate(state):
+    """Keep poller.log bounded: past LOG_MAX it becomes poller.log.1, replacing
+    the previous one, so two files at most and the newest lines always survive.
+    Done under the lock, re-checked inside it, so two pollers cannot rotate
+    twice and bury the first .1. Not called from log(): that runs inside the
+    lock already, and flock does not nest across file descriptors."""
+    path = os.path.join(state, "poller.log")
+    try:
+        if os.path.getsize(path) <= LOG_MAX:
+            return
+        with Locked(state):
+            if os.path.getsize(path) > LOG_MAX:
+                os.replace(path, path + ".1")
     except OSError:
         pass
 
@@ -162,8 +181,26 @@ def release(state, sid):
         if read_json(path, {}).get("session_id") == sid:
             os.remove(path)
             log(state, "lease released by %s" % sid)
+        for ext in (".pid", ".seen.json"):
+            try:
+                os.remove(os.path.join(state, sid + ext))
+            except OSError:
+                pass
+
+
+def sweep_seen(state, sid):
+    """Drop `<sid>.seen.json` files nobody will clean up: a session that was
+    kill -9'd along with its poller never reaches release(). Only old files whose
+    poller is gone; this session's own file is never touched."""
+    cutoff = time.time() - SEEN_MAX_AGE
+    for name in os.listdir(state):
+        if not name.endswith(".seen.json") or name == sid + ".seen.json":
+            continue
+        owner = read_json(os.path.join(state, name[:-len(".seen.json")] + ".pid"), {})
         try:
-            os.remove(os.path.join(state, sid + ".pid"))
+            if os.path.getmtime(os.path.join(state, name)) < cutoff \
+                    and not alive(owner.get("pid"), owner.get("start")):
+                os.remove(os.path.join(state, name))
         except OSError:
             pass
 
@@ -217,10 +254,12 @@ def poll(project, state, sid):
         if alive(running.get("pid"), running.get("start")):
             return 0                                     # already polling for this session
         write_json(pidfile, {"pid": os.getpid(), "start": proc_start(os.getpid())})
+        sweep_seen(state, sid)
     seen_path = os.path.join(state, sid + ".seen.json")
     seen = set(read_json(seen_path, []))
     next_check = 0
     while True:
+        rotate(state)
         if not alive(pid, start):
             log(state, "claude %d gone; poller for %s exits" % (pid, sid))
             release(state, sid)

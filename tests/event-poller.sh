@@ -46,5 +46,25 @@ check "lease moved to B"               "$(holder)" B
 run A $A Stop 3 >/dev/null   # A has seen e1, so its exit code says nothing; the lease does
 check "background does not take it back" "$(holder)" B
 
+# 3. seen.json lives exactly as long as its session; a dead session's leftovers age out
+STATE="$(dirname "$LEASE")"
+reset; fg_owner; A=$OWNER
+run A $A >/dev/null
+check "Stop after a wake does not wake again" "$(run A $A Stop 3)" 124
+run A $A SessionEnd >/dev/null
+check "SessionEnd removes seen.json"   "$([ -e "$STATE/A.seen.json" ] && echo kept || echo removed)" removed
+reset; fg_owner; A=$OWNER; mkdir -p "$STATE"
+echo '[]' > "$STATE/old.seen.json"; touch -d '20 days ago' "$STATE/old.seen.json"
+echo '[]' > "$STATE/new.seen.json"
+run A $A Stop 3 >/dev/null
+check "old orphan swept, recent one kept" "$([ -e "$STATE/old.seen.json" ] && echo old-kept || echo old-gone),$([ -e "$STATE/new.seen.json" ] && echo new-kept || echo new-gone)" old-gone,new-kept
+
+# 4. poller.log stays bounded and the newest lines survive the rotation
+reset; fg_owner; A=$OWNER; mkdir -p "$STATE"
+head -c 2000 /dev/zero | tr '\0' x > "$STATE/poller.log"
+EVENT_POLL_LOG_MAX=1000 run A $A >/dev/null
+check "log rotated, old lines kept in .1" "$([ "$(stat -c %s "$STATE/poller.log")" -lt 1000 ] && grep -q xxxx "$STATE/poller.log.1" && echo rotated || echo not)" rotated
+check "newest lease line is in the live log" "$(grep -c 'lease ->' "$STATE/poller.log")" 1
+
 echo "PASS $OK/$RAN"
-[ "$RAN" -eq 12 ] && [ "$OK" -eq "$RAN" ]
+[ "$RAN" -eq 17 ] && [ "$OK" -eq "$RAN" ]
