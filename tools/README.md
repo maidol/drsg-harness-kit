@@ -236,6 +236,43 @@ preventing something — the toolchain fact succeeding looks exactly like a buil
 that simply did not fail. Read it as a floor and a trend. Below 30 recorded
 sessions the script refuses to draw a conclusion at all.
 
+## To-do poller (`event-poller.py`)
+
+`setup.sh` registers it as three **global** hooks in `~/.claude/settings.json`
+(skip with `--no-event-poller`). Every session then checks its project's open
+Events every 15 minutes **without a model call**, and wakes the model only when
+there is one this session has not been told about yet.
+
+- **How it stays model-free.** `SessionStart` and `Stop` run it as an
+  `asyncRewake` hook: Claude Code keeps it in the background and wakes the model
+  only on exit code 2. Idle rounds sleep, ask the daemon over RPC, and print
+  nothing. The wake-up text lists the Events and repeats that commit / push / PR
+  still wait for the user.
+- **One poller per project, held by a lease.** Two sessions in the same
+  directory would both act on the same Event. The right to poll is a lease
+  naming a session and its Claude Code process (pid + start time), not a lock
+  held by the poller: the poller has to exit to wake its model, and a lock that
+  died with it would hand the project over exactly when the first session starts
+  working. A waiting session takes the lease over within a minute of the holder's
+  process disappearing — clean exit (`SessionEnd` releases it) or not.
+- **A background session yields to a foreground one.** In a background session
+  (`claude --bg`, under `claude bg-pty-host`) `/exit` only detaches; the process
+  lives on and so would its lease. Whether a client is attached is not exposed,
+  so a foreground session in the same project takes the lease from any
+  background holder within a minute — even one you are attached to. Background
+  sessions never take it from each other. `claude stop <id>` still releases it
+  at once.
+- **Re-armed by `Stop`.** After a wake-up the poller is gone; the next `Stop`
+  starts it again. A `Stop` while it is running exits at once.
+- **Silent on failure.** No `.drsg/env`, daemon down, bad answer: logged and
+  retried next round, never a wake-up.
+- State and log: `~/.drsg-memory/poller/<project-hash>/` (`lease.json`,
+  `<session>.seen.json`, `poller.log`). Tuning for tests: `EVENT_POLL_INTERVAL`,
+  `EVENT_POLL_TICK` (seconds).
+- After a takeover, Events the previous session was woken for but did not close
+  are announced again: the poller cannot tell "half done" from "done, waiting for
+  the user", so the wake-up text asks to check the working tree first.
+
 ## Notes
 
 - **The LLM key never leaves the server.** `digest.run` is passed the *name* of

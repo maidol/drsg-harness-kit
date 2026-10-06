@@ -29,12 +29,13 @@
 #   --tools-dir DIR   where the runtime copies go   (default ~/.drsg-memory/tools)
 #   --fetch-drsg      download a release binary if none is found (network)
 #   --no-skills       do not install the bundled skills or AGENT-EFFICIENCY.md
+#   --no-event-poller do not register the global to-do poller hooks
 set -euo pipefail
 
 HERE="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 PROJECT=""; REPO=""; HUB=""; ROUTER=""; USAGE_REPORT=""; BIN=""; ADDR=""; TOKEN=""; PORT=""
 TOOLS="${DRSG_MEM_DIR:-$HOME/.drsg-memory}/tools"
-FETCH=0; SKILLS=1
+FETCH=0; SKILLS=1; POLLER=1
 
 while [ $# -gt 0 ]; do
   case "$1" in
@@ -50,7 +51,8 @@ while [ $# -gt 0 ]; do
     --tools-dir)  TOOLS="${2:?--tools-dir needs a path}"; shift 2 ;;
     --fetch-drsg) FETCH=1; shift ;;
     --no-skills)  SKILLS=0; shift ;;
-    -h|--help)    sed -n '2,31p' "${BASH_SOURCE[0]}" | sed 's/^# \{0,1\}//'; exit 0 ;;
+    --no-event-poller) POLLER=0; shift ;;
+    -h|--help)    sed -n '2,32p' "${BASH_SOURCE[0]}" | sed 's/^# \{0,1\}//'; exit 0 ;;
     *) echo "unknown argument '$1'" >&2; exit 1 ;;
   esac
 done
@@ -78,6 +80,44 @@ else
 fi
 chmod +x "$TOOLS"/*.sh "$TOOLS"/*.py "$TOOLS/drsg-usage-report" 2>/dev/null || true
 echo "   $(find "$TOOLS" -maxdepth 1 -type f | wc -l | tr -d ' ') files in place"
+
+# The to-do poller: global hooks, so every session in every project checks its
+# open Events every 15 minutes without a model call, and wakes the model only
+# when there is one it has not been told about. Projects without .drsg/env are
+# skipped by the script itself. Idempotent: an existing registration is kept.
+if [ "$POLLER" -eq 1 ]; then
+  CLAUDE_DIR="${CLAUDE_CONFIG_DIR:-$HOME/.claude}"
+  mkdir -p "$CLAUDE_DIR"
+  python3 - "$CLAUDE_DIR/settings.json" "$TOOLS/event-poller.py" <<'PY'
+import json, os, sys
+path, script = sys.argv[1], sys.argv[2]
+d = json.load(open(path)) if os.path.exists(path) and os.path.getsize(path) else {}
+cmd = "python3 " + script
+hooks = d.setdefault("hooks", {})
+added = []
+def add(event, entry):
+    groups = hooks.setdefault(event, [])
+    if any("event-poller.py" in h.get("command", "") for g in groups for h in g.get("hooks", [])):
+        return
+    groups.append({"matcher": "*", "hooks": [entry]})
+    added.append(event)
+# asyncRewake: runs in the background, wakes the model only on exit code 2.
+# The timeout is the background lifetime; the poller exits on its own when its
+# Claude Code process is gone.
+bg = {"type": "command", "command": cmd, "asyncRewake": True, "timeout": 604800}
+add("SessionStart", dict(bg))
+add("Stop", dict(bg))
+add("SessionEnd", {"type": "command", "command": cmd, "timeout": 10})
+if added:
+    tmp = path + ".tmp"
+    with open(tmp, "w") as f:
+        json.dump(d, f, indent=2, ensure_ascii=False)
+        f.write("\n")
+    os.replace(tmp, path)
+print("   event poller hooks: " + (", ".join(added) + " added" if added else "already registered")
+      + " in " + path)
+PY
+fi
 
 if [ "$SKILLS" -eq 1 ] && [ -d "$HERE/skills" ]; then
   SKILLS_DIR="${CLAUDE_SKILLS_DIR:-$HOME/.claude/skills}"
