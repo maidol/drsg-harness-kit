@@ -66,5 +66,36 @@ EVENT_POLL_LOG_MAX=1000 run A $A >/dev/null
 check "log rotated, old lines kept in .1" "$([ "$(stat -c %s "$STATE/poller.log")" -lt 1000 ] && grep -q xxxx "$STATE/poller.log.1" && echo rotated || echo not)" rotated
 check "newest lease line is in the live log" "$(grep -c 'lease ->' "$STATE/poller.log")" 1
 
+# 5. a sender's kick cuts the wait to about a second; without it the INTERVAL holds
+EVENT_PY="$HERE/../tools/event.py"
+post_to() {   # event.py post() with the daemon faked out, so only its kick reaches the disk
+  python3 - "$EVENT_PY" "$1" <<'PY'
+import importlib.util, sys
+spec = importlib.util.spec_from_file_location("ev", sys.argv[1])
+ev = importlib.util.module_from_spec(spec)
+spec.loader.exec_module(ev)
+ev.rpc = lambda method, params, token: {"id": 1}
+ev.post(sys.argv[2], 1, "x", "notice", "", "test", "")
+PY
+}
+late_event() {   # $1 = post|quiet; prints the exit code of a poller that sees e1 appear 2s after it started
+  reset; echo '[]' > "$T/later.json"
+  ( echo '{"session_id":"A","hook_event_name":"Stop"}' \
+      | EVENT_POLL_FAKE="$T/later.json" EVENT_POLL_INTERVAL=3600 EVENT_POLL_TICK=60 \
+        EVENT_POLL_OWNER_PID=$LA timeout 8 python3 "$POLLER" 2>/dev/null
+    echo $? > "$T/rc" ) &
+  local job=$!
+  sleep 2
+  cp "$T/events.json" "$T/later.json"
+  if [ "$1" = post ]; then post_to "$T/proj"; fi
+  wait $job
+  cat "$T/rc"
+}
+fg_owner; LA=$OWNER
+check "post wakes a waiting poller within seconds" "$(late_event post)" 2
+check "no post, no early look (INTERVAL holds)"   "$(late_event quiet)" 124
+reset; post_to "$T/elsewhere"
+check "post to an unpolled project writes nothing" "$(ls "$T/mem/poller" 2>/dev/null | wc -l)" 0
+
 echo "PASS $OK/$RAN"
-[ "$RAN" -eq 17 ] && [ "$OK" -eq "$RAN" ]
+[ "$RAN" -eq 20 ] && [ "$OK" -eq "$RAN" ]

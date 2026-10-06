@@ -264,6 +264,13 @@ there is one this session has not been told about yet.
   at once.
 - **Re-armed by `Stop`.** After a wake-up the poller is gone; the next `Stop`
   starts it again. A `Stop` while it is running exits at once.
+- **Kicked by the sender.** After writing an Event, `event.py post()` (which the
+  `drsg-events` MCP tool also goes through) touches `kick` in the recipient's
+  state directory, if that directory exists. A waiting poller stats that file
+  every second (`EVENT_POLL_KICK_STEP`) and asks the daemon at once when it
+  changes, so an idle session sees a new Event within a second or two instead of
+  at the next 15-minute check. Same machine only; a missed kick just leaves the
+  15-minute interval in charge.
 - **Silent on failure.** No `.drsg/env`, daemon down, bad answer: logged and
   retried next round, never a wake-up.
 - State and log: `~/.drsg-memory/poller/<project-hash>/` (`lease.json`,

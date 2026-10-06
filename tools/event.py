@@ -432,8 +432,27 @@ def post(target, pid, summary, kind, ref, from_project, token,
         raise RuntimeError(f"{key} was created but its NOTIFY edge was not — "
                            f"the Event is unreachable; link or delete it "
                            f"before relying on it")
+    kick(target)
     return {"key": key, "symbols": symbols, "plane": plane,
             "hint": props.get("graph_hint", ""), "unverified": unverified}
+
+
+def kick(target):
+    """Tell a running event-poller for `target` to look now rather than at its
+    next 15-minute check. Same machine only and best effort: it writes `kick`
+    in the state directory event-poller.py derives for that project, and only
+    if the directory exists, so a project nobody polls gets nothing written. A
+    sender elsewhere, or a failed write, leaves the recipient on its interval."""
+    root = os.path.join(os.environ.get("DRSG_MEM_DIR") or
+                        os.path.expanduser("~/.drsg-memory"), "poller")
+    state = os.path.join(root, hashlib.sha1(
+        os.path.realpath(target).encode()).hexdigest()[:12])
+    try:
+        if os.path.isdir(state):
+            with open(os.path.join(state, "kick"), "w") as f:
+                f.write(str(time.time()))
+    except OSError:
+        pass
 
 
 def report(res, target):

@@ -36,6 +36,7 @@ import time
 
 INTERVAL = int(os.environ.get("EVENT_POLL_INTERVAL", "900"))   # 15 minutes
 TICK = int(os.environ.get("EVENT_POLL_TICK", "60"))             # takeover latency
+KICK_STEP = float(os.environ.get("EVENT_POLL_KICK_STEP", "1"))  # seconds between looks at `kick`
 LOG_MAX = int(os.environ.get("EVENT_POLL_LOG_MAX", "262144"))   # bytes before poller.log rotates
 SEEN_MAX_AGE = 14 * 86400                                       # orphaned seen files, seconds
 STATE_ROOT = os.path.join(os.environ.get("DRSG_MEM_DIR") or
@@ -81,6 +82,25 @@ def proc_start(pid):
 
 def alive(pid, start):
     return bool(pid) and proc_start(pid) == start
+
+
+def mtime(path):
+    try:
+        return os.stat(path).st_mtime_ns
+    except OSError:
+        return 0
+
+
+def wait(kick, since, seconds):
+    """Sleep up to `seconds`, returning early once `kick` changes. event.py
+    touches it after posting here, so a new Event is looked at within
+    KICK_STEP instead of at the next INTERVAL boundary. Only a stat per step:
+    the lease and /proc work still happens once per TICK."""
+    end = time.time() + seconds
+    while time.time() < end:
+        if mtime(kick) != since:
+            return
+        time.sleep(min(KICK_STEP, max(end - time.time(), 0)))
 
 
 def cmdline(pid):
@@ -258,12 +278,17 @@ def poll(project, state, sid):
     seen_path = os.path.join(state, sid + ".seen.json")
     seen = set(read_json(seen_path, []))
     next_check = 0
+    kick = os.path.join(state, "kick")
+    kicked = mtime(kick)
     while True:
         rotate(state)
         if not alive(pid, start):
             log(state, "claude %d gone; poller for %s exits" % (pid, sid))
             release(state, sid)
             return 0
+        k = mtime(kick)
+        if k != kicked:                                  # a sender just posted here
+            kicked, next_check = k, 0
         if take_lease(state, sid, pid, start, bg) and time.time() >= next_check:
             next_check = time.time() + INTERVAL
             try:
@@ -282,7 +307,7 @@ def poll(project, state, sid):
                         pass
                 sys.stderr.write(wake_text(new) + "\n")
                 return 2                                 # lease stays with this session
-        time.sleep(TICK)
+        wait(kick, kicked, TICK)
 
 
 def stop_poller(state, sid):
