@@ -271,6 +271,7 @@ def wake_text(new):
             lines.append("  ref: %s" % e["ref"])
     lines += [
         "按 CLAUDE.md 的 Event 流程处理：读 ref 指的文档，照做；做完发回执（notice）并 event_done。",
+        "例外：summary 以「验收通过：」开头的判定只需 event_done，不要为它回 notice；回执的回执只会让对方多关一次单。",
         "照旧要先停下等用户确认的：git commit、push、开 PR、改锁文件、任何不可逆操作。",
         "动手前先看工作区和 git 状态：另一个会话可能做过一半（本条可能是接管后重发），已做过的不要重复改。",
     ]

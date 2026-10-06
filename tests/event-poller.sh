@@ -123,5 +123,10 @@ PY
 }
 check "setup registers StopFailure as asyncRewake" "$(stopfailure_hook)" asyncRewake
 
+# 8. the wake-up text tells a verdict apart from work: "验收通过：" gets event_done, no reply
+reset; fg_owner; A=$OWNER
+check "wake text says verdicts need no reply" "$(echo '{"session_id":"A","hook_event_name":"Stop"}' \
+  | EVENT_POLL_OWNER_PID=$A timeout 5 python3 "$POLLER" 2>&1 >/dev/null | grep -c '验收通过：」开头的判定只需 event_done')" 1
+
 echo "PASS $OK/$RAN"
-[ "$RAN" -eq 24 ] && [ "$OK" -eq "$RAN" ]
+[ "$RAN" -eq 25 ] && [ "$OK" -eq "$RAN" ]
