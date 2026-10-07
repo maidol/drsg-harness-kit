@@ -38,6 +38,16 @@ tar xzf dist/drsg-harness-kit-*.tar.gz -C /tmp
 `--project` 还会在该项目里装一个 git pre-commit hook，运行 `completeness-guard.py --staged`：新增的命令行选项、环境变量、路由或配置键在文档里找不到时打印提示；只有项目声明了 `.completeness.json` 才会拦下提交。项目已有自己的 pre-commit hook、或者设了 `core.hooksPath` 时不动它，安装器会打印手动串联的那一行。用法和声明文件见 [tools/README.zh-CN.md](tools/README.zh-CN.md#通用交付闭环守卫completeness-guardpy)。
 
 
+## 权限护栏（可选）
+
+不要求就不装。`--permission-guard DIR` 往 `DIR/.claude/settings.local.json` 加入 `git commit` / `git push` / `gh pr create` 的 ask 规则和只读的窄 allow 规则；`--reviews-dir DIR` 在 `~/.claude/settings.json` 里告诉 auto 模式分类器：DIR 下的脚本在 Write 里原样展示过之后可以运行；`--prune-broad` 同时从项目文件里删掉 `Bash(python3 *)` 这类规则。三者都不需要 `--project`、drsg 二进制或正在运行的 daemon。详见 [tools/README.zh-CN.md](tools/README.zh-CN.md#权限护栏permission-guardpy)。
+
+```bash
+/tmp/drsg-harness-kit-*/setup.sh --permission-guard /path/to/project
+/tmp/drsg-harness-kit-*/setup.sh --permission-guard /path/to/project --prune-broad \
+  --reviews-dir /path/to/workspace/reviews
+```
+
 ## 刷新运行时副本
 
 在本仓库中修改后，重新构建 bundle，再次运行其中的 `setup.sh`。这是为新机器安装时使用的同一条路径，这是有意的设计——避免维护两套流程。`setup.sh` 幂等，会重新运行安装器自检，但不会触碰数据库。改的是 `tools/templates/hooks/` 底下的东西时要加 `--project DIR`：不带参数的一次运行只刷新 `~/.drsg-memory/tools/`，各项目的 `.claude/hooks/` 仍停在旧副本上，也就是之后 `install.sh --check` 会报出来的 drift。router 和 usage report 虽然会随 bundle 提供，但项目配置默认是可选的：使用 `--router DIR`、`--usage-report DIR`，或者使用显式的 `--hub DIR` 同时启用两者；只使用 `--project` 和 `--repo` 不会安装其中任何一个。

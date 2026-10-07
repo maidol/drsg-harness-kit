@@ -31,12 +31,18 @@
 #   --no-skills       do not install the bundled skills or AGENT-EFFICIENCY.md
 #   --no-event-poller do not register the global to-do poller hooks
 #   --no-streak-hint do not register the global single-tool reminder hook
+#   --permission-guard DIR  add commit/push ask rules and narrow read-only allow
+#                     rules to DIR/.claude/settings.local.json (opt-in)
+#   --reviews-dir DIR teach the auto-mode classifier (~/.claude/settings.json)
+#                     that scripts under DIR may run once shown in a Write call
+#   --prune-broad     with --permission-guard: also remove Bash(python3 *)-style rules
 set -euo pipefail
 
 HERE="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 PROJECT=""; REPO=""; HUB=""; ROUTER=""; USAGE_REPORT=""; BIN=""; ADDR=""; TOKEN=""; PORT=""
 TOOLS="${DRSG_MEM_DIR:-$HOME/.drsg-memory}/tools"
 FETCH=0; SKILLS=1; POLLER=1; STREAK_HINT=1
+PG_DIR=""; REVIEWS_DIR=""; PRUNE=0
 
 while [ $# -gt 0 ]; do
   case "$1" in
@@ -54,7 +60,10 @@ while [ $# -gt 0 ]; do
     --no-skills)  SKILLS=0; shift ;;
     --no-event-poller) POLLER=0; shift ;;
     --no-streak-hint) STREAK_HINT=0; shift ;;
-    -h|--help)    sed -n '2,33p' "${BASH_SOURCE[0]}" | sed 's/^# \{0,1\}//'; exit 0 ;;
+    --permission-guard) PG_DIR="${2:?--permission-guard needs a path}"; shift 2 ;;
+    --reviews-dir) REVIEWS_DIR="${2:?--reviews-dir needs a path}"; shift 2 ;;
+    --prune-broad) PRUNE=1; shift ;;
+    -h|--help)    sed -n '2,38p' "${BASH_SOURCE[0]}" | sed 's/^# \{0,1\}//'; exit 0 ;;
     *) echo "unknown argument '$1'" >&2; exit 1 ;;
   esac
 done
@@ -64,6 +73,10 @@ done
 # error for a mistake that is knowable at parse time.
 if [ -n "$HUB" ] && { [ -n "$ROUTER" ] || [ -n "$USAGE_REPORT" ]; }; then
   echo "ERROR: --hub cannot be combined with --router or --usage-report" >&2
+  exit 1
+fi
+if [ "$PRUNE" -eq 1 ] && [ -z "$PG_DIR" ]; then
+  echo "ERROR: --prune-broad only applies together with --permission-guard DIR" >&2
   exit 1
 fi
 
@@ -157,6 +170,22 @@ if [ "$SKILLS" -eq 1 ] && [ -d "$HERE/skills" ]; then
   fi
 else
   echo "== 2/6: skills skipped"
+fi
+
+# Permission guard: opt-in, and independent of the drsg binary and the
+# daemon, so it runs before them. Project rules go to the project's
+# settings.local.json; the autoMode rules only take effect from the
+# user-level settings.json, so that is where --reviews-dir writes.
+if [ -n "$PG_DIR" ] || [ -n "$REVIEWS_DIR" ]; then
+  echo "== optional: permission guard"
+  if [ -n "$PG_DIR" ]; then
+    set -- apply --project "$PG_DIR" --tools-dir "$TOOLS"
+    if [ "$PRUNE" -eq 1 ]; then set -- "$@" --prune-broad; fi
+    python3 "$TOOLS/permission-guard.py" "$@"
+  fi
+  if [ -n "$REVIEWS_DIR" ]; then
+    python3 "$TOOLS/permission-guard.py" apply --user --reviews-dir "$REVIEWS_DIR"
+  fi
 fi
 
 echo "== 3/6: locating drsg"

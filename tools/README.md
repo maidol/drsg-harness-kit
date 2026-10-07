@@ -328,6 +328,51 @@ To keep the hook registered but silent, start Claude Code with the variable set:
 DRSG_STOP_FAILURE_NOTIFY_DISABLED=1 claude
 ```
 
+## Permission guard (`permission-guard.py`)
+
+Opt-in. Nothing is written until you ask for it, either through `setup.sh`
+(`--permission-guard DIR`, `--reviews-dir DIR`, `--prune-broad`) or by running
+the tool directly. It has two scopes:
+
+- **Project** (`--project DIR`): writes `DIR/.claude/settings.local.json` only —
+  `DIR/.claude/settings.json` may be tracked by git and is never touched.
+  It adds `ask` rules for `git commit` / `git push` in every spelling sessions
+  use (`git`, `rtk git`, `/usr/bin/git`; bare, with `-C DIR`, with `-c k=v`) and
+  for `gh pr create`. An ask rule wins over an allow rule, so a broad
+  `Bash(rtk git *)` already in the file can no longer commit or push without
+  asking. It also adds narrow `allow` rules for read-only git, `event.py
+  list|done` and the modern-go guideline script: auto mode keeps narrow rules
+  and settles them without a classifier call. Broad interpreter rules such as
+  `Bash(python3 *)` — dropped by auto mode, allow-everything outside it — are
+  reported; `--prune-broad` removes them. Nothing else is ever removed.
+- **User** (`--user --reviews-dir DIR`): writes the `autoMode` block of
+  `~/.claude/settings.json` (or `$CLAUDE_CONFIG_DIR/settings.json`), the only
+  place Claude Code reads it from. Three prose rules tell the auto-mode
+  classifier that a script under DIR may run once the agent has written an
+  exact copy under `/tmp` with a Write call — the classifier sees tool inputs,
+  not tool output, so a `cat` does not count — and that receipt files may be
+  written there. Each entry starts with `(drsg-harness-kit permission-guard)`;
+  hand-written copies of the same rules are replaced, everything else is kept.
+
+```bash
+# project scope; re-running adds nothing
+python3 ~/.drsg-memory/tools/permission-guard.py apply --project /path/to/project
+python3 ~/.drsg-memory/tools/permission-guard.py apply --project /path/to/project --prune-broad
+python3 ~/.drsg-memory/tools/permission-guard.py check --project /path/to/project   # exit 1 on drift
+python3 ~/.drsg-memory/tools/permission-guard.py remove --project /path/to/project
+
+# user scope
+python3 ~/.drsg-memory/tools/permission-guard.py apply --user --reviews-dir /path/to/workspace/reviews
+python3 ~/.drsg-memory/tools/permission-guard.py check --user --reviews-dir /path/to/workspace/reviews
+python3 ~/.drsg-memory/tools/permission-guard.py remove --user
+
+# event.py somewhere else than ~/.drsg-memory/tools
+python3 ~/.drsg-memory/tools/permission-guard.py apply --project /path/to/project --tools-dir /opt/drsg/tools
+```
+
+Rules take effect in sessions started afterwards. `claude auto-mode config`
+shows the user-scope entries the classifier will read.
+
 ## Notes
 
 - **The LLM key never leaves the server.** `digest.run` is passed the *name* of

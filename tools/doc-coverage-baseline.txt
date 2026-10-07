@@ -14,11 +14,7 @@ tools/codegraph.sh:--force
 tools/codegraph.sh:--port
 tools/analyze_events.py:--verbose
 tools/analyze_recall.py:--no-cache
-tools/analyze_recall.py:--project
 tools/audit_deployment.py:--claude-dir
-tools/audit_deployment.py:--project
-tools/audit_deployment.py:--tools-dir
-tools/codegraph-usage.py:--project
 tools/codegraph-usage.py:--verbose
 tools/event.py:--kind
 tools/event.py:--ref
