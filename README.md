@@ -67,3 +67,20 @@ configuration is opt-in: use `--router DIR`, `--usage-report DIR`, or explicit
 
 `install.sh --check` decides "which side is newer" from mtime, which `git
 checkout` rewrites. Treat its direction as a hint and the md5 pair as the fact.
+
+## Before you commit
+
+The repository ships a pre-commit hook that runs `tools/check-docs.py`, so a new
+command-line option or tool cannot be committed without its documentation.
+Enable it once per clone:
+
+```bash
+git config core.hooksPath .githooks
+```
+
+To run every gate and contract test by hand:
+
+```bash
+bash tests/test-all.sh
+```
+

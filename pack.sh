@@ -39,6 +39,11 @@ if command -v sha256sum >/dev/null 2>&1; then SHA=(sha256sum); else SHA=(shasum 
 # its --history mode does not, deliberately — this repository is private and its
 # history is not being rewritten, so failing the build on it would be a gate
 # nobody could pass.
+if ! python3 "$REPO/tools/check-docs.py"; then
+  echo "refusing to build a bundle with documentation quality/coverage issues" >&2
+  exit 1
+fi
+
 if ! python3 "$REPO/tools/check-no-machine-paths.py" \
     "$REPO/tools" "$REPO/skills" "$REPO/claude" "$REPO/setup.sh" "$REPO/install-drsg.sh"; then
   echo "refusing to build a bundle with machine-specific strings in it" >&2

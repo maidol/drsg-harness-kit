@@ -1,0 +1,27 @@
+# Baseline of undocumented CLI options for drsg-harness-kit.
+# This baseline is strictly decremental (can only decrease, never increase).
+# Format: <script_path>:<option>
+setup.sh:--addr
+setup.sh:--bin
+setup.sh:--fetch-drsg
+setup.sh:--no-event-poller
+setup.sh:--no-skills
+setup.sh:--no-streak-hint
+setup.sh:--port
+setup.sh:--tools-dir
+tools/codegraph.sh:--dir
+tools/codegraph.sh:--force
+tools/codegraph.sh:--port
+tools/analyze_events.py:--verbose
+tools/analyze_recall.py:--no-cache
+tools/analyze_recall.py:--project
+tools/audit_deployment.py:--claude-dir
+tools/audit_deployment.py:--project
+tools/audit_deployment.py:--tools-dir
+tools/codegraph-usage.py:--project
+tools/codegraph-usage.py:--verbose
+tools/event.py:--kind
+tools/event.py:--ref
+tools/event.py:--symbol
+tools/event.py:--verb
+tools/migrate.py:--dry-run

@@ -49,3 +49,19 @@ tar xzf dist/drsg-harness-kit-*.tar.gz -C /tmp
 ```
 
 `install.sh --check` 根据 mtime 判断“哪一侧更新”，而 `git checkout` 会重写 mtime。因此应把它的方向判断视为提示，把 md5 对照结果视为事实。
+
+## 提交之前
+
+仓库自带一个 pre-commit hook，会运行 `tools/check-docs.py`：新增的命令行选项或工具
+没有配套文档时，提交会被拦下。每个克隆启用一次：
+
+```bash
+git config core.hooksPath .githooks
+```
+
+手动跑全部门禁和契约测试：
+
+```bash
+bash tests/test-all.sh
+```
+

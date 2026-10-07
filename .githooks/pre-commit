@@ -1,0 +1,7 @@
+#!/usr/bin/env bash
+# Git pre-commit hook for drsg-harness-kit.
+# Verifies documentation coverage and quality gates before any commit.
+set -euo pipefail
+
+REPO_ROOT="$(git rev-parse --show-toplevel)"
+python3 "$REPO_ROOT/tools/check-docs.py"
