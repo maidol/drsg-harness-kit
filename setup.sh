@@ -90,10 +90,11 @@ echo "   $(find "$TOOLS" -maxdepth 1 -type f | wc -l | tr -d ' ') files in place
 if [ "$POLLER" -eq 1 ] || [ "$STREAK_HINT" -eq 1 ]; then
   CLAUDE_DIR="${CLAUDE_CONFIG_DIR:-$HOME/.claude}"
   mkdir -p "$CLAUDE_DIR"
-  python3 - "$CLAUDE_DIR/settings.json" "$TOOLS/event-poller.py" "$TOOLS/single-tool-streak.py" "$POLLER" "$STREAK_HINT" <<'PY'
+  python3 - "$CLAUDE_DIR/settings.json" "$TOOLS/event-poller.py" "$TOOLS/single-tool-streak.py" "$POLLER" "$STREAK_HINT" "$TOOLS/stop-failure-notify.py" <<'PY'
 import json, os, sys
 path, script, streak_script = sys.argv[1], sys.argv[2], sys.argv[3]
 poller_enabled, streak_hint = sys.argv[4] == "1", sys.argv[5] == "1"
+notify_script = sys.argv[6]
 d = json.load(open(path)) if os.path.exists(path) and os.path.getsize(path) else {}
 cmd = "python3 " + script
 hooks = d.setdefault("hooks", {})
@@ -118,6 +119,9 @@ if poller_enabled:
     # A turn that ends in an API error fires StopFailure instead of Stop; without
     # this the poller that woke that turn is never started again.
     add("StopFailure", dict(bg), "event-poller.py")
+    # StopFailure cannot wake the model; this one only tells the terminal.
+    add("StopFailure", {"type": "command", "command": "python3 " + notify_script,
+                        "timeout": 5}, "stop-failure-notify.py")
     add("SessionEnd", {"type": "command", "command": cmd, "timeout": 10},
         "event-poller.py")
 if added:

@@ -196,6 +196,23 @@ utilization 是一个 proxy，脚本也会明确说明这一点：它会把仅�
 - 状态和日志在 `~/.drsg-memory/poller/<项目哈希>/`（`lease.json`、`<会话>.seen.json`、`poller.log`）。测试时可以用 `EVENT_POLL_INTERVAL`、`EVENT_POLL_TICK`（单位：秒）调短间隔。
 - 接管后，上一个会话被唤醒但还没关掉的 Event 会重新通知一次。轮询脚本分不清「做了一半」和「做完了、在等用户确认」，所以唤醒提示里要求先看工作区。
 
+## API 错误停住提醒（`stop-failure-notify.py`）
+
+一轮因 API 错误结束（模型不可用、限流、认证失败）之后，会话就停在那里，没有任何东西会唤醒它：Claude Code 会忽略 `StopFailure` hook 的退出码和输出，所以轮询脚本没法让工作继续。`setup.sh` 把这个脚本注册成轮询旁边的第二个普通 `StopFailure` hook（`--no-event-poller` 会把两者一起跳过）。它返回一个 `terminalSequence`：窗口标题改成 `Claude stopped: <项目> (<错误类型>)`，再发一条桌面通知（OSC 9 对应 iTerm2 / Windows Terminal / WezTerm，OSC 777 对应 Ghostty / urxvt / Warp）并响铃。只有交互式会话、并且界面在屏幕上时，Claude Code 才会发出它。
+
+手动试一下——输出就是 Claude Code 会收到的 JSON：
+
+```bash
+echo '{"error":"rate_limit","error_details":"429 Too Many Requests"}' \
+  | python3 ~/.drsg-memory/tools/stop-failure-notify.py
+```
+
+想保留注册、但不出提醒，启动 Claude Code 时设上这个变量：
+
+```bash
+DRSG_STOP_FAILURE_NOTIFY_DISABLED=1 claude
+```
+
 ## 说明
 
 - **LLM key 永远不会离开 server。** 传给 `digest.run` 的是环境变量的*名称*；daemon 从自己的进程环境读取值。项目的 `.drsg/env` 只保存名称，不保存值。

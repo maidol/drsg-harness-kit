@@ -303,6 +303,31 @@ there is one this session has not been told about yet.
   are announced again: the poller cannot tell "half done" from "done, waiting for
   the user", so the wake-up text asks to check the working tree first.
 
+## StopFailure notice (`stop-failure-notify.py`)
+
+A turn that ends in an API error — model unavailable, rate limit, failed auth —
+leaves the session idle, and nothing wakes it: Claude Code ignores a
+`StopFailure` hook's exit code and output, so the poller cannot restart the
+work. `setup.sh` registers this script as a second, ordinary `StopFailure` hook
+next to the poller (skip both with `--no-event-poller`). It returns one
+`terminalSequence`: the window title becomes `Claude stopped: <project> (<error>)`,
+plus a desktop notification (OSC 9 for iTerm2 / Windows Terminal / WezTerm,
+OSC 777 for Ghostty / urxvt / Warp) and a bell. Claude Code emits it only in an
+interactive session whose interface is on screen.
+
+Try it by hand — the output is the JSON Claude Code would receive:
+
+```bash
+echo '{"error":"rate_limit","error_details":"429 Too Many Requests"}' \
+  | python3 ~/.drsg-memory/tools/stop-failure-notify.py
+```
+
+To keep the hook registered but silent, start Claude Code with the variable set:
+
+```bash
+DRSG_STOP_FAILURE_NOTIFY_DISABLED=1 claude
+```
+
 ## Notes
 
 - **The LLM key never leaves the server.** `digest.run` is passed the *name* of

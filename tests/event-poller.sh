@@ -128,5 +128,10 @@ reset; fg_owner; A=$OWNER
 check "wake text says verdicts need no reply" "$(echo '{"session_id":"A","hook_event_name":"Stop"}' \
   | EVENT_POLL_OWNER_PID=$A timeout 5 python3 "$POLLER" 2>&1 >/dev/null | grep -c '验收通过：」开头的判定只需 event_done')" 1
 
+# 9. the wake-up text says a handoff needs no "read it" reply before the work
+reset; fg_owner; A=$OWNER
+check "wake text says handoffs need no read receipt" "$(echo '{"session_id":"A","hook_event_name":"Stop"}' \
+  | EVENT_POLL_OWNER_PID=$A timeout 5 python3 "$POLLER" 2>&1 >/dev/null | grep -c '收到 handoff 直接开工，不要先回「已读」')" 1
+
 echo "PASS $OK/$RAN"
-[ "$RAN" -eq 25 ] && [ "$OK" -eq "$RAN" ]
+[ "$RAN" -eq 26 ] && [ "$OK" -eq "$RAN" ]

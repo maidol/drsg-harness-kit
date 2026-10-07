@@ -171,7 +171,11 @@ def main():
     print('被 Read 最多的文件:', ', '.join(f'{f}×{k}' for f, k in reads.most_common(6)))
     print('git 只读检查:', dict(gitc))
     orch = sum(tools[k] for k in ('ListAgents', 'SendMessage', 'Agent', 'SubagentHandback'))
-    print(f'子代理调度调用 {orch} 次；代码图调用 {sum(v for k, v in tools.items() if "graph" in k or k.startswith("mcp__drsg"))} 次')
+    # drsg-events 也以 mcp__drsg 开头，但它是待办通道不是代码图，单列。
+    graph = sum(v for k, v in tools.items()
+                if ('graph' in k or k.startswith('mcp__drsg')) and 'event' not in k)
+    events = sum(v for k, v in tools.items() if k.startswith('mcp__drsg-events__'))
+    print(f'子代理调度调用 {orch} 次；代码图调用 {graph} 次；Event 调用 {events} 次')
 
     print('\n## 5. 等人（主会话 >2 分钟空档且下一条是用户文字）')
     print(f'{len(waits)} 次，合计 {sum(waits) / 60:.0f} 分')

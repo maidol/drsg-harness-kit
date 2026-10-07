@@ -22,7 +22,9 @@ bash "$REPO/tests/completeness-guard.sh"
 
 echo "== 6/6: Event poller & streak reminder contract tests =="
 bash "$REPO/tests/single-tool-streak.sh"
+bash "$REPO/tests/stop-failure-notify.sh"
 bash "$REPO/tests/event-poller.sh"
+bash "$REPO/tests/retro.sh"
 
 echo ""
 echo "All test suites and quality gates PASSED."
