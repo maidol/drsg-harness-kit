@@ -219,3 +219,5 @@ python3 completeness-guard.py --json                  # 结构化输出
 项目可通过根目录 `.completeness.json`（或 `.drsg/completeness.json`）声明配置，
 将提示级发现提升为阻断提交的 pre-commit 错误。
 
+它看哪些文件：名字只从 `.sh`、`.bash`、`.yml`、`.yaml`、`.py`、`.go` 和没有扩展名的脚本里抽，测试文件（`tests/`、`*_test.go`、`test_*.py` 等）一律不看；shell 的选项只认 `case` 分支标签。没写 `docs` 列表时，搜 `README*`、`*/README*.md` 和 `docs/**/*.md`。
+

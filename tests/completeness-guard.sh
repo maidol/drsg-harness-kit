@@ -309,5 +309,57 @@ git -C "$P18" config core.hooksPath .githooks
 out18=$(bash "$INST" "$P18" "$TD" 2>&1)
 check "scene18_hookspath_skipped" "$([ -e "$P18/.git/hooks/pre-commit" ] && echo written || echo skipped),$(echo "$out18" | grep -q 'core.hooksPath' && echo noted || echo silent)" "skipped,noted"
 
+# ---- N1–N4 场景（19–23）：误报收紧，各用自己的新仓库 ----
+
+# 场景 19（N1）：测试文件里的夹具名字不算新增对外名字
+P19="$T/p19"; new_repo "$P19"
+mkdir -p "$P19/tests"
+printf 'case "$1" in --fixture-flag) ;; esac\n' > "$P19/tests/fixture.sh"
+printf 'package x\nvar _ = os.Getenv("FIXTURE_ENV")\n' > "$P19/x_test.go"
+git -C "$P19" add tests/fixture.sh x_test.go
+rc19=0; out19=$(python3 "$GUARD" --repo "$P19" --staged 2>&1) || rc19=$?
+check "scene19_test_files_not_scanned" "$rc19,$(echo "$out19" | grep -q -e 'fixture-flag' -e 'FIXTURE_ENV' && echo reported || echo quiet)" "0,quiet"
+
+# 场景 20（N3）：TSX 和计划文档里的「像名字的东西」不按 shell/Python 规则抽
+P20="$T/p20"; new_repo "$P20"
+mkdir -p "$P20/ui" "$P20/notes"
+printf "export const A = () => <div style={{ color: 'var(--text-primary)' }} />\n" > "$P20/ui/App.tsx"
+printf '# plan\n\n```python\nv = os.environ.get("PLAN_ONLY_VAR")\n```\n' > "$P20/notes/plan.md"
+git -C "$P20" add ui/App.tsx notes/plan.md
+rc20=0; out20=$(python3 "$GUARD" --repo "$P20" --staged 2>&1) || rc20=$?
+check "scene20_non_code_files_not_scanned" "$rc20,$(echo "$out20" | grep -q -e 'text-primary' -e 'PLAN_ONLY_VAR' && echo reported || echo quiet)" "0,quiet"
+
+# 场景 21（N3）：shell 里只认 case 分支标签，不认 $(cmd --opt) 里的参数
+P21="$T/p21"; new_repo "$P21"
+mkdir -p "$P21/hooks"
+cat > "$P21/hooks/pre-commit" <<'SH'
+#!/bin/sh
+ROOT="$(git rev-parse --show-toplevel)"
+case "$1" in
+  -p|--port-num) shift ;;
+esac
+SH
+git -C "$P21" add hooks/pre-commit
+out21=$(python3 "$GUARD" --repo "$P21" --staged 2>&1)
+check "scene21_shell_case_label_only" "$(echo "$out21" | grep -q -- '--show-toplevel' && echo reported || echo quiet),$(echo "$out21" | grep -q -- 'NEW cli_flag --port-num ' && echo yes || echo no)" "quiet,yes"
+
+# 场景 22（N4）：写在子目录 README 里的用法算有文档
+P22="$T/p22"; new_repo "$P22"
+mkdir -p "$P22/tools"
+printf '# tools\n\n```bash\ntools/run.sh --sub-flag\n```\n' > "$P22/tools/README.md"
+git -C "$P22" add tools/README.md
+git -C "$P22" commit -q -m docs
+printf 'case "$1" in --sub-flag) ;; esac\n' > "$P22/tools/run.sh"
+git -C "$P22" add tools/run.sh
+out22=$(python3 "$GUARD" --repo "$P22" --staged 2>&1)
+check "scene22_subdir_readme_counts" "$(echo "$out22" | grep -q 'NEW cli_flag --sub-flag ' && echo reported || echo documented)" "documented"
+
+# 场景 23（反向）：收紧之后，compose 文件里的 ${X:-默认值} 照样要抽出来
+P23="$T/p23"; new_repo "$P23"
+printf 'services:\n  app:\n    environment:\n      - MY_COMPOSE_VAR=${MY_COMPOSE_VAR:-1}\n' > "$P23/docker-compose.yml"
+git -C "$P23" add docker-compose.yml
+out23=$(python3 "$GUARD" --repo "$P23" --staged 2>&1)
+check "scene23_compose_env_still_seen" "$(echo "$out23" | grep -q 'NEW env_var MY_COMPOSE_VAR ' && echo yes || echo no)" "yes"
+
 printf '\nPASS %d/%d\n' "$OK" "$RAN"
 [ "$OK" -eq "$RAN" ]

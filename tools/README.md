@@ -332,3 +332,9 @@ python3 completeness-guard.py --json                  # machine-readable output
 Projects can declare `.completeness.json` (or `.drsg/completeness.json`) to turn
 advisory notices into blocking pre-commit errors.
 
+What it reads: names are taken from `.sh`, `.bash`, `.yml`, `.yaml`, `.py`,
+`.go` and extension-less scripts, never from test files (`tests/`,
+`*_test.go`, `test_*.py`, …); a shell option counts only as a `case` label.
+Without a `docs` list it searches `README*`, `*/README*.md` and
+`docs/**/*.md`.
+

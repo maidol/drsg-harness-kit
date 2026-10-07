@@ -24,7 +24,9 @@ import sys
 # Supported patterns for public names per language
 PATTERNS = [
     # Shell
-    ("cli_flag", r'(?<![\w-])--[a-z][a-z0-9-]*\)', "shell", lambda m: m.group(0)[:-1]),
+    # Only a case label: at line start, after "in", or after ";;". A bare "--x)"
+    # also matches "$(git rev-parse --show-toplevel)" and CSS "var(--x)".
+    ("cli_flag", r'(?:^|\bin\s+|;;\s*)(?:[-\w"\']+\s*\|\s*)*["\']?(--[a-z][a-z0-9-]*)["\']?\s*(?:\|[^)]*)?\)', "shell", lambda m: m.group(1)),
     ("env_var", r'\$\{([A-Z][A-Z0-9_]{2,})(?::-|:=)', "shell", lambda m: m.group(1)),
 
     # Python
@@ -45,7 +47,16 @@ PATTERNS = [
 # Inherited from the OS, never introduced by the project.
 SYSTEM_ENV = {"HOME", "PATH", "USER", "PWD", "SHELL", "LANG", "TMPDIR", "TERM", "HOSTNAME"}
 
-TEST_EXTENSIONS = ("_test.go", "test_*.py", "*_test.py", "*.spec.ts", "*.test.ts", "*.spec.js", "*.test.js", "test*.sh", "*_test.sh")
+# Which pattern groups run on which files. A type not listed gets none:
+# TSX, CSS and Markdown are not where a project declares its options.
+LANG_BY_EXT = {
+    ".sh": {"shell"}, ".bash": {"shell"}, ".yml": {"shell"}, ".yaml": {"shell"},
+    ".py": {"python"}, ".go": {"go"}, "": {"shell", "python"},
+}
+
+DEFAULT_DOCS = ["README.md", "README.zh-CN.md", "README*", "*/README*.md", "docs/**/*.md"]
+
+TEST_EXTENSIONS = ("*_test.go", "test_*.py", "*_test.py", "*.spec.ts", "*.test.ts", "*.spec.js", "*.test.js", "test*.sh", "*_test.sh")
 TEST_DIRS = ("tests/", "test/", "testdata/")
 
 
@@ -144,8 +155,14 @@ def extract_names_from_diff(diff_text, config_files_patterns=None):
         if not (is_add or is_del):
             continue
 
+        # Fixtures in tests name things the project never ships.
+        if is_test_file(current_file):
+            continue
+        langs = LANG_BY_EXT.get(os.path.splitext(current_file)[1], set())
         raw = line[1:].strip()
         for kind, pat, lang, extractor in PATTERNS:
+            if lang not in langs:
+                continue
             if kind == "config_key":
                 if not config_files_patterns:
                     continue
@@ -257,7 +274,7 @@ def main():
     new_names = extract_names_from_diff(diff_text, config_files_patterns=config_files)
 
     # Resolve document paths
-    doc_patterns = config.get("docs", ["README.md", "README.zh-CN.md", "README*", "docs/**/*.md"])
+    doc_patterns = config.get("docs", DEFAULT_DOCS)
     all_tracked = []
     try:
         out = subprocess.check_output(["git", "-C", repo_dir, "ls-files"], text=True)

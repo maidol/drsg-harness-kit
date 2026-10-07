@@ -35,7 +35,7 @@ def replay_commit(repo_dir, cid, parent, config_dict=None):
     new_names = cg.extract_names_from_diff(diff_text, config_files_patterns=config_files)
 
     # Resolve docs in commit cid
-    doc_patterns = cfg.get("docs", ["README.md", "README.zh-CN.md", "README*", "docs/**/*.md"])
+    doc_patterns = cfg.get("docs", cg.DEFAULT_DOCS)
     try:
         all_tracked = subprocess.check_output(["git", "-C", repo_dir, "ls-tree", "-r", "--name-only", cid], text=True).splitlines()
     except Exception:
@@ -120,11 +120,16 @@ def main():
                     blocker_commits += 1
                 if r["advisories"]:
                     advisory_commits += 1
+                    for a in r["advisories"]:
+                        print(f"    {cid[:9]} {a}")
             print(f"sub2api: {len(commits)} commits replayed.")
             print(f"  Advisories count: {advisory_commits} ({advisory_commits/len(commits)*100:.1f}%)")
             print(f"  Blockers count (undeclared mode): {blocker_commits} (0.0%)")
         except Exception as e:
             print("sub2api replay note:", e)
+
+    else:
+        print("SKIPPED: sub2api not found at", sub2api_repo)
 
     print("\n=== 3. Replay over any-auto-register history (30 commits) ===")
     any_repo = os.path.normpath(os.path.join(parent_dir, "any-auto-register"))
@@ -142,10 +147,15 @@ def main():
                 r = replay_commit(any_repo, cid, parent, config_dict={"_declared": False})
                 if r["advisories"]:
                     advisory_commits += 1
+                    for a in r["advisories"]:
+                        print(f"    {cid[:9]} {a}")
             print(f"any-auto-register: {len(commits)} commits replayed.")
             print(f"  Advisories count: {advisory_commits} ({advisory_commits/len(commits)*100:.1f}%)")
         except Exception as e:
             print("any-auto-register replay note:", e)
+
+    else:
+        print("SKIPPED: any-auto-register not found at", any_repo)
 
     print("\nAll replay checks and positive test cases PASSED.")
 
