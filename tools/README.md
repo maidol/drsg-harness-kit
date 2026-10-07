@@ -315,3 +315,20 @@ there is one this session has not been told about yet.
   hook will lose it. Back it up first.
 - **One config per project.** Each `.drsg/env` is independent: different
   projects can enable L3 differently, or point at different daemons.
+
+## Completeness guard (`completeness-guard.py`)
+
+A generic anti-omission and delivery completeness guard for all projects.
+It inspects git diffs for newly introduced user-facing names (CLI flags, environment
+variables, HTTP routes, config keys) and verifies they exist in documentation.
+
+```bash
+python3 completeness-guard.py                         # check working tree
+python3 completeness-guard.py --staged                 # check staged changes (used in pre-commit)
+python3 completeness-guard.py --repo /path/to/project --base origin/main
+python3 completeness-guard.py --json                  # machine-readable output
+```
+
+Projects can declare `.completeness.json` (or `.drsg/completeness.json`) to turn
+advisory notices into blocking pre-commit errors.
+

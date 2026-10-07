@@ -391,6 +391,23 @@ def check_layer4(project_dir):
     elif hooks_installed:
         issues.append("Missing CLAUDE.md while hooks are installed")
 
+    # 4. pre-commit completeness-guard status
+    git_dir = os.path.join(project_dir, ".git")
+    if os.path.isdir(git_dir):
+        pre_commit = os.path.join(git_dir, "hooks", "pre-commit")
+        if os.path.exists(pre_commit):
+            try:
+                with open(pre_commit, encoding="utf-8") as f:
+                    c = f.read()
+                if "completeness-guard" in c:
+                    res["details"].append("completeness-guard pre-commit hook active")
+                else:
+                    res["details"].append("custom pre-commit hook present (guard skipped)")
+            except Exception:
+                pass
+        else:
+            res["details"].append("no pre-commit hook present")
+
     if issues:
         res["ok"] = False
         res["details"] = issues

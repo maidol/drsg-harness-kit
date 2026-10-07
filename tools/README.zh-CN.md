@@ -202,3 +202,20 @@ utilization 是一个 proxy，脚本也会明确说明这一点：它会把仅�
 - **L3 是可选且异步的。** 设置 `--l3-chat` 后，`session_end` 会 detach 地启动提炼，因此结束会话不会等待 LLM 调用。失败会写入项目的 `.drsg/l3.log`。
 - **Hook 会被覆盖，而不是合并。** 如果项目已有自己的 SessionStart hook，它会丢失。请先备份。
 - **每个项目一份配置。** 每个 `.drsg/env` 都是独立的：不同项目可以使用不同的 L3 设置，也可以指向不同的 daemon。
+
+## 通用交付闭环守卫（`completeness-guard.py`）
+
+为所有接入项目提供的通用交付防遗漏守卫。
+检查 git diff 中新增的对外可见名字（CLI 选项、环境变量、HTTP 路由、配置键），
+并确保它们在项目文档中已有记录。
+
+```bash
+python3 completeness-guard.py                         # 检查当前工作区
+python3 completeness-guard.py --staged                 # 检查暂存区（用于 pre-commit）
+python3 completeness-guard.py --repo /path/to/project --base origin/main
+python3 completeness-guard.py --json                  # 结构化输出
+```
+
+项目可通过根目录 `.completeness.json`（或 `.drsg/completeness.json`）声明配置，
+将提示级发现提升为阻断提交的 pre-commit 错误。
+
