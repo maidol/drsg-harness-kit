@@ -36,11 +36,14 @@ PATTERNS = [
     ("cli_flag", r'flag\.[A-Za-z]+Var\s*\([^,]*,\s*["\']([a-z0-9-]+)["\']', "go", lambda m: ("--" if not m.group(1).startswith("--") else "") + m.group(1)),
     ("cli_flag", r'flag\.[A-Za-z]+\s*\(\s*["\']([a-z0-9-]+)["\']', "go", lambda m: ("--" if not m.group(1).startswith("--") else "") + m.group(1)),
     # Go cobra
-    ("cli_flag", r'(?:Persistent)?Flags\(\)\.[A-Za-z0-9]*(?:Var)?P?\s*\([^,]*["\']([a-z0-9-]+)["\']', "go", lambda m: ("--" if not m.group(1).startswith("--") else "") + m.group(1)),
+    ("cli_flag", r'(?:Persistent)?Flags\(\)\.[A-Za-z0-9]+\s*\(\s*(?:&?[\w.]+\s*,\s*)?["\']([a-z0-9-]+)["\']', "go", lambda m: ("--" if not m.group(1).startswith("--") else "") + m.group(1)),
     ("env_var", r'os\.Getenv\s*\(\s*["\']([A-Z][A-Z0-9_]{2,})["\']', "go", lambda m: m.group(1)),
     ("http_route", r'\.(?:GET|POST|PUT|DELETE|PATCH)\s*\(\s*["\'](/[^"\']*)["\']', "go", lambda m: m.group(1)),
     ("config_key", r'(?:yaml|json|mapstructure):"([a-z0-9_-]+)"', "go", lambda m: m.group(1)),
 ]
+
+# Inherited from the OS, never introduced by the project.
+SYSTEM_ENV = {"HOME", "PATH", "USER", "PWD", "SHELL", "LANG", "TMPDIR", "TERM", "HOSTNAME"}
 
 TEST_EXTENSIONS = ("_test.go", "test_*.py", "*_test.py", "*.spec.ts", "*.test.ts", "*.spec.js", "*.test.js", "test*.sh", "*_test.sh")
 TEST_DIRS = ("tests/", "test/", "testdata/")
@@ -101,12 +104,23 @@ def load_config(repo_dir):
     return None
 
 
+def base_args(repo_dir, base_rev):
+    """The base to diff against, always explicit. Leaving it out when it is
+    HEAD turns `git diff` into worktree-vs-index and hides everything staged."""
+    if not base_rev:
+        return []
+    res = subprocess.run(
+        ["git", "-C", repo_dir, "rev-parse", "--verify", "-q", base_rev + "^{commit}"],
+        capture_output=True, text=True
+    )
+    return [base_rev] if res.returncode == 0 else []
+
+
 def get_diff(repo_dir, base_rev, staged=False):
     cmd = ["git", "-C", repo_dir, "diff", "-U0"]
     if staged:
         cmd.append("--cached")
-    if base_rev and base_rev != "HEAD":
-        cmd.append(base_rev)
+    cmd.extend(base_args(repo_dir, base_rev))
     try:
         return subprocess.check_output(cmd, text=True)
     except Exception as e:
@@ -141,6 +155,8 @@ def extract_names_from_diff(diff_text, config_files_patterns=None):
             for m in re.finditer(pat, raw):
                 try:
                     name = extractor(m)
+                    if kind == "env_var" and name in SYSTEM_ENV:
+                        continue
                     if name:
                         target_dict = added_names if is_add else removed_names
                         target_dict.setdefault(name, []).append((kind, current_file))
@@ -207,8 +223,7 @@ def get_diff_files(repo_dir, base_rev, staged=False):
     cmd = ["git", "-C", repo_dir, "diff", "--name-only"]
     if staged:
         cmd.append("--cached")
-    if base_rev and base_rev != "HEAD":
-        cmd.append(base_rev)
+    cmd.extend(base_args(repo_dir, base_rev))
     try:
         out = subprocess.check_output(cmd, text=True)
         return [f.strip() for f in out.splitlines() if f.strip()]

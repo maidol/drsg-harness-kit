@@ -364,29 +364,7 @@ if git -C "$PROJECT_DIR" rev-parse --git-dir >/dev/null 2>&1 \
 fi
 
 # ---- 3.1 install git pre-commit completeness guard --------------------------
-if git -C "$PROJECT_DIR" rev-parse --git-dir >/dev/null 2>&1; then
-  GIT_DIR="$(git -C "$PROJECT_DIR" rev-parse --git-dir)"
-  HOOK_TARGET="$GIT_DIR/hooks/pre-commit"
-  GUARD_BIN="$TOOLS_DIR/completeness-guard.py"
-  mkdir -p "$GIT_DIR/hooks"
-  if [ -f "$HOOK_TARGET" ] && ! grep -q '# drsg-harness-kit completeness-guard' "$HOOK_TARGET"; then
-    echo "   NOTE: $HOOK_TARGET exists and is customized by project; not overwritten."
-    echo "         Chain manually: python3 $GUARD_BIN --staged"
-  else
-    cat > "$HOOK_TARGET" <<HOOKEOF
-#!/bin/sh
-# drsg-harness-kit completeness-guard
-python3 "$GUARD_BIN" --staged
-rc=\$?
-if [ "\$rc" -eq 2 ]; then
-  exit 0
-fi
-exit \$rc
-HOOKEOF
-    chmod +x "$HOOK_TARGET"
-    echo "== installed git pre-commit completeness guard in $HOOK_TARGET"
-  fi
-fi
+bash "$SCRIPT_DIR/install-precommit-guard.sh" "$PROJECT_DIR" "$TOOLS_DIR"
 
 # ---- 3a. park the Event tooling outside any checkout ------------------------
 # Only the files reachable from a persisted path are copied, and they travel

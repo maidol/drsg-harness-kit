@@ -231,5 +231,83 @@ fi
 check "scene9_custom_hook_detected_note" "$out_custom" "NOTE: exists and not overwritten"
 check "scene9_custom_hook_unchanged" "$(cat "$HOOK_TARGET")" "$CUSTOM_CONTENT"
 
+# ---- 返工新增场景（10–18）：每个场景用自己的新仓库，不复用上面的 $REPO ----
+new_repo() {
+  mkdir -p "$1"
+  git -C "$1" init -q -b main
+  git -C "$1" config user.email "test@example.com"
+  git -C "$1" config user.name "Test"
+  echo "# readme" > "$1/README.md"
+  git -C "$1" add README.md
+  git -C "$1" commit -q -m init
+}
+INST="$HERE/../tools/install-precommit-guard.sh"
+
+# 场景 10：Cobra 的 Var 形式（StringVarP / PersistentFlags().BoolVar）也要抽出来
+P10="$T/p10"; new_repo "$P10"
+cat > "$P10/cobra_var.go" <<'GO'
+package main
+func init() {
+    cmd.Flags().StringVarP(&addr, "listen-addr", "l", "", "help")
+    cmd.PersistentFlags().BoolVar(&verbose, "verbose-mode", false, "help")
+}
+GO
+git -C "$P10" add cobra_var.go
+out10=$(python3 "$GUARD" --repo "$P10" --staged 2>&1)
+check "scene10_cobra_var_forms" "$(echo "$out10" | grep -q -- '--listen-addr' && echo yes || echo no),$(echo "$out10" | grep -q -- '--verbose-mode' && echo yes || echo no)" "yes,yes"
+
+# 场景 11：不带 --staged 时，已 git add 的新选项也要看得见（基准对齐 HEAD 的常见情形）
+P11="$T/p11"; new_repo "$P11"
+printf 'case "$1" in --staged-only) ;; esac\n' > "$P11/s.sh"
+git -C "$P11" add s.sh
+rc11=0; python3 "$GUARD" --repo "$P11" >/dev/null 2>&1 || rc11=$?
+check "scene11_worktree_mode_sees_staged" "$rc11" "2"
+
+# 场景 12：HOME 这类系统变量不算项目新增的环境变量；项目自己的照报
+P12="$T/p12"; new_repo "$P12"
+printf 'import os\nh = os.environ.get("HOME")\nu = os.environ.get("MY_SVC_URL")\n' > "$P12/app.py"
+git -C "$P12" add app.py
+out12=$(python3 "$GUARD" --repo "$P12" --staged 2>&1)
+check "scene12_system_env_excluded" "$(echo "$out12" | grep -q 'env_var HOME ' && echo yes || echo no),$(echo "$out12" | grep -q 'env_var MY_SVC_URL ' && echo yes || echo no)" "no,yes"
+
+# 场景 13：真实安装脚本，从别的仓库目录里调用，hook 必须落在目标项目，不落在调用方
+P13="$T/p13"; new_repo "$P13"
+TD="$T/tools13"; mkdir -p "$TD"; cp "$GUARD" "$TD/completeness-guard.py"
+OTHER="$T/other13"; new_repo "$OTHER"
+(cd "$OTHER" && bash "$INST" "$P13" "$TD") >/dev/null 2>&1
+check "scene13_hook_in_target_not_cwd" "$([ -x "$P13/.git/hooks/pre-commit" ] && echo target || echo missing),$([ -e "$OTHER/.git/hooks/pre-commit" ] && echo cwd-touched || echo cwd-clean)" "target,cwd-clean"
+
+# 场景 14：装好的 hook 在声明了 .completeness.json 时，真的拦下一次 git commit
+echo '{"require_code_block": false}' > "$P13/.completeness.json"
+printf 'case "$1" in --hidden-flag) ;; esac\n' > "$P13/x.sh"
+git -C "$P13" add .completeness.json x.sh
+rc14=0; git -C "$P13" commit -q -m try >/dev/null 2>&1 || rc14=$?
+check "scene14_real_commit_blocked" "$([ "$rc14" -ne 0 ] && echo blocked || echo passed)" "blocked"
+
+# 场景 15：去掉声明文件，同一次提交只提示、照常提交成功
+git -C "$P13" rm -q --cached .completeness.json; rm -f "$P13/.completeness.json"
+rc15=0; git -C "$P13" commit -q -m ok >/dev/null 2>&1 || rc15=$?
+check "scene15_undeclared_commit_passes" "$rc15" "0"
+
+# 场景 16：守卫文件不见了，提交放行但必须打出 WARN（不能静默）
+rm -f "$TD/completeness-guard.py"
+echo y > "$P13/y.txt"; git -C "$P13" add y.txt
+rc16=0; out16=$(git -C "$P13" commit -q -m y 2>&1) || rc16=$?
+check "scene16_missing_guard_warns" "$rc16,$(echo "$out16" | grep -q 'completeness-guard not found' && echo warned || echo silent)" "0,warned"
+
+# 场景 17：真实安装脚本遇到项目自己的 pre-commit，一个字节都不改，并打出 NOTE
+P17="$T/p17"; new_repo "$P17"
+printf '#!/bin/sh\n# custom hook\nexit 0\n' > "$P17/.git/hooks/pre-commit"
+chmod +x "$P17/.git/hooks/pre-commit"
+cp "$P17/.git/hooks/pre-commit" "$T/p17.orig"
+out17=$(bash "$INST" "$P17" "$TD" 2>&1)
+check "scene17_custom_hook_byte_identical" "$(cmp -s "$T/p17.orig" "$P17/.git/hooks/pre-commit" && echo same || echo changed),$(echo "$out17" | grep -q 'not overwritten' && echo noted || echo silent)" "same,noted"
+
+# 场景 18：项目设了 core.hooksPath 时不往 .git/hooks 写，打出 NOTE
+P18="$T/p18"; new_repo "$P18"
+git -C "$P18" config core.hooksPath .githooks
+out18=$(bash "$INST" "$P18" "$TD" 2>&1)
+check "scene18_hookspath_skipped" "$([ -e "$P18/.git/hooks/pre-commit" ] && echo written || echo skipped),$(echo "$out18" | grep -q 'core.hooksPath' && echo noted || echo silent)" "skipped,noted"
+
 printf '\nPASS %d/%d\n' "$OK" "$RAN"
 [ "$OK" -eq "$RAN" ]

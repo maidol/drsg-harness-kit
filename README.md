@@ -44,6 +44,15 @@ Joining a memory daemon that is already running needs its token:
 `--token <t>`. The installer refuses to guess one rather than minting a new
 one, because a new token invalidates every client config already written.
 
+`--project` also installs a git pre-commit hook in that project that runs
+`completeness-guard.py --staged`. A new CLI option, environment variable,
+route or config key that no doc mentions is printed as a notice; it blocks
+the commit only when the project declares `.completeness.json`. A project
+that already has its own pre-commit hook, or sets `core.hooksPath`, is left
+alone, and the installer prints the line to chain by hand. Usage and the
+declaration file: [tools/README.md](tools/README.md#completeness-guard-completeness-guardpy).
+
+
 ## Refresh the runtime copies
 
 Edit here, then rebuild the bundle and re-run its `setup.sh`. That is the same
