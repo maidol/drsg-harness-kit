@@ -45,6 +45,7 @@ tar xzf dist/drsg-harness-kit-*.tar.gz -C /tmp
 ~/.drsg-memory/tools/serve.sh status                  # memory daemon、数据库、token
 ~/.drsg-memory/tools/codegraph.sh doctor --dir <repo> # plane、同步状态、规则、guard
 ~/.drsg-memory/tools/install.sh --check               # 已部署 hooks 与模板的对照
+~/.drsg-memory/tools/install.sh --audit               # 跨项目 5 层全量部署审计
 ```
 
 `install.sh --check` 根据 mtime 判断“哪一侧更新”，而 `git checkout` 会重写 mtime。因此应把它的方向判断视为提示，把 md5 对照结果视为事实。

@@ -62,6 +62,7 @@ configuration is opt-in: use `--router DIR`, `--usage-report DIR`, or explicit
 ~/.drsg-memory/tools/serve.sh status                  # memory daemon, db, token
 ~/.drsg-memory/tools/codegraph.sh doctor --dir <repo> # plane, sync, rules, guard
 ~/.drsg-memory/tools/install.sh --check               # deployed hooks vs templates
+~/.drsg-memory/tools/install.sh --audit               # full 5-layer deployment audit across all projects
 ```
 
 `install.sh --check` decides "which side is newer" from mtime, which `git

@@ -209,6 +209,25 @@ the same list recall itself walks. A project installed but never recorded is
 invisible here for exactly the reason it is invisible to recall, which is more
 useful than a second registry that can disagree with the first.
 
+## Full layered deployment audit (`--audit`)
+
+`--check` only compares hook files against templates. Real deployment drift also occurs in runtime tools, global configuration, project settings, or code graph configurations. The `--audit` flag runs a comprehensive 5-layer audit:
+
+- **L0: Project Discovery** (when running `--all`): Discovers known projects from the memory plane via proxy-safe connection, failing explicitly on discovery errors.
+- **L1: Global Runtime Tools**: Compares `~/.drsg-memory/tools/` against the git `HEAD` release baseline and verifies execution permissions; uncommitted drafts are noted as advisory hints without failing audit.
+- **L2: Global Configuration & Skills**: Verifies `~/.claude/AGENT-EFFICIENCY.md`, skills, global hooks, and verifies `settings.json` permissions (`0600`).
+- **L3: Project Memory Hooks**: Compares `.claude/hooks/*.py` in each project against canonical templates.
+- **L4: Project Settings & Docs**: Checks `.claude/settings.local.json` registrations, `.drsg/env` credentials, and `CLAUDE.md` cross-agent Event documentation.
+- **L5: Code Graph Status**: Verifies code graph daemon health and `.mcp.json` port bindings, recognizing on-demand stopped daemons as normal state.
+
+```bash
+./install.sh --audit                    # audit all known projects across all layers
+./install.sh /path/to/project --audit   # audit a single project
+python3 audit_deployment.py --all --json  # machine-readable JSON output
+```
+
+To exclude unmanaged projects from failing `--audit`, place a `.drsg/audit-skip` file in the project's root.
+
 ## Is it working? (`analyze_recall.py`)
 
 Both read hooks append one JSON line per decision to `<project>/.drsg/recall.jsonl`

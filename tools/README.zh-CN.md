@@ -146,6 +146,25 @@ python3 migrate.py load --api http://127.0.0.1:7700/rpc --token <new token> \
 
 不带项目目录时，列表来自 memory plane 的 `Project` 节点——与 recall 遍历的是同一份列表。安装过但从未记录的项目在这里不可见，原因也正是它对 recall 不可见；这比再维护一份可能不一致的 registry 更有用。
 
+## 全量分层部署审计（`--audit`）
+
+`--check` 仅比对 hook 文件与模板。实际部署中的漂移还可能发生在全局运行时工具、全局配置、项目 settings 或代码图状态中。`--audit` 执行完整的 5 层全量审计：
+
+- **L0: 项目发现层**（`--all` 全量模式）：通过无代理连接从 memory plane 发现所有登记项目，异常时显式报错；
+- **L1: 全局运行时工具层**：将 `~/.drsg-memory/tools/` 与 git `HEAD` 对应版本对比，校验执行权限；工作区未提交草稿单独做提示，不计为漂移；
+- **L2: 全局规则与技能层**：核验 `~/.claude/AGENT-EFFICIENCY.md`、skills、全局 hooks，并校验 `settings.json` 的 `0600` 安全权限；
+- **L3: 项目钩子层**：比对各项目 `.claude/hooks/*.py` 哈希与执行权限；
+- **L4: 项目设置与文档层**：核验各项目 `.claude/settings.local.json` 注册、`.drsg/env` 凭据和 `CLAUDE.md` 跨项目 Event 引导块；
+- **L5: 代码图健康层**：检查代码图 daemon 运行健康状态与 `.mcp.json` 端口匹配，正确将按需待机识别为正常状态。
+
+```bash
+./install.sh --audit                    # 跨项目执行 5 层全量部署审计
+./install.sh /path/to/project --audit   # 仅审计单个项目
+python3 audit_deployment.py --all --json  # 结构化 JSON 输出
+```
+
+若有特定项目无需安装 kit（如纯静态博客），可在该项目根目录下放置 `.drsg/audit-skip`，审计时将明确标为 `[SKIP]` 而不判定为失败。
+
 ## 它是否正常工作？（`analyze_recall.py`）
 
 两个读取 hook 都会在 `<project>/.drsg/recall.jsonl` 追加一行 JSON，记录排名结果、注入内容、成本和耗时。写入永远不会使会话失败；记录是在决策完成后写入的。
