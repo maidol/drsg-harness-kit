@@ -220,6 +220,7 @@ then check, in order:
   graph_repos (MCP, when --router/--hub was selected) which repositories the router can reach
   $TOOLS/drsg-usage-report (when --usage-report/--hub was selected) usage summary
   $TOOLS/install.sh --check                  deployed hooks vs the templates they came from
+  $TOOLS/install.sh --audit                  full 5-layer deployment audit across all projects
 
 to add another repository to the router later:
   DRSG_CODE_BIN=$BIN $TOOLS/codegraph.sh install --dir <repo> --port <n>

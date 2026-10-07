@@ -96,6 +96,7 @@ python3 migrate.py load --api http://127.0.0.1:7700/rpc --token <new token> \
 | `--l3-reasoning <e>` | 未设置 | `reasoning_effort`；`none` 可阻止 reasoning model 截断 JSON |
 | `--restart-daemon` | 关闭 | 先停止已有 daemon（新 token 或新地址） |
 | `--check` | 关闭 | 不安装任何内容；报告 hook 漂移，有漂移时退出 1（见下文） |
+| `--audit` | 关闭 | 不安装任何内容；执行 5 层全量部署审计 |
 
 ## 运行 daemon
 

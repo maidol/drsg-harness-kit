@@ -133,6 +133,7 @@ will tell you whether you have any.
 | `--l3-reasoning <e>` | unset | `reasoning_effort`; `none` stops a reasoning model truncating the JSON |
 | `--restart-daemon` | off | stop an existing daemon first (new token or address) |
 | `--check` | off | install nothing; report hook drift and exit 1 if any (below) |
+| `--audit` | off | install nothing; run 5-layer full deployment audit |
 
 ## Running the daemon
 

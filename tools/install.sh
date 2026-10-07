@@ -30,6 +30,9 @@
 #                       Note the argument order — project-dir comes FIRST:
 #                         ./install.sh --check              # every install
 #                         ./install.sh /path/to/proj --check  # just that one
+#   --audit             install nothing; run comprehensive 5-layer deployment
+#                       audit (runtime tools, global config & skills, hooks,
+#                       project settings & docs, code graph).
 #   -h, --help
 #
 # What it does:
@@ -88,6 +91,7 @@ L3_MODEL=""
 L3_REASONING=""
 RESTART_DAEMON=0
 CHECK_ONLY=0
+AUDIT_ONLY=0
 
 # Anchored on the last option rather than a line number: the header grows, and
 # a stale number truncates the help text silently instead of failing.
@@ -105,10 +109,26 @@ while [ "$#" -gt 0 ]; do
     --l3-reasoning) L3_REASONING="$2"; shift 2 ;;
     --restart-daemon) RESTART_DAEMON=1; shift ;;
     --check) CHECK_ONLY=1; shift ;;
+    --audit) AUDIT_ONLY=1; shift ;;
     -h|--help) usage; exit 0 ;;
     *) echo "unknown option: $1" >&2; usage; exit 1 ;;
   esac
 done
+
+# ---- 0. --audit: run comprehensive 5-layer deployment audit -----------------
+if [ "$AUDIT_ONLY" = "1" ]; then
+  AUDIT_PY="$SCRIPT_DIR/audit_deployment.py"
+  if [ ! -f "$AUDIT_PY" ]; then
+    AUDIT_PY="${DRSG_MEM_DIR:-$HOME/.drsg-memory}/tools/audit_deployment.py"
+  fi
+  AUDIT_ARGS=()
+  if [ "$PROJECT_DIR_GIVEN" = "1" ]; then
+    AUDIT_ARGS+=(--project "$PROJECT_DIR")
+  else
+    AUDIT_ARGS+=(--all)
+  fi
+  exec python3 "$AUDIT_PY" "${AUDIT_ARGS[@]}"
+fi
 
 # ---- 0. --check: report hook drift, install nothing -------------------------
 # templates/hooks/ is canonical; every <proj>/.claude/hooks/ is a deployment,
