@@ -227,7 +227,7 @@ Project ←NOTIFY←     Event        给另一个项目的待办；独立队列
 
 ```text
 SessionStart      写/恢复 Session → 聚合出常驻简报 → 列出未处理 Event（≤3）→ 注入写记忆协议
-UserPromptSubmit  按 n-gram+IDF 召回相关 Fact（≤4 条，可跨项目，标来源）→ 命中才注入 → 记遥测
+UserPromptSubmit  按 n-gram+IDF 召回相关 Fact（≤2 条，可跨项目，标来源）→ 命中才注入 → 记遥测
 compact           再跑一次 SessionStart 重新注入，不重复建 Session
 SessionEnd        盖 ended_at，从 transcript 挖文件/命令/工具成败统计
 Stop（可选）      代码图用量报告；不由记忆层安装器装，要单独注册

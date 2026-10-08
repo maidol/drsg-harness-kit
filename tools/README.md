@@ -256,6 +256,44 @@ preventing something — the toolchain fact succeeding looks exactly like a buil
 that simply did not fail. Read it as a floor and a trend. Below 30 recorded
 sessions the script refuses to draw a conclusion at all.
 
+The **control arm** is the one randomized readout. 15% of prompts are ranked
+and logged but not injected, and `session_end.py` records each prompt's tool
+calls and errors. The paired line takes every session that has both arms,
+counts the sessions where treated prompts failed more often than suppressed
+ones (and the reverse), and reads that count against the same count with the
+arm labels shuffled inside each session (2,000 seeded shuffles):
+
+```
+  paired all errors  : treated worse in 57, better in 22, tied 6  → permutation p=0.091 (shuffled labels expect worse−better +20.1)
+```
+
+The shuffled expectation is not 0. The suppressed arm is small, so its error
+rate is 0 more often by chance alone, and "treated worse" is the expected
+majority even with no effect at all. Read `p`, not the raw count.
+
+## Posting a to-do (`event.py post` / `event_post`)
+
+`event.py post` and the `event_post` MCP tool share one implementation. Give a
+to-do code-graph symbols and a verb, and the recipient gets an imperative
+`↳ graph first:` line under it. When a handoff's summary reads like a change to
+a judgment (a guard, a filter, a skip, a pause) and the verb is not `impact`,
+the reply ends with one line of advice. The Event is posted either way.
+
+```bash
+python3 ~/.drsg-memory/tools/event.py post /path/to/other-repo \
+    "粘性取号缺代理判断" --symbol getSchedulableAccount --verb context
+```
+
+```
+posted evt-other-repo-1791400000-1a2b3c to /path/to/other-repo
+↳ graph first: context `…getSchedulableAccount` (plane other-repo)
+  (resolved against plane other-repo)
+advice: this reads like a change to a judgment ('判断') — verb=impact lists every caller by distance; context walks one hop
+```
+
+Re-post with `--verb impact` when the change has to reach every path that makes
+the same decision.
+
 ## To-do poller (`event-poller.py`)
 
 `setup.sh` registers it as four **global** hooks in `~/.claude/settings.json`

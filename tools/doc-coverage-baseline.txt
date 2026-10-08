@@ -18,6 +18,4 @@ tools/audit_deployment.py:--claude-dir
 tools/codegraph-usage.py:--verbose
 tools/event.py:--kind
 tools/event.py:--ref
-tools/event.py:--symbol
-tools/event.py:--verb
 tools/migrate.py:--dry-run

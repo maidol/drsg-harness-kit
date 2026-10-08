@@ -183,6 +183,32 @@ python3 analyze_recall.py --since 14
 
 utilization 是一个 proxy，脚本也会明确说明这一点：它会把仅仅确认某条 memory 的回复计算进去，也会漏掉通过预防某件事而发挥作用的 memory——工具链事实成功时，看起来和一个本来就不会失败的构建完全一样。把它看作下限和趋势。少于 30 个有记录的会话时，脚本完全拒绝下结论。
 
+**对照臂**是唯一随机化的读数。15% 的 prompt 照常排序、照常记录，但不注入；`session_end.py` 记下每个 prompt 的工具调用数和错误数。成对那一行取两臂都有数据的会话，数「treated 错误率高于 suppressed」和反过来的会话各有多少，再拿这个差去和「在每个会话内部打乱臂标签」之后的同一个数比（打乱 2,000 次，固定随机种子）：
+
+```
+  paired all errors  : treated worse in 57, better in 22, tied 6  → permutation p=0.091 (shuffled labels expect worse−better +20.1)
+```
+
+打乱后的期望值不是 0：suppressed 臂样本小，单凭运气错误率就更常是 0，所以即使毫无效应，「treated 更差」也会占多数。要看 `p`，不要看原始计数。
+
+## 发待办（`event.py post` / `event_post`）
+
+`event.py post` 和 MCP 工具 `event_post` 共用同一份实现。待办带上代码图符号和动词，收方会在它下面看到一行 `↳ graph first:`。如果是 handoff，summary 读起来像在改一个判断（守卫、过滤、跳过、暂停这类），而动词不是 `impact`，回复末尾会多一行建议。Event 照常发出。
+
+```bash
+python3 ~/.drsg-memory/tools/event.py post /path/to/other-repo \
+    "粘性取号缺代理判断" --symbol getSchedulableAccount --verb context
+```
+
+```
+posted evt-other-repo-1791400000-1a2b3c to /path/to/other-repo
+↳ graph first: context `…getSchedulableAccount` (plane other-repo)
+  (resolved against plane other-repo)
+advice: this reads like a change to a judgment ('判断') — verb=impact lists every caller by distance; context walks one hop
+```
+
+改动要落到所有做同一个判断的路径上时，用 `--verb impact` 重发。
+
 ## 待办轮询（`event-poller.py`）
 
 `setup.sh` 会把它注册成 `~/.claude/settings.json` 里的四个**全局** hook（`--no-event-poller` 可跳过）。之后每个会话每 15 分钟查一次本项目的待办 Event，**轮询本身不调用模型**；只有出现本会话还没通知过的待办时，才唤醒模型。

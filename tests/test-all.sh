@@ -26,6 +26,7 @@ bash "$REPO/tests/stop-failure-notify.sh"
 bash "$REPO/tests/permission-guard.sh"
 bash "$REPO/tests/event-poller.sh"
 bash "$REPO/tests/retro.sh"
+bash "$REPO/tests/recall-fixes.sh"
 
 echo ""
 echo "All test suites and quality gates PASSED."

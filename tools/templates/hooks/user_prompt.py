@@ -3,7 +3,7 @@
 
 SessionStart injects a compressed *briefing* (always relevant, bounded). This
 hook is the L2 layer: for each user prompt, pull the Facts most relevant to
-what they're about to work on and inject only those (max 3) as context.
+what they're about to work on and inject only those (at most MAX) as context.
 
 Cross-project: recall spans ALL projects' Facts — the n-gram+IDF scoring is
 prompt-driven, so a prompt in one project naturally pulls in facts from another
@@ -65,14 +65,15 @@ import time
 # --- Configuration (overridable via .drsg/env) -----------------------------
 API = "http://127.0.0.1:7700/rpc"
 PLANE = "memory"
-# 3 until 2026-09-07. LOG_RANK is what made the change measurable rather than a
-# guess: over the 2026-08-08..09-07 window ten facts were ranked but never
-# injected, and four of them peaked at exactly rank 4 — losing to the cut, not
-# to the ranker. Widening by one reaches those without touching scoring. The
-# cost is one more line per prompt (~104 chars, ~a third of the current 312).
-# Revisit against the same report: if the newly reachable rank-4 slot does not
-# clear the usage bar the way ranks 1-3 do, put it back.
-MAX = 4
+# 3 until 2026-09-07, then 4, then 2 from 2026-10-07. The control arm (15% of
+# prompts ranked and logged but withheld) showed no benefit from per-prompt
+# recall once it was read with a within-session permutation test: over 85
+# paired sessions tool errors leaned the wrong way (p=0.09) and calls per
+# prompt did not move (p=0.20). Two thirds of what it injected came from the
+# kit's own early lessons, rarely about the task at hand. Two keeps the strongest matches at half the cost.
+# LOG_RANK stays at 5, so ranks 3-5 are still logged and the next tuning round
+# can see what the cut removed.
+MAX = 2
 FACT_CAP = 200  # per project, not total — see the module docstring
 # Ranked facts recorded per prompt, injected or not. The ones just below the
 # cut are the whole point: tuning MAX or adding a score threshold is guesswork
@@ -398,6 +399,19 @@ def score_facts(prompt, facts, maxhits=MAX):
     return [f for _, f in rank_facts(prompt, facts)[:maxhits]]
 
 
+def retired(valid_to, now):
+    """True for a Fact whose `valid_to` has passed.
+
+    A value that is not a number is kept rather than trusted: the protocol
+    asks for integer Unix seconds, and a Fact with a malformed retirement date
+    is still one someone wrote on purpose. Same rule in session_start.py; the
+    hooks share no module."""
+    try:
+        return valid_to is not None and int(valid_to) <= now
+    except (TypeError, ValueError):
+        return False
+
+
 def fetch_facts(token):
     """Every project's Facts, newest-first *per project*, each carrying the
     project it belongs to.
@@ -407,7 +421,7 @@ def fetch_facts(token):
     name the pattern's last variable; it has since learned projections, and
     the per-project loop had become the hook's whole latency — 11 round trips
     and 666 KB of `detail` to rank on `summary` alone, measured at 110–176 ms
-    of a 200 ms p50 on 2026-09-29. A projection brings back only the four
+    of a 200 ms p50 on 2026-09-29. A projection brings back only the
     columns ranking reads, for every project at once. The per-project cap and
     the newest-first order are applied here instead of in the query, so the
     candidate list comes out the same as before, item for item.
@@ -433,7 +447,7 @@ def fetch_facts(token):
 
     res = rpc("plane.cypher", {"plane": PLANE,
         "query": ("MATCH (p:Project)<-[:ABOUT]-(f:Fact) "
-                  "RETURN p.path, key(f), f.summary, f.created_at"),
+                  "RETURN p.path, key(f), f.summary, f.created_at, f.valid_to"),
         "params": {}}, token)
     rows = res.get("rows", [])
     # plane.cypher returns every row today. If it ever pages, a short list
@@ -442,7 +456,14 @@ def fetch_facts(token):
     if res.get("total", len(rows)) != len(rows):
         raise OSError(f"drsg rpc: {len(rows)} of {res.get('total')} fact rows")
     by_path = {}
-    for path, key, summary, created in rows:
+    now = time.time()
+    for path, key, summary, created, valid_to in rows:
+        # Retired before it can rank: a Fact replaced by a newer one (its
+        # `valid_to` set, the new one carrying `supersedes`) states what used
+        # to be true. Until 2026-10-07 nothing read the field, and 417 of 6,007
+        # injections since 09-14 (7%) were Facts already retired by then.
+        if retired(valid_to, now):
+            continue
         by_path.setdefault(path, []).append((created or 0, key or "?", summary))
 
     facts, seen = [], set()

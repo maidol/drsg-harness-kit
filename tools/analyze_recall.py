@@ -72,8 +72,8 @@ import argparse
 import bisect
 import hashlib
 import json
-import math
 import os
+import random
 import sys
 import time
 import urllib.request
@@ -377,14 +377,58 @@ def percentile(xs, p):
 ARM_GATE = 100
 
 
-def sign_test(worse, better):
-    """Two-sided exact binomial p for `worse` vs `better` paired sessions,
-    ties already dropped. 1.0 when there is nothing to test."""
-    n = worse + better
-    if not n:
-        return 1.0
-    k = max(worse, better)
-    return min(1.0, 2 * sum(math.comb(n, i) for i in range(k, n + 1)) / 2 ** n)
+# Shuffles drawn for the paired readout. Seeded, so the same log always prints
+# the same p.
+PERMUTATIONS = 2000
+
+
+def paired(per_session, drop_infra):
+    """(worse, better, tied): sessions where treated's error rate is above,
+    below or equal to suppressed's. A session where either arm made no calls
+    has no rate to compare and is skipped."""
+    worse = better = tie = 0
+    for rows in per_session.values():
+        n = {"treated": [0, 0], "suppressed": [0, 0]}
+        for a, c, e, i in rows:
+            n[a][0] += c
+            n[a][1] += (e - i) if drop_infra else e
+        if not (n["treated"][0] and n["suppressed"][0]):
+            continue
+        d = n["treated"][1] / n["treated"][0] - n["suppressed"][1] / n["suppressed"][0]
+        worse += d > 0
+        better += d < 0
+        tie += d == 0
+    return worse, better, tie
+
+
+def permutation_p(per_session, drop_infra, n=PERMUTATIONS, seed=7):
+    """Two-sided p for worse-minus-better against the arm labels shuffled
+    inside each session, and what the shuffles expect on average.
+
+    This replaced a sign test that read worse vs better against a 50/50 split.
+    The suppressed arm holds ~15% of prompts, so with errors as rare as they
+    are its rate comes out exactly 0 far more often than treated's, and
+    "treated worse" wins by construction, effect or none. Measured 2026-10-07:
+    85 paired sessions, worse 57 / better 22, sign test p=0.000; with the
+    labels shuffled the same count already averages +20.1, and the observed
+    +35 is p=0.09. Shuffling
+    within the session keeps every session's arm sizes and its own failure
+    level and randomises only the label, which is exactly the null."""
+    w, b, _ = paired(per_session, drop_infra)
+    obs = w - b
+    rng = random.Random(seed)
+    null = []
+    for _ in range(n):
+        shuffled = {}
+        for sid, rows in per_session.items():
+            arms = [r[0] for r in rows]
+            rng.shuffle(arms)
+            shuffled[sid] = [(a,) + tuple(r[1:]) for a, r in zip(arms, rows)]
+        sw, sb, _ = paired(shuffled, drop_infra)
+        null.append(sw - sb)
+    mu = sum(null) / n
+    p = sum(abs(x - mu) >= abs(obs - mu) - 1e-9 for x in null) / n
+    return p, mu
 
 
 def control_arm(records, recalls):
@@ -402,8 +446,9 @@ def control_arm(records, recalls):
                  for r in records if r.get("event") == "tools"}
     arms = defaultdict(lambda: [0, 0, 0])   # arm -> prompts, calls, errors
     assigned = defaultdict(int)
-    # session -> arm -> [calls, errors, infra]
-    per_session = defaultdict(lambda: defaultdict(lambda: [0, 0, 0]))
+    # session -> one (arm, calls, errors, infra) row per joined prompt; the
+    # permutation test shuffles the arm column within each session.
+    per_session = defaultdict(list)
     with_infra = joined = 0
     for r in recalls:
         a = r.get("arm")
@@ -420,13 +465,11 @@ def control_arm(records, recalls):
         s[0] += 1
         s[1] += t.get("calls", 0)
         s[2] += t.get("errors", 0)
-        ps = per_session[r.get("session")][a]
-        ps[0] += t.get("calls", 0)
-        ps[1] += t.get("errors", 0)
         # `infra` exists only on rows written after session_end.py learned it.
         # A row without it counts as 0 — which is what `errors` meant for it —
         # and the line that uses it says how many rows actually carried it.
-        ps[2] += t.get("infra", 0)
+        per_session[r.get("session")].append(
+            (a, t.get("calls", 0), t.get("errors", 0), t.get("infra", 0)))
         joined += 1
         with_infra += "infra" in t
     if not assigned:
@@ -443,24 +486,20 @@ def control_arm(records, recalls):
     for a, (n, c, e) in sorted(arms.items()):
         print(f"  {a:<12} {n:>8} {c:>8} {e:>8}   {pct(e, c)}")
 
-    both = {sid: v for sid, v in per_session.items()
-            if v["treated"][0] and v["suppressed"][0]}
-    print(f"  sessions      : treated={sum(1 for v in per_session.values() if v['treated'][0])}"
-          f"  suppressed={sum(1 for v in per_session.values() if v['suppressed'][0])}"
+    def calls(rows, arm):
+        return sum(c for a, c, _, _ in rows if a == arm)
+    both = {sid: rows for sid, rows in per_session.items()
+            if calls(rows, "treated") and calls(rows, "suppressed")}
+    print(f"  sessions      : treated={sum(1 for v in per_session.values() if calls(v, 'treated'))}"
+          f"  suppressed={sum(1 for v in per_session.values() if calls(v, 'suppressed'))}"
           f"  both={len(both)}   (phase-3 gate: {len(both)}/{ARM_GATE})")
     for label, drop_infra in (("all errors", False), ("minus infra", True)):
-        worse = better = tie = 0
-        for v in both.values():
-            def rate(a):
-                c, e, i = v[a]
-                return (e - i if drop_infra else e) / c
-            d = rate("treated") - rate("suppressed")
-            worse += d > 0
-            better += d < 0
-            tie += d == 0
+        worse, better, tie = paired(both, drop_infra)
+        p, expect = permutation_p(both, drop_infra)
         note = f"   ({with_infra}/{joined} rows carry infra)" if drop_infra else ""
         print(f"  paired {label:<12}: treated worse in {worse}, better in {better},"
-              f" tied {tie}  → sign test p={sign_test(worse, better):.3f}{note}")
+              f" tied {tie}  → permutation p={p:.3f}"
+              f" (shuffled labels expect worse−better {expect:+.1f}){note}")
     print("  Not a verdict: the phase-3 gate is 100 sessions of arm data,")
     print("  and the session-start briefing is never suppressed, so the")
     print("  contrast is per-prompt recall only — a floor on the effect.")

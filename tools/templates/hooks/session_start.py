@@ -20,6 +20,7 @@ Design (see tools/README.md):
     and protocol out of context while the session continues, so they have to be
     re-injected; only the node bookkeeping differs (see `source == "compact"`).
 """
+import hashlib
 import json
 import os
 import socket
@@ -43,12 +44,13 @@ BRIEFING_FACT_CAP = 1000
 # because that is how the readers (all_facts, project_id) address the Project,
 # and a key can end up shadowed while path stays ours.
 #
-# `supersedes` / `valid_to` are written but NOT yet read: the recall and
-# briefing filters that consume them are held until the pre-registered baseline
-# in docs/memory-layer-observability.md reaches its phase-1 trigger (30 sessions
-# in recall.jsonl), because changing the read path now resets that sample. Times
-# are integer Unix seconds — every created_at in the plane already is, and an
-# Int/Str comparison silently evaluates to false instead of erroring.
+# `valid_to` is read since 2026-10-07: both readers (all_facts here,
+# fetch_facts in user_prompt.py) drop a Fact once its valid_to has passed.
+# Before that it was written and ignored, and 417 of 6,007 injections from
+# 09-14 to 10-07 (7%) carried a Fact already retired. `supersedes` is still a
+# pointer for readers, not a filter. Times are integer Unix seconds — every
+# created_at in the plane already is, and an Int/Str comparison silently
+# evaluates to false instead of erroring.
 #
 # The "not progress" clause is the one clause aimed at what gets written rather
 # than how: on 2026-09-29, 69 of 320 Facts had never reached even the logged
@@ -203,13 +205,39 @@ def project_id(proj_dir, token):
 
 
 def all_facts(proj_dir, token):
-    """All Facts ABOUT this project, newest first."""
+    """All live Facts ABOUT this project, newest first. Retired ones (their
+    valid_to has passed) are dropped here, so the briefing never shows them."""
     res = rpc("plane.cypher", {"plane": PLANE,
         "query": ("MATCH (p:Project)<-[:ABOUT]-(f:Fact) "
                   "WHERE p.path = $path "
                   "RETURN f ORDER BY f.created_at DESC LIMIT %d") % BRIEFING_FACT_CAP,
         "params": {"path": proj_dir}}, token)
-    return res.get("nodes", [])
+    now = time.time()
+    return [n for n in res.get("nodes", [])
+            if not retired((n.get("properties") or {}).get("valid_to"), now)]
+
+
+def retired(valid_to, now):
+    """True for a Fact whose `valid_to` has passed.
+
+    A value that is not a number is kept rather than trusted: the protocol
+    asks for integer Unix seconds, and a Fact with a malformed retirement date
+    is still one someone wrote on purpose. Same rule in user_prompt.py; the
+    hooks share no module."""
+    try:
+        return valid_to is not None and int(valid_to) <= now
+    except (TypeError, ValueError):
+        return False
+
+
+def fact_sig(facts):
+    """Which Facts a briefing was built from, as 12 hex chars.
+
+    The count alone stopped being enough once retired Facts drop out:
+    replacing one (a new Fact with `supersedes`, `valid_to` on the old) keeps
+    the count, and the stale briefing would be reused forever."""
+    keys = sorted(str(n.get("external_key") or n.get("id")) for n in facts)
+    return hashlib.sha1("\n".join(keys).encode()).hexdigest()[:12]
 
 
 def open_events(proj_dir, token, limit=3):
@@ -337,7 +365,7 @@ def build_briefing(facts):
 
 
 def ensure_briefing(proj_dir, pid, token):
-    """Rebuild Project.briefing when the Fact count changed; else reuse it.
+    """Rebuild Project.briefing when the set of live Facts changed; else reuse it.
     Returns (briefing text, fact count). Addressed by node id (see project_id).
 
     The count comes back for the telemetry line: a briefing that stops growing
@@ -345,11 +373,12 @@ def ensure_briefing(proj_dir, pid, token):
     path broke", and the text alone cannot tell those apart."""
     try:
         proj = rpc("node.get", {"plane": PLANE, "id": pid}, token)
-        stored = (proj or {}).get("properties", {}).get("briefing_count")
+        props = (proj or {}).get("properties", {})
+        stored = props.get("briefing_count")
         stale = True
         try:
             facts = all_facts(proj_dir, token)
-            if stored == len(facts):
+            if stored == len(facts) and props.get("briefing_sig") == fact_sig(facts):
                 stale = False
         except Exception:
             facts = None  # read failed — not the same as "no facts"
@@ -357,6 +386,7 @@ def ensure_briefing(proj_dir, pid, token):
             brief = build_briefing(facts) if facts else ""
             rpc("node.update", {"plane": PLANE, "id": pid, "set": {
                 "briefing": brief, "briefing_count": len(facts or []),
+                "briefing_sig": fact_sig(facts or []),
                 "briefing_at": int(time.time())}}, token)
         else:
             brief = (proj.get("properties", {}).get("briefing", "") or "")

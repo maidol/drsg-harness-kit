@@ -21,6 +21,10 @@ call does not produce one (skills with an explicit must-invoke instruction fire
 in 0.14% of turns here), whereas a symbol and a verb render into an imperative
 line the recipient reads before touching any code.
 
+A handoff whose summary reads like a change to a judgment (a guard, a filter,
+a skip, a pause) and that is not addressed with `--verb impact` gets one line
+of advice after it is posted. Advice, not a refusal: the Event is written.
+
 Usage:
   event.py post <recipient-project-dir> <summary> [--kind handoff|notice] [--ref R]
                 [--symbol KEY]... [--verb context|impact|trace]
@@ -35,6 +39,7 @@ import hashlib
 import importlib.util
 import json
 import os
+import re
 import sys
 import time
 import urllib.request
@@ -368,11 +373,41 @@ def graph_hint(symbols, verb, plane, verified=True):
     return "↳ graph first: %s %s%s%s" % (verb, body, where, doubt)
 
 
+# Words that mark a change to a *judgment*: what is guarded, filtered,
+# skipped, let through or paused. Such a change has to land on every path that
+# makes the same decision. 2026-10-07: of 39 "验收不通过" verdicts, about six
+# missed an entry point or a knock-on caller of exactly this kind (a sticky
+# path that bypassed the list filter, a probe outside the lock that broke
+# Pause), and every one of them had gone out with `context`, which shows one
+# hop. Over 379 past handoffs these words matched 65, 59 of them without impact.
+JUDGMENT = re.compile(r"守卫|判断|过滤|筛选|排除|跳过|拦截|放行|暂停|准入|不许|不得|"
+                      r"guard|filter|exclude|skip|pause|gate", re.I)
+
+
+def verb_advice(kind, summary, symbols, verb):
+    """One line of advice for the sender, or "" — never a refusal.
+
+    Only for a handoff whose summary matches JUDGMENT and that is not already
+    addressed with `impact`, which lists every caller by distance. The Event
+    is already written when this runs."""
+    if kind != "handoff" or verb == "impact":
+        return ""
+    m = JUDGMENT.search(summary or "")
+    if not m:
+        return ""
+    if not symbols:
+        return ("advice: this reads like a change to a judgment (%r) — add "
+                "symbols and verb=impact so the recipient lists every entry "
+                "point first" % m.group(0))
+    return ("advice: this reads like a change to a judgment (%r) — verb=impact "
+            "lists every caller by distance; %s walks one hop" % (m.group(0), verb))
+
+
 def post(target, pid, summary, kind, ref, from_project, token,
          symbols=None, verb=None, plane=None, from_path=None):
     """Create the Event and its NOTIFY edge.
 
-    Returns `{key, symbols, plane, hint, unverified}` — the outcome, not just
+    Returns `{key, symbols, plane, hint, unverified, advice}` — the outcome, not just
     the key, because both callers have to report what the recipient will
     actually see: symbols resolved to their canonical keys, and whether the
     graph got to confirm them. Raises on any step that did not change the
@@ -434,7 +469,8 @@ def post(target, pid, summary, kind, ref, from_project, token,
                            f"before relying on it")
     kick(target)
     return {"key": key, "symbols": symbols, "plane": plane,
-            "hint": props.get("graph_hint", ""), "unverified": unverified}
+            "hint": props.get("graph_hint", ""), "unverified": unverified,
+            "advice": verb_advice(kind, summary, symbols, verb)}
 
 
 def kick(target):
@@ -463,6 +499,8 @@ def report(res, target):
         out.append("  (resolved against plane %s)" % res["plane"]
                    if not res["unverified"] else
                    "  ⚠ NOT checked against the graph: %s" % res["unverified"])
+    if res.get("advice"):
+        out.append(res["advice"])
     return "\n".join(out)
 
 

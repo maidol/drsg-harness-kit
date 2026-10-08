@@ -262,7 +262,7 @@ One session:
 
 ```text
 SessionStart      record/restore the Session → build the standing briefing → list open Events (≤3) → inject the write-memory protocol
-UserPromptSubmit  rank Facts by n-gram + IDF (≤4, may cross projects, labelled with their origin) → inject only on a hit → record telemetry
+UserPromptSubmit  rank Facts by n-gram + IDF (≤2, may cross projects, labelled with their origin) → inject only on a hit → record telemetry
 compact           SessionStart runs again and re-injects, without creating a second Session
 SessionEnd        stamp ended_at, mine files / commands / tool outcomes from the transcript
 Stop (optional)   the code-graph usage report; not installed by the memory installer, register it separately
