@@ -40,9 +40,14 @@ tar xzf dist/drsg-harness-kit-*.tar.gz -C /tmp
 /tmp/drsg-harness-kit-*/setup.sh --project /path/to/project --repo /path/to/repo
 ```
 
-Joining a memory daemon that is already running needs its token:
-`--token <t>`. The installer refuses to guess one rather than minting a new
-one, because a new token invalidates every client config already written.
+Re-running setup for an installed project reuses its `.drsg/env` credential
+inside the installer: it is not printed or passed as a command-line argument.
+The `drsg-events` MCP entry is refreshed; an existing `drsg` entry is preserved.
+If `drsg` is missing, setup warns and `install.sh --audit` reports the drift;
+register it manually through a secret-safe workflow. A new project joining a
+running daemon still needs its token via `--token <t>`; the installer never
+mints a replacement, because that invalidates every client config already
+written.
 
 `--project` also installs a git pre-commit hook in that project that runs
 `completeness-guard.py --staged`. A new CLI option, environment variable,

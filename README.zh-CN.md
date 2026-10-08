@@ -33,7 +33,7 @@ tar xzf dist/drsg-harness-kit-*.tar.gz -C /tmp
 /tmp/drsg-harness-kit-*/setup.sh --project /path/to/project --repo /path/to/repo
 ```
 
-连接已经运行的 memory daemon 需要提供其 token：`--token <t>`。安装器不会猜测 token，也不会自行生成新的 token，因为新 token 会使已经写入的所有客户端配置失效。
+对已安装项目重新运行 setup 时，安装器会在进程内部复用项目 `.drsg/env` 中的凭据：不打印 token、不将其放入命令行。`drsg-events` MCP 条目会刷新；已有 `drsg` 条目会保留。若 `drsg` 注册缺失，setup 会警告，`install.sh --audit` 也会报告漂移；请通过安全的凭据流程手动注册。新项目加入正在运行的 daemon 时仍需通过 `--token <t>` 提供 token；安装器不会自行生成替代 token，因为这会使已写入的客户端配置失效。
 
 `--project` 还会在该项目里装一个 git pre-commit hook，运行 `completeness-guard.py --staged`：新增的命令行选项、环境变量、路由或配置键在文档里找不到时打印提示；只有项目声明了 `.completeness.json` 才会拦下提交。项目已有自己的 pre-commit hook、或者设了 `core.hooksPath` 时不动它，安装器会打印手动串联的那一行。用法和声明文件见 [tools/README.zh-CN.md](tools/README.zh-CN.md#通用交付闭环守卫completeness-guardpy)。
 

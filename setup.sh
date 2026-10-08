@@ -23,8 +23,8 @@
 #                     (none is inferred from --project or --repo)
 #   --bin PATH        the drsg binary to run (default: `drsg` on PATH)
 #   --addr host:port  memory daemon address            (default 127.0.0.1:7700)
-#   --token T         memory daemon token — REQUIRED when joining a daemon
-#                     that is already running
+#   --token T         memory daemon token for a new project joining a running
+#                     daemon; installed projects reuse .drsg/env automatically
 #   --port N          port for this repository's code-graph daemon
 #   --tools-dir DIR   where the runtime copies go   (default ~/.drsg-memory/tools)
 #   --fetch-drsg      download a release binary if none is found (network)

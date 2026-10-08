@@ -10,7 +10,7 @@
 # Options:
 #   --bin <path|name>   drsg binary (patched; default: DRSG_MEM_BIN or `drsg`)
 #   --addr <host:port>  daemon listen address (default 127.0.0.1:7700)
-#   --token <t>         shared API token (default: reuse or generate)
+#   --token <t>         shared API token; installed projects reuse .drsg/env automatically
 #   --l3-chat <url>     OpenAI-compatible chat endpoint for L3 distillation
 #                       (omit/empty to disable L3)
 #   --l3-key-env <v>    env var name holding the LLM key (default: the
@@ -46,7 +46,8 @@
 #      <proj>/.claude/settings.local.json, one registration at a time —
 #      other tools' hooks on the same events are preserved, and re-running
 #      refreshes ours in place rather than adding a second copy.
-#   5. Register the drsg MCP server (project scope) at the daemon's /mcp.
+#   5. Register the drsg MCP server (project scope) at the daemon's /mcp; when
+#      reusing an existing project's credential, preserve its existing entries.
 #
 # After install: restart Claude Code so hooks + MCP load.
 set -euo pipefail
@@ -83,8 +84,10 @@ SLUG="$(basename "$PROJECT_DIR")"
 
 BIN="${DRSG_MEM_BIN:-drsg}"
 ADDR="${DRSG_MEM_ADDR:-127.0.0.1:7700}"
+ADDR_FROM_CLI=0
 PLANE="memory"
 TOKEN=""
+PRESERVE_MCP=0
 L3_CHAT=""
 L3_KEY_ENV=""
 L3_MODEL=""
@@ -101,7 +104,7 @@ usage() { sed -n '2,/^#   -h, --help$/p' "${BASH_SOURCE[0]}"; }
 while [ "$#" -gt 0 ]; do
   case "$1" in
     --bin) BIN="$2"; shift 2 ;;
-    --addr) ADDR="$2"; shift 2 ;;
+    --addr) ADDR="$2"; ADDR_FROM_CLI=1; shift 2 ;;
     --token) TOKEN="$2"; shift 2 ;;
     --l3-chat) L3_CHAT="$2"; shift 2 ;;
     --l3-key-env) L3_KEY_ENV="$2"; shift 2 ;;
@@ -239,6 +242,30 @@ PYEOF
   then exit 0; else exit 1; fi
 fi
 
+# Re-installing an existing project reuses its stored credential inside this
+# process. It is never printed or passed as a child-process argument. Keep that
+# project's daemon endpoint unless the caller explicitly overrides --addr.
+if [ -z "$TOKEN" ] && [ "$ADDR_FROM_CLI" -eq 0 ] \
+    && [ -z "${DRSG_MEM_ADDR:-}" ] \
+    && [ -f "$PROJECT_DIR/.drsg/env" ]; then
+  PROJECT_API=""
+  while IFS='=' read -r name value || [ -n "${name:-}" ]; do
+    case "$name" in
+      DRSG_TOKEN) TOKEN="$value" ;;
+      DRSG_API) PROJECT_API="$value" ;;
+    esac
+  done < "$PROJECT_DIR/.drsg/env"
+  if [ -n "$TOKEN" ]; then
+    TOKEN_FROM_PROJECT=1
+    PRESERVE_MCP=1
+    if [ -n "$PROJECT_API" ]; then
+      ADDR="${PROJECT_API%/rpc}"
+      ADDR="${ADDR#http://}"
+      ADDR="${ADDR#https://}"
+    fi
+  fi
+fi
+
 # ---- 0. resolve + persist the L3 LLM key --------------------------------------
 # L3 sends `key_env` (a NAME) to the daemon, and the daemon reads the key VALUE
 # from ITS OWN environment (openai.rs build_provider). So the key value is
@@ -286,8 +313,8 @@ fi
 #                     point of "cross-project query"). We never spawn a second
 #                     process on a port that's already up (native backend is
 #                     one process per db; a second one would fail to lock).
-#                     Joining REQUIRES --token to be the RUNNING daemon's
-#                     token — that can't be guessed, so it must be passed.
+#                     A re-install reuses the project's .drsg/env token. A new
+#                     project joining REQUIRES --token for the RUNNING daemon.
 HTTP_BASE="$(echo "$ADDR" | sed 's|^https\?://||')"
 JOINED=0
 if curl -sf -m 2 "http://$HTTP_BASE/health" >/dev/null 2>&1; then
@@ -295,8 +322,7 @@ if curl -sf -m 2 "http://$HTTP_BASE/health" >/dev/null 2>&1; then
   echo "== daemon already running at $ADDR — joining (no new process started)"
   if [ -z "$TOKEN" ]; then
     echo "ERROR: joining a running daemon requires --token <its token>." >&2
-    echo "       (the hooks/MCP must authenticate with the RUNNING daemon's" >&2
-    echo "       token, which cannot be guessed from this script)" >&2
+    echo "       Re-running for an installed project reuses its .drsg/env credential." >&2
     exit 1
   fi
 else
@@ -329,9 +355,21 @@ fi
 # A fresh daemon db has only the default 'startup' plane; hooks write to
 # 'memory'. Create it idempotently (fails harmlessly if it already exists).
 echo "== ensuring 'memory' plane…"
-curl -sf -m 5 -X POST "$API" -H "Authorization: Bearer $TOKEN" -H 'Content-Type: application/json' \
-  -d '{"jsonrpc":"2.0","id":1,"method":"plane.create","params":{"name":"memory"}}' >/dev/null 2>&1 \
-  || true
+DRSG_INSTALL_API="$API" DRSG_INSTALL_TOKEN="$TOKEN" python3 - <<'PYEOF'
+import json, os, urllib.request
+body = json.dumps({"jsonrpc": "2.0", "id": 1, "method": "plane.create",
+                   "params": {"name": "memory"}}).encode()
+req = urllib.request.Request(
+    os.environ["DRSG_INSTALL_API"], data=body,
+    headers={"Content-Type": "application/json",
+             "Authorization": "Bearer " + os.environ.get("DRSG_INSTALL_TOKEN", "")})
+try:
+    opener = urllib.request.build_opener(urllib.request.ProxyHandler({}))
+    with opener.open(req, timeout=5):
+        pass
+except Exception:
+    pass
+PYEOF
 
 # ---- 2. copy hooks ----------------------------------------------------------
 echo "== installing hooks into $PROJECT_DIR/.claude/hooks/"
@@ -552,11 +590,53 @@ PYEOF
 
 # ---- 5. register MCP ---------------------------------------------------------
 echo "== registering MCP server 'drsg' (project scope) at $MCP_URL"
-# `--scope local` binds to the CURRENT cwd's project — so run the add from
-# inside the target project, or it lands on the caller's project instead.
-# HTTP transport uses `--header` (the `-H` short flag is WebSocket-only in
-# claude 2.x); `--header` is also the canonical form the docs show for HTTP.
-if command -v claude >/dev/null 2>&1; then
+if [ "$PRESERVE_MCP" = "1" ]; then
+  # Claude Code stores MCP registrations in ~/.claude.json, or inside the
+  # moved config directory when CLAUDE_CONFIG_DIR is set. Check both project
+  # scope and user scope without reading or printing any credential values.
+  if [ -n "${CLAUDE_CONFIG_DIR:-}" ]; then
+    CLAUDE_JSON_PATH="$CLAUDE_CONFIG_DIR/.claude.json"
+  else
+    CLAUDE_JSON_PATH="$HOME/.claude.json"
+  fi
+  if CLAUDE_JSON_PATH="$CLAUDE_JSON_PATH" python3 - "$PROJECT_DIR" <<'PYEOF'
+import json, os, sys
+path, project = os.environ["CLAUDE_JSON_PATH"], sys.argv[1]
+try:
+    with open(path, encoding="utf-8") as f:
+        cfg = json.load(f)
+except (OSError, ValueError):
+    cfg = {}
+servers = set((cfg.get("mcpServers") or {}).keys())
+servers.update((((cfg.get("projects") or {}).get(project) or {}).get("mcpServers") or {}).keys())
+sys.exit(0 if "drsg" in servers else 1)
+PYEOF
+  then
+    echo "   preserving existing drsg MCP registration"
+  else
+    echo "   WARN: drsg MCP is not registered for $PROJECT_DIR; it was not re-added to avoid exposing the reused token."
+    echo "         Register it manually using a secret-safe workflow; install.sh --audit will report this drift:"
+    echo "         (cd $PROJECT_DIR && claude mcp add --scope local --transport http drsg $MCP_URL --header 'Authorization: Bearer <token>')"
+  fi
+
+  if command -v claude >/dev/null 2>&1; then
+    # drsg-events carries no credential, so refresh it every time; this also
+    # repairs registrations that point at a runtime tools path that moved.
+    (cd "$PROJECT_DIR" && claude mcp remove drsg-events --scope local) >/dev/null 2>&1 || true
+    (cd "$PROJECT_DIR" && claude mcp add --scope local drsg-events \
+      -- python3 "$TOOLS_DIR/mcp_events.py" "$PROJECT_DIR") >/dev/null 2>&1 \
+      && echo "   MCP registered: drsg-events (event_post / event_list / event_done)" \
+      || echo "   WARN: could not register drsg-events — run it manually:
+       (cd $PROJECT_DIR && claude mcp add --scope local drsg-events -- python3 $TOOLS_DIR/mcp_events.py $PROJECT_DIR)"
+  else
+    echo "   WARN: 'claude' not found — register drsg-events manually:"
+    echo "     (cd $PROJECT_DIR && claude mcp add --scope local drsg-events -- python3 $TOOLS_DIR/mcp_events.py $PROJECT_DIR)"
+  fi
+elif command -v claude >/dev/null 2>&1; then
+  # `--scope local` binds to the CURRENT cwd's project — so run the add from
+  # inside the target project, or it lands on the caller's project instead.
+  # HTTP transport uses `--header` (the `-H` short flag is WebSocket-only in
+  # claude 2.x); `--header` is also the canonical form the docs show for HTTP.
   # A previous install may have registered 'drsg' pointing at an OLD daemon;
   # claude mcp add fails if the name already exists. Remove first (ignore if
   # absent), then add — this makes re-install (e.g. re-pointing at a shared
@@ -582,7 +662,7 @@ if command -v claude >/dev/null 2>&1; then
      (cd $PROJECT_DIR && claude mcp add --scope local drsg-events -- python3 $TOOLS_DIR/mcp_events.py $PROJECT_DIR)"
 else
   echo "   WARN: 'claude' not found — register MCP manually:"
-  echo "     (cd $PROJECT_DIR && claude mcp add --scope local --transport http drsg $MCP_URL --header 'Authorization: Bearer $TOKEN')"
+  echo "     (cd $PROJECT_DIR && claude mcp add --scope local --transport http drsg $MCP_URL --header 'Authorization: Bearer <token>')"
   echo "     (cd $PROJECT_DIR && claude mcp add --scope local drsg-events -- python3 $TOOLS_DIR/mcp_events.py $PROJECT_DIR)"
 fi
 
@@ -593,9 +673,10 @@ fi
 # Verifies: daemon reachable · memory plane present · key=SLUG resolves to a
 # Project node · a temp Fact is readable through the exact hook query.
 echo "== post-install self-check…"
-SELFCHECK="$(python3 - "$API" "$TOKEN" "$PLANE" "$SLUG" "$PROJECT_DIR" <<'PYEOF'
-import json, sys, time, urllib.request
-api, token, plane, slug, proj_dir = sys.argv[1:6]
+SELFCHECK="$(DRSG_INSTALL_TOKEN="$TOKEN" python3 - "$API" "$PLANE" "$SLUG" "$PROJECT_DIR" <<'PYEOF'
+import json, os, sys, time, urllib.request
+api, plane, slug, proj_dir = sys.argv[1:5]
+token = os.environ.get("DRSG_INSTALL_TOKEN", "")
 def rpc(method, params):
     body = json.dumps({"jsonrpc": "2.0", "id": 1, "method": method, "params": params}).encode()
     req = urllib.request.Request(api, data=body, headers={

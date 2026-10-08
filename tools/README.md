@@ -96,7 +96,13 @@ memory daemon, not by this repository.
 If something already answers `/health` at the target address, `install.sh`
 **joins** it rather than starting a second one. Every project then lands in the
 same `memory` plane, separated by its `Project` node, and recall can reach
-across them. Joining requires that daemon's token:
+across them. Re-running the installer for an existing project reuses its
+`.drsg/env` credential internally, without printing or passing it as a
+command-line argument. It refreshes `drsg-events` and preserves an existing
+`drsg` registration. If `drsg` is missing, it warns rather than exposing the
+reused token; `install.sh --audit` reports the drift. Register it manually
+through a secret-safe workflow. A new project joining still requires that
+daemon's token:
 
 ```bash
 ./install.sh /path/to/other-project --bin /path/to/drsg \
@@ -130,7 +136,7 @@ will tell you whether you have any.
 |---|---|---|
 | `--bin <path>` | `$DRSG_MEM_BIN` or `drsg` | the binary to run |
 | `--addr <host:port>` | `127.0.0.1:7700` | daemon listen address |
-| `--token <t>` | reused or generated | shared API token; **required when joining** an existing daemon |
+| `--token <t>` | reused or generated | explicit API token; existing projects reuse `.drsg/env`; **required for a new project joining** a running daemon |
 | `--l3-chat <name\|url>` | empty (L3 off) | preset name or OpenAI-compatible base URL |
 | `--l3-key-env <v>` | the preset's own | **name** of the env var holding the LLM key (see below) |
 | `--l3-model <m>` | the provider's own | model id, exactly as the endpoint lists it |
