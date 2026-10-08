@@ -338,10 +338,51 @@ def check_layer3(templates_dir, project_dir):
     return res
 
 
-def check_layer4(project_dir):
+REQUIRED_MCP = ("drsg", "drsg-events")
+
+
+def claude_json_path(claude_dir, explicit):
+    """Where Claude Code keeps per-project MCP registrations: inside the
+    config dir when that is moved (CLAUDE_CONFIG_DIR, or --claude-dir here),
+    otherwise ~/.claude.json next to ~/.claude/."""
+    if explicit or os.environ.get("CLAUDE_CONFIG_DIR"):
+        return os.path.join(claude_dir, ".claude.json")
+    return os.path.join(os.environ.get("HOME", ""), ".claude.json")
+
+
+def mcp_issues(project_dir, claude_json, tools_dir):
+    """One line per REQUIRED_MCP server this project's sessions will not load.
+
+    A registration can vanish with no install step removing it: on 2026-10-07
+    the kit project lost drsg-events while every other layer kept passing.
+    So read what Claude Code itself loads - local scope (projects[dir]) and
+    user scope (top-level mcpServers) of .claude.json."""
+    try:
+        with open(claude_json, encoding="utf-8") as f:
+            cfg = json.load(f)
+    except Exception as e:
+        return [f"Cannot read {claude_json} for MCP registrations: {e}"]
+    names = set(cfg.get("mcpServers") or {})
+    proj = (cfg.get("projects") or {}).get(project_dir) or {}
+    names |= set(proj.get("mcpServers") or {})
+    issues = []
+    for name in REQUIRED_MCP:
+        if name in names:
+            continue
+        if name == "drsg-events":
+            fix = (f"(cd {project_dir} && claude mcp add --scope local drsg-events -- "
+                   f"python3 {os.path.join(tools_dir, 'mcp_events.py')} {project_dir})")
+        else:
+            fix = f"setup.sh --project {project_dir} --token <the running daemon's token>"
+        issues.append(f"MCP server not registered for this project: {name} - fix: {fix}")
+    return issues
+
+
+def check_layer4(project_dir, claude_json=None, tools_dir=None):
     """Layer 4: Project Settings & Docs.
 
     N1: Report missing CLAUDE.md when hooks are installed.
+    F3: Report drsg / drsg-events MCP servers missing for the project.
     """
     res = {"name": f"L4: Settings & Docs ({os.path.basename(project_dir)})", "ok": True, "details": []}
     issues = []
@@ -408,11 +449,16 @@ def check_layer4(project_dir):
         else:
             res["details"].append("no pre-commit hook present")
 
+    # 5. MCP servers the project's sessions load
+    if claude_json:
+        issues.extend(mcp_issues(project_dir, claude_json, tools_dir or ""))
+
     if issues:
         res["ok"] = False
         res["details"] = issues
     else:
-        res["details"].append("Hooks registered, .drsg/env present, Event block documented")
+        res["details"].append("Hooks registered, .drsg/env present, Event block documented"
+                              + (", MCP drsg + drsg-events registered" if claude_json else ""))
     return res
 
 
@@ -496,6 +542,7 @@ def main():
         deployed_tools = os.path.join(mem_dir, "tools")
     if args.claude_dir:
         claude_dir = os.path.abspath(args.claude_dir)
+    claude_json = claude_json_path(claude_dir, bool(args.claude_dir))
 
     repo_tools = os.path.join(repo_dir, "tools")
     templates_dir = os.path.join(repo_tools, "templates", "hooks")
@@ -557,7 +604,7 @@ def main():
             continue
 
         report["layers"].append(check_layer3(templates_dir, p))
-        report["layers"].append(check_layer4(p))
+        report["layers"].append(check_layer4(p, claude_json, deployed_tools))
         report["layers"].append(check_layer5(p, deployed_tools if os.path.exists(deployed_tools) else repo_tools))
 
     report["overall_ok"] = all(item["ok"] for item in report["layers"])

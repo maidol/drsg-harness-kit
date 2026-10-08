@@ -217,7 +217,7 @@ useful than a second registry that can disagree with the first.
 - **L1: Global Runtime Tools**: Compares `~/.drsg-memory/tools/` against the git `HEAD` release baseline and verifies execution permissions; uncommitted drafts are noted as advisory hints without failing audit.
 - **L2: Global Configuration & Skills**: Verifies `~/.claude/AGENT-EFFICIENCY.md`, skills, global hooks, and verifies `settings.json` permissions (`0600`).
 - **L3: Project Memory Hooks**: Compares `.claude/hooks/*.py` in each project against canonical templates.
-- **L4: Project Settings & Docs**: Checks `.claude/settings.local.json` registrations, `.drsg/env` credentials, and `CLAUDE.md` cross-agent Event documentation.
+- **L4: Project Settings & Docs**: Checks `.claude/settings.local.json` registrations, `.drsg/env` credentials, `CLAUDE.md` cross-agent Event documentation, and that the `drsg` and `drsg-events` MCP servers are registered for the project in `~/.claude.json` (local or user scope; `$CLAUDE_CONFIG_DIR/.claude.json` when that is set, or the `--claude-dir` directory). A missing one is reported together with the command that registers it.
 - **L5: Code Graph Status**: Verifies code graph daemon health and `.mcp.json` port bindings, recognizing on-demand stopped daemons as normal state.
 
 ```bash
@@ -410,6 +410,12 @@ python3 ~/.drsg-memory/tools/permission-guard.py apply --project /path/to/projec
 
 Rules take effect in sessions started afterwards. `claude auto-mode config`
 shows the user-scope entries the classifier will read.
+
+The user-scope rules let the classifier treat the other files under DIR as
+plain data only. A plan whose script copies a file from DIR into the
+repository and then runs it — a new test script, say — is blocked as code
+from external. Have the implementer write such files with Write, and let the
+plan's script only check them (content with `cmp`, and the executable bit).
 
 ## Notes
 

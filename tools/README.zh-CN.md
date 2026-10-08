@@ -154,7 +154,7 @@ python3 migrate.py load --api http://127.0.0.1:7700/rpc --token <new token> \
 - **L1: 全局运行时工具层**：将 `~/.drsg-memory/tools/` 与 git `HEAD` 对应版本对比，校验执行权限；工作区未提交草稿单独做提示，不计为漂移；
 - **L2: 全局规则与技能层**：核验 `~/.claude/AGENT-EFFICIENCY.md`、skills、全局 hooks，并校验 `settings.json` 的 `0600` 安全权限；
 - **L3: 项目钩子层**：比对各项目 `.claude/hooks/*.py` 哈希与执行权限；
-- **L4: 项目设置与文档层**：核验各项目 `.claude/settings.local.json` 注册、`.drsg/env` 凭据和 `CLAUDE.md` 跨项目 Event 引导块；
+- **L4: 项目设置与文档层**：核验各项目 `.claude/settings.local.json` 注册、`.drsg/env` 凭据、`CLAUDE.md` 跨项目 Event 引导块，以及 `~/.claude.json` 里该项目是否注册了 `drsg` 和 `drsg-events` 两个 MCP server（local 或 user 范围；设了 `$CLAUDE_CONFIG_DIR` 时读 `$CLAUDE_CONFIG_DIR/.claude.json`，给了 `--claude-dir` 时读那个目录下的）。缺哪个就报哪个，并给出补注册的命令；
 - **L5: 代码图健康层**：检查代码图 daemon 运行健康状态与 `.mcp.json` 端口匹配，正确将按需待机识别为正常状态。
 
 ```bash
@@ -263,6 +263,8 @@ python3 ~/.drsg-memory/tools/permission-guard.py apply --project /path/to/projec
 ```
 
 规则对之后新开的会话生效。`claude auto-mode config` 会显示分类器将读取的用户范围条目。
+
+用户范围的规则只允许分类器把 DIR 下的其他文件当数据读。计划里如果让脚本把 DIR 里的文件拷进仓库再执行（比如新的测试脚本），会被当成外部代码拦下。这类文件要让执行方自己用 Write 写进仓库，计划里的脚本只核对它（用 `cmp` 比内容，再看可执行位）。
 
 ## 说明
 

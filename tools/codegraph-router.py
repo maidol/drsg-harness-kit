@@ -43,6 +43,7 @@ Transport is stdio JSON-RPC, stdlib only, like the other memory-layer servers.
 """
 import json
 import os
+import re
 import socket
 import subprocess
 import sys
@@ -456,6 +457,36 @@ UPSTREAM = {
     "graph_cypher": ("cypher", ["query", "params"], True),
 }
 
+# Regex syntax in a pattern sent with regex off. Upstream notes `|` and `.*`
+# itself; an escaped `\(` was the commonest miss in practice (6 of 15 empty
+# literal searches, 2026-09..10) and came back with no hint at all.
+REGEX_SHAPES = [
+    (re.compile(r"\\[()\[\]{}.|*+?^$]"), "an escaped character such as `\\(`"),
+    (re.compile(r"\\[dwsb]"), "a class escape such as `\\d` or `\\w`"),
+    (re.compile(r"\[[^\]]+\]"), "a bracket class such as `[a-z]`"),
+    (re.compile(r"^\^|\$$"), "an anchor (`^` or `$`)"),
+    (re.compile(r"\|"), "`|`"),
+    (re.compile(r"\.[*+]"), "`.*` or `.+`"),
+]
+
+
+def literal_regex_note(pattern, text):
+    """One note line for a literal graph_grep that found nothing and whose
+    pattern looks like a regex; None when it found something, when upstream
+    already added a note, or when nothing regex-shaped is in the pattern."""
+    lines = text.strip().splitlines()
+    if not lines or lines[0].strip() != "no matches":
+        return None
+    if any(line.startswith("note:") for line in lines):
+        return None
+    for rx, what in REGEX_SHAPES:
+        if rx.search(pattern):
+            return ("note: the pattern contains %s and regex is off, so it was "
+                    "searched as literal text. Retry with `regex: true`; this "
+                    "empty result is not evidence that the text is absent."
+                    % what)
+    return None
+
 
 def tool_repos():
     entries = load_registry()
@@ -489,6 +520,10 @@ def call_tool(name, args):
         payload["plane"] = entry["plane"]
 
     text, err = call_upstream(entry, tool, payload)
+    if name == "graph_grep" and not args.get("regex"):
+        note = literal_regex_note(args.get("pattern") or "", text)
+        if note:
+            text = text.rstrip("\n") + "\n" + note
     # Which graph answered, on the reply itself: a router makes it possible to
     # read one repository's answer as another's, and nothing downstream
     # would catch that.
