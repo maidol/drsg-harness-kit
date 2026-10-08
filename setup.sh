@@ -36,13 +36,15 @@
 #   --reviews-dir DIR teach the auto-mode classifier (~/.claude/settings.json)
 #                     that scripts under DIR may run once shown in a Write call
 #   --prune-broad     with --permission-guard: also remove Bash(python3 *)-style rules
+#   --model-picker    source claude-model-picker.sh from ~/.bashrc, so an
+#                     interactive `claude` asks which model to use first (opt-in)
 set -euo pipefail
 
 HERE="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 PROJECT=""; REPO=""; HUB=""; ROUTER=""; USAGE_REPORT=""; BIN=""; ADDR=""; TOKEN=""; PORT=""
 TOOLS="${DRSG_MEM_DIR:-$HOME/.drsg-memory}/tools"
 FETCH=0; SKILLS=1; POLLER=1; STREAK_HINT=1
-PG_DIR=""; REVIEWS_DIR=""; PRUNE=0
+PG_DIR=""; REVIEWS_DIR=""; PRUNE=0; MODEL_PICKER=0
 
 while [ $# -gt 0 ]; do
   case "$1" in
@@ -63,7 +65,8 @@ while [ $# -gt 0 ]; do
     --permission-guard) PG_DIR="${2:?--permission-guard needs a path}"; shift 2 ;;
     --reviews-dir) REVIEWS_DIR="${2:?--reviews-dir needs a path}"; shift 2 ;;
     --prune-broad) PRUNE=1; shift ;;
-    -h|--help)    sed -n '2,38p' "${BASH_SOURCE[0]}" | sed 's/^# \{0,1\}//'; exit 0 ;;
+    --model-picker) MODEL_PICKER=1; shift ;;
+    -h|--help)    sed -n '2,40p' "${BASH_SOURCE[0]}" | sed 's/^# \{0,1\}//'; exit 0 ;;
     *) echo "unknown argument '$1'" >&2; exit 1 ;;
   esac
 done
@@ -95,6 +98,20 @@ else
 fi
 chmod +x "$TOOLS"/*.sh "$TOOLS"/*.py "$TOOLS/drsg-usage-report" 2>/dev/null || true
 echo "   $(find "$TOOLS" -maxdepth 1 -type f | wc -l | tr -d ' ') files in place"
+
+# The model picker: opt-in, and only a line in ~/.bashrc that sources the
+# runtime copy, so a later refresh of the tools reaches it without touching
+# ~/.bashrc again. Idempotent: the exact line is never added twice.
+if [ "$MODEL_PICKER" -eq 1 ]; then
+  PICKER_LINE="[ -f \"$TOOLS/claude-model-picker.sh\" ] && . \"$TOOLS/claude-model-picker.sh\""
+  touch "$HOME/.bashrc"
+  if grep -qxF "$PICKER_LINE" "$HOME/.bashrc"; then
+    echo "   model picker: already sourced from $HOME/.bashrc"
+  else
+    printf '\n%s\n' "$PICKER_LINE" >> "$HOME/.bashrc"
+    echo "   model picker: source line added to $HOME/.bashrc (takes effect in a new shell)"
+  fi
+fi
 
 # The to-do poller: global hooks, so every session in every project checks its
 # open Events every 15 minutes without a model call, and wakes the model only

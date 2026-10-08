@@ -69,6 +69,29 @@ running daemon. Details: [tools/README.md](tools/README.md#permission-guard-perm
   --reviews-dir /path/to/workspace/reviews
 ```
 
+## Model picker at startup (opt-in)
+
+`--model-picker` adds one line to `~/.bashrc` that sources
+`~/.drsg-memory/tools/claude-model-picker.sh`. In a new shell, an interactive
+`claude` then asks which model to use before the session starts, and runs the
+real binary with `--model <choice>` in front of your own arguments (`--resume`,
+`-c`, a prompt, …). Answer with a number, or type any model name or full id;
+Enter alone keeps the `model` from settings.json; Ctrl+C starts nothing.
+
+```bash
+/tmp/drsg-harness-kit-*/setup.sh --model-picker
+claude --resume            # menu first, then the session picker
+CLAUDE_PICK_MODEL=0 claude # skip the menu once
+CLAUDE_PICK_MODELS="opus fable" claude   # a different list
+```
+
+No menu when stdin or stdout is not a terminal, when the arguments already
+contain `--model`, `-p`/`--print`, `--help` or `--version`, or for a subcommand
+(`claude mcp …`, `claude attach …`). It is a shell function, not a wrapper
+process, so the poller still finds the Claude Code process it ties its lease
+to. bash only. `CLAUDE_PICK_FORCE_TTY=1` is for tests: it treats stdin and
+stdout as a terminal.
+
 ## Refresh the runtime copies
 
 Edit here, then rebuild the bundle and re-run its `setup.sh`. That is the same

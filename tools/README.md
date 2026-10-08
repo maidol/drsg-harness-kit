@@ -17,6 +17,10 @@ briefing instead of a blank slate.
 The whole thing is four Python hooks, an installer, and a daemon control
 script. No plugin, no service to sign up for, no data leaving the machine.
 
+The opt-in `tools/claude-model-picker.sh` Bash function asks which model to use
+before an interactive `claude` starts. Enable it with `setup.sh --model-picker`;
+full instructions are in the root README's “Model picker at startup” section.
+
 ## Code graph router and usage reporting
 
 The runtime bundle includes the router and usage-report binaries, but project

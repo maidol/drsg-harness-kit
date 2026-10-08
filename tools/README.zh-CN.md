@@ -8,6 +8,8 @@
 
 整个系统由四个 Python hook、一个安装器和一个 daemon 控制脚本组成。不需要插件、不需要注册服务，也不会有数据离开本机。
 
+可选工具 `tools/claude-model-picker.sh` 是一个 Bash 函数，会在交互式 `claude` 启动前询问模型。用 `setup.sh --model-picker` 启用；详细说明见仓库根目录 README 的「启动前选模型」一节。
+
 ## 代码图路由器与 usage report
 
 运行时 bundle 包含 router 和 usage-report 二进制，但项目配置默认是可选的。使用 `codegraph-router-setup.sh` 配置 router MCP 访问，使用 `codegraph-usage-setup.sh` 配置 Stop hook 报告，或者使用显式的组合封装脚本 `codegraph-hub-setup.sh`。usage report 同时统计本地原生代码图调用和经由 router 的 `codegraph` 调用；它不会由 `install.sh` 或默认的 `setup.sh` 安装。

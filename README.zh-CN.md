@@ -48,6 +48,19 @@ tar xzf dist/drsg-harness-kit-*.tar.gz -C /tmp
   --reviews-dir /path/to/workspace/reviews
 ```
 
+## 启动前选模型（可选）
+
+`--model-picker` 往 `~/.bashrc` 加一行，source `~/.drsg-memory/tools/claude-model-picker.sh`。开新 shell 之后，交互式的 `claude` 会在会话开始前先问用哪个模型，再把 `--model <所选>` 放在你自己的参数（`--resume`、`-c`、提示词……）前面，启动真正的 `claude`。输入菜单里的数字，或者直接输入任意模型名或完整 ID；直接回车用 settings.json 里的 `model`；Ctrl+C 什么都不启动。
+
+```bash
+/tmp/drsg-harness-kit-*/setup.sh --model-picker
+claude --resume            # 先选模型，再进会话选择列表
+CLAUDE_PICK_MODEL=0 claude # 这一次不弹菜单
+CLAUDE_PICK_MODELS="opus fable" claude   # 换一份菜单
+```
+
+以下情况不弹菜单：stdin 或 stdout 不是终端；参数里已经有 `--model`、`-p`/`--print`、`--help` 或 `--version`；子命令（`claude mcp …`、`claude attach …`）。它是一个 shell 函数，不是包装进程，所以待办轮询仍能找到它要绑定租约的那个 Claude Code 进程。只支持 bash。`CLAUDE_PICK_FORCE_TTY=1` 只给测试用：把 stdin 和 stdout 当成终端。
+
 ## 刷新运行时副本
 
 在本仓库中修改后，重新构建 bundle，再次运行其中的 `setup.sh`。这是为新机器安装时使用的同一条路径，这是有意的设计——避免维护两套流程。`setup.sh` 幂等，会重新运行安装器自检，但不会触碰数据库。改的是 `tools/templates/hooks/` 底下的东西时要加 `--project DIR`：不带参数的一次运行只刷新 `~/.drsg-memory/tools/`，各项目的 `.claude/hooks/` 仍停在旧副本上，也就是之后 `install.sh --check` 会报出来的 drift。router 和 usage report 虽然会随 bundle 提供，但项目配置默认是可选的：使用 `--router DIR`、`--usage-report DIR`，或者使用显式的 `--hub DIR` 同时启用两者；只使用 `--project` 和 `--repo` 不会安装其中任何一个。
