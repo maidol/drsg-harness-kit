@@ -221,8 +221,23 @@ advice: this reads like a change to a judgment ('判断') — verb=impact lists 
 - **由 `Stop` 重新拉起。** 唤醒后轮询进程就退出了，下一次 `Stop` 会再把它启动起来；如果它已经在运行，这次 `Stop` 拉起的进程会立刻退出。
 - **发件方会踢一下。** `event.py post()`（`drsg-events` 的 MCP 工具也走它）写完 Event 后，如果收件项目的状态目录存在，就 touch 其中的 `kick` 文件。等待中的轮询进程每秒 stat 一次这个文件（`EVENT_POLL_KICK_STEP`），一变就立刻查 daemon，所以空闲会话一两秒内就能看到新 Event，不用等下一次 15 分钟的定时查询。只在同一台机器上有效；没踢到时仍由 15 分钟的定时查询兜底。
 - **出错时不出声。** 没有 `.drsg/env`、daemon 没起来、返回结果不对，都只记日志，下一轮再试，不会唤醒模型。
-- 状态和日志在 `~/.drsg-memory/poller/<项目哈希>/`（`lease.json`、`<会话>.seen.json`、`poller.log`）。测试时可以用 `EVENT_POLL_INTERVAL`、`EVENT_POLL_TICK`（单位：秒）调短间隔。
-- 接管后，上一个会话被唤醒但还没关掉的 Event 会重新通知一次。轮询脚本分不清「做了一半」和「做完了、在等用户确认」，所以唤醒提示里要求先看工作区。
+- 状态和日志在 `~/.drsg-memory/poller/<项目哈希>/`（`lease.json`、`<会话>.<pid>.seen.json`、`<会话>.<pid>.pid`、`poller.log`；`<pid>` 是 Claude Code 进程）。测试时可以用 `EVENT_POLL_INTERVAL`、`EVENT_POLL_TICK`（单位：秒）调短间隔；`EVENT_POLL_OWNER_PID` 在轮询脚本和 hook 的 owner 行里代替 Claude Code 进程。
+- 接管后，上一个会话被唤醒但还没关掉的 Event 会重新通知一次；把租约拿回来的会话也一样。轮询脚本分不清「做了一半」和「做完了、在等用户确认」，所以唤醒提示里要求先看工作区。
+- **一个 owner，所有会话都看得见。** 持有租约的会话就是这个项目的 Event owner，只有它会被唤醒去处理。两个终端 `--resume` 同一个会话 ID 是两个进程，只有其中一个持有租约；它退出时不会停掉另一个进程的轮询，另一个一分钟内接管，并把所有未关的 Event 重新通知一次。每个会话照样会列出未关的 Event（启动时和提问前），最上面多一行说明本会话的身份：
+
+  ```text
+  本会话是这个项目的 Event owner：按 Event 流程处理。
+  Event owner 是会话 f8e05069（pid 3651），本会话只读：……不要执行这些 Event；本会话调 event_done 会被拒绝，用户明确要求本会话接手时才带 force。……
+  现在没有 Event owner。本会话的待办轮询拿到租约后会唤醒你；在那之前本会话只读，不要执行这些 Event。
+  ```
+
+关 Event 是硬拦，不只是提示：项目（`CLAUDE_PROJECT_DIR`，没有就是当前目录）有活着的 owner、而调用方是另一个 Claude Code 进程时，`event_done`（MCP）和 `event.py done` 都会拒绝，什么都不写。没有活着的 owner，或者从普通 shell 里运行（上面没有 Claude Code），照旧能关。用户明确把某条 Event 交给非 owner 会话时，带 force 关（MCP 工具传 `force: true`）：
+
+```bash
+python3 ~/.drsg-memory/tools/event.py done <event-key> --force
+```
+
+它拦不住非 owner 改代码，拦的是第二个会话把同一条待办做完关掉。
 
 ## API 错误停住提醒（`stop-failure-notify.py`）
 

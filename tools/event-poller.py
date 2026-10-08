@@ -191,45 +191,63 @@ def write_json(path, data):
     os.replace(tmp, path)
 
 
+def tag(sid, pid):
+    """Name of one Claude Code process's own files: `<tag>.pid`, `<tag>.seen.json`.
+    The session id alone is not enough — two terminals resuming one session id
+    are two processes, and keyed by sid alone the first one to exit killed the
+    other's poller and deleted the seen list they shared."""
+    return "%s.%s" % (sid, pid)
+
+
+def holds(lease, sid, pid, start):
+    """The lease names this session AND this Claude Code process."""
+    return (lease.get("session_id") == sid and lease.get("pid") == pid
+            and lease.get("start") == start)
+
+
 def take_lease(state, sid, pid, start, bg):
-    """True when this session holds the lease after the call. A background
-    holder is taken over by a foreground session; background sessions never
-    take it from each other, so two of them cannot flap."""
+    """(held, fresh): whether this process holds the lease after the call, and
+    whether it has only just taken it (from another process, or from nobody).
+    The owner is a session and its process, so a second process on the same
+    session id waits like any other session. A background holder is taken over
+    by a foreground session; background sessions never take it from each
+    other, so two of them cannot flap."""
     path = os.path.join(state, "lease.json")
     with Locked(state):
         lease = read_json(path, {})
-        mine = lease.get("session_id") == sid
+        mine = holds(lease, sid, pid, start)
         gone = not alive(lease.get("pid"), lease.get("start"))
         if mine or gone or (lease.get("bg") and not bg):
             if not mine:
-                log(state, "lease -> %s (was %s%s)" % (sid, lease.get("session_id"),
+                log(state, "lease -> %s (was %s%s)" % (tag(sid, pid),
+                                                       tag(lease.get("session_id"), lease.get("pid")),
                                                        "" if gone else ", background"))
             write_json(path, {"session_id": sid, "pid": pid, "start": start, "bg": bg,
                               "updated": int(time.time())})
-            return True
-        return False
+            return True, not mine
+        return False, False
 
 
-def release(state, sid):
+def release(state, sid, pid, start):
     path = os.path.join(state, "lease.json")
     with Locked(state):
-        if read_json(path, {}).get("session_id") == sid:
+        if holds(read_json(path, {}), sid, pid, start):
             os.remove(path)
-            log(state, "lease released by %s" % sid)
+            log(state, "lease released by %s" % tag(sid, pid))
         for ext in (".pid", ".seen.json"):
             try:
-                os.remove(os.path.join(state, sid + ext))
+                os.remove(os.path.join(state, tag(sid, pid) + ext))
             except OSError:
                 pass
 
 
-def sweep_seen(state, sid):
-    """Drop `<sid>.seen.json` files nobody will clean up: a session that was
+def sweep_seen(state, own):
+    """Drop `<tag>.seen.json` files nobody will clean up: a session that was
     kill -9'd along with its poller never reaches release(). Only old files whose
-    poller is gone; this session's own file is never touched."""
+    poller is gone; this process's own file (`own`) is never touched."""
     cutoff = time.time() - SEEN_MAX_AGE
     for name in os.listdir(state):
-        if not name.endswith(".seen.json") or name == sid + ".seen.json":
+        if not name.endswith(".seen.json") or name == own + ".seen.json":
             continue
         owner = read_json(os.path.join(state, name[:-len(".seen.json")] + ".pid"), {})
         try:
@@ -285,14 +303,14 @@ def poll(project, state, sid):
         log(state, "no claude ancestor for %s; not polling" % sid)
         return 0
     bg = background(pid)
-    pidfile = os.path.join(state, sid + ".pid")
+    pidfile = os.path.join(state, tag(sid, pid) + ".pid")
     with Locked(state):
         running = read_json(pidfile, {})
         if alive(running.get("pid"), running.get("start")):
-            return 0                                     # already polling for this session
+            return 0                                     # already polling for this process
         write_json(pidfile, {"pid": os.getpid(), "start": proc_start(os.getpid())})
-        sweep_seen(state, sid)
-    seen_path = os.path.join(state, sid + ".seen.json")
+        sweep_seen(state, tag(sid, pid))
+    seen_path = os.path.join(state, tag(sid, pid) + ".seen.json")
     seen = set(read_json(seen_path, []))
     next_check = 0
     kick = os.path.join(state, "kick")
@@ -300,13 +318,21 @@ def poll(project, state, sid):
     while True:
         rotate(state)
         if not alive(pid, start):
-            log(state, "claude %d gone; poller for %s exits" % (pid, sid))
-            release(state, sid)
+            log(state, "claude %d gone; poller for %s exits" % (pid, tag(sid, pid)))
+            release(state, sid, pid, start)
             return 0
         k = mtime(kick)
         if k != kicked:                                  # a sender just posted here
             kicked, next_check = k, 0
-        if take_lease(state, sid, pid, start, bg) and time.time() >= next_check:
+        held, fresh = take_lease(state, sid, pid, start, bg)
+        if fresh:
+            # A new owner is told about every open Event again, including the
+            # ones a previous owner (or this process, before it lost the lease)
+            # was woken for: nobody can tell "half done" from "never started".
+            seen.clear()
+            write_json(seen_path, [])
+            next_check = 0
+        if held and time.time() >= next_check:
             next_check = time.time() + INTERVAL
             try:
                 new = [e for e in open_events(project) if e["key"] not in seen]
@@ -327,15 +353,17 @@ def poll(project, state, sid):
         wait(kick, kicked, TICK)
 
 
-def stop_poller(state, sid):
-    running = read_json(os.path.join(state, sid + ".pid"), {})
+def stop_poller(state, sid, pid, start):
+    """Stop the poller of THIS Claude Code process only: another process on the
+    same session id keeps its own poller, and the lease if it holds it."""
+    running = read_json(os.path.join(state, tag(sid, pid) + ".pid"), {})
     p = running.get("pid")
     if alive(p, running.get("start")) and any(MARK in a for a in cmdline(p)):
         try:
             os.kill(p, signal.SIGTERM)
         except OSError:
             pass
-    release(state, sid)
+    release(state, sid, pid, start)
 
 
 def main():
@@ -350,7 +378,8 @@ def main():
     state = os.path.join(STATE_ROOT, hashlib.sha1(project.encode()).hexdigest()[:12])
     os.makedirs(state, exist_ok=True)
     if hook.get("hook_event_name") == "SessionEnd":
-        stop_poller(state, sid)
+        pid, start = owner_process()
+        stop_poller(state, sid, pid, start)
         return 0
     return poll(project, state, sid)
 

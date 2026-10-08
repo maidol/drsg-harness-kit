@@ -129,10 +129,18 @@ TOOLS = [
             "Close a to-do by its key, and verify it actually closed. Fails "
             "loudly if the key resolved to something that is not an Event or "
             "if the node did not change — closing by hand with `e.key` matches "
-            "nothing, reports props_set: 0, and does not error."),
+            "nothing, reports props_set: 0, and does not error. Refused when "
+            "this session is not the project's Event owner (the session the "
+            "to-do poller wakes); nothing is written then."),
         "inputSchema": {
             "type": "object",
-            "properties": {"key": {"type": "string"}},
+            "properties": {
+                "key": {"type": "string"},
+                "force": {"type": "boolean", "default": False, "description":
+                          "Close even when this session is not the Event owner. "
+                          "Only when the user explicitly asked this session to "
+                          "take the Event over."},
+            },
             "required": ["key"],
         },
     },
@@ -191,7 +199,8 @@ def call_tool(name, args, token):
         return "\n".join(rows) if rows else "no %s events for %s" % (want, path)
 
     if name == "event_done":
-        return ev.close(args["key"], token)
+        return ev.close(args["key"], token, project=proj,
+                        force=bool(args.get("force")))
 
     raise ValueError("unknown tool %r" % name)
 

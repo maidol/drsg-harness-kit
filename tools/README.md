@@ -339,11 +339,40 @@ there is one this session has not been told about yet.
 - **Silent on failure.** No `.drsg/env`, daemon down, bad answer: logged and
   retried next round, never a wake-up.
 - State and log: `~/.drsg-memory/poller/<project-hash>/` (`lease.json`,
-  `<session>.seen.json`, `poller.log`). Tuning for tests: `EVENT_POLL_INTERVAL`,
-  `EVENT_POLL_TICK` (seconds).
+  `<session>.<pid>.seen.json`, `<session>.<pid>.pid`, `poller.log`; `<pid>` is
+  the Claude Code process). Tuning for tests: `EVENT_POLL_INTERVAL`,
+  `EVENT_POLL_TICK` (seconds); `EVENT_POLL_OWNER_PID` stands in for the Claude
+  Code process, in the poller and in the hooks' owner line.
 - After a takeover, Events the previous session was woken for but did not close
-  are announced again: the poller cannot tell "half done" from "done, waiting for
-  the user", so the wake-up text asks to check the working tree first.
+  are announced again — also to a session that takes the lease back: the poller
+  cannot tell "half done" from "done, waiting for the user", so the wake-up text
+  asks to check the working tree first.
+- **One owner, every session sees.** The lease holder is the project's Event
+  owner: it alone is woken to act. Two terminals running `claude --resume` on the
+  same session id are two processes, and only one of them holds the lease; when it exits, the
+  other one's poller is left running, takes over within a minute and is told
+  about every open Event again. Every session still lists the open Events (at
+  startup and before a prompt), with one line on top saying which it is:
+
+  ```text
+  本会话是这个项目的 Event owner：按 Event 流程处理。
+  Event owner 是会话 f8e05069（pid 3651），本会话只读：……不要执行这些 Event；本会话调 event_done 会被拒绝，用户明确要求本会话接手时才带 force。……
+  现在没有 Event owner。本会话的待办轮询拿到租约后会唤醒你；在那之前本会话只读，不要执行这些 Event。
+  ```
+
+Closing is enforced, not just advised: `event_done` (MCP) and `event.py done`
+refuse when the project (`CLAUDE_PROJECT_DIR`, else the current directory) has
+a live owner and the caller is a different Claude Code process, and write
+nothing. With no live owner, or from a plain shell (no Claude Code above it),
+closing works as before. When the user explicitly hands an Event to a
+non-owner session, close it with force (the MCP tool takes `force: true`):
+
+```bash
+python3 ~/.drsg-memory/tools/event.py done <event-key> --force
+```
+
+This does not stop a non-owner from editing code; it stops a second session
+from finishing the same to-do.
 
 ## StopFailure notice (`stop-failure-notify.py`)
 

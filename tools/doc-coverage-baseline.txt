@@ -10,7 +10,6 @@ setup.sh:--no-streak-hint
 setup.sh:--port
 setup.sh:--tools-dir
 tools/codegraph.sh:--dir
-tools/codegraph.sh:--force
 tools/codegraph.sh:--port
 tools/analyze_events.py:--verbose
 tools/analyze_recall.py:--no-cache

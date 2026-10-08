@@ -29,7 +29,7 @@ Usage:
   event.py post <recipient-project-dir> <summary> [--kind handoff|notice] [--ref R]
                 [--symbol KEY]... [--verb context|impact|trace]
   event.py list [<project-dir>]
-  event.py done <event-key>
+  event.py done <event-key> [--force]
 
 Config comes from the CWD's .drsg/env (DRSG_API / DRSG_PLANE / DRSG_TOKEN),
 the same file the hooks read.
@@ -547,9 +547,77 @@ def cmd_list(args, token):
             print("%-9s %s" % ("", pr["graph_hint"]))
 
 
-def close(key, token):
+def _proc(pid):
+    """(start ticks, state letter, parent pid) of `pid` from /proc, None when gone."""
+    try:
+        with open("/proc/%d/stat" % pid) as f:
+            rest = f.read().rsplit(")", 1)[1].split()
+        return int(rest[19]), rest[0], int(rest[1])
+    except (OSError, ValueError, IndexError, TypeError):
+        return None
+
+
+def _claude_process():
+    """(pid, start) of the Claude Code process this call runs under — the walk
+    event-poller.py makes — or (None, None) when there is none, i.e. a person
+    running this from their own shell. EVENT_POLL_OWNER_PID stands in for it
+    in tests; 0 means "no Claude Code"."""
+    if os.environ.get("EVENT_POLL_OWNER_PID"):          # tests only
+        pid = int(os.environ["EVENT_POLL_OWNER_PID"])
+        st = _proc(pid) if pid else None
+        return (pid, st[0]) if st else (None, None)
+    pid = os.getppid()
+    while pid > 1:
+        try:
+            with open("/proc/%d/cmdline" % pid, "rb") as f:
+                argv = [a.decode("utf-8", "replace") for a in f.read().split(b"\0") if a]
+        except OSError:
+            break
+        st = _proc(pid)
+        if not st:
+            break
+        if any("claude" in os.path.basename(a) for a in argv[:2]):
+            return pid, st[0]
+        pid = st[2]
+    return None, None
+
+
+def owner_refusal(project):
+    """Why this process may not close `project`'s Events, or "" when it may.
+
+    One session — a session id together with its Claude Code process — owns a
+    project's Events: the event-poller's lease holder. Read from that lease, so
+    the poller, the hooks' owner line and this refusal cannot disagree. Never
+    refuses when there is no live owner (a to-do must stay closable) or when
+    the caller is not a Claude Code session at all (a person in a shell)."""
+    state = os.path.join(os.environ.get("DRSG_MEM_DIR") or os.path.expanduser("~/.drsg-memory"),
+                         "poller", hashlib.sha1(os.path.realpath(project).encode()).hexdigest()[:12])
+    try:
+        with open(os.path.join(state, "lease.json"), encoding="utf-8") as f:
+            lease = json.load(f)
+    except (OSError, ValueError):
+        return ""
+    holder = lease.get("pid")
+    st = _proc(holder) if isinstance(holder, int) else None
+    if not st or st[0] != lease.get("start") or st[1] in ("T", "t", "Z", "X"):
+        return ""
+    pid, start = _claude_process()
+    if pid is None or (pid == holder and start == lease.get("start")):
+        return ""
+    return ("refused: this session is not the Event owner of %s (owner: session %s, "
+            "pid %s). Only the owner closes this project's Events. If the user "
+            "explicitly asked this session to take the Event over, retry with "
+            "force (event_done force=true, or event.py done --force)."
+            % (project, str(lease.get("session_id"))[:8], holder))
+
+
+def close(key, token, project=None, force=False):
     """Close an Event, and report what the graph says rather than what the call
     did.
+
+    With `project`, refuse first unless this session owns that project's
+    Events (see owner_refusal); `force` skips the check. Nothing is written on
+    a refusal.
 
     The two are not the same thing, and the difference is the whole failure mode
     this guards. An unknown key already errors here (`node.update` resolves the
@@ -566,6 +634,10 @@ def close(key, token):
     hands back the stored record, so the confirmation is already paid for — it
     just has to be read.
     """
+    if project and not force:
+        why = owner_refusal(project)
+        if why:
+            raise RuntimeError(why)
     node = rpc("node.update", {"plane": PLANE, "key": key,
                                "set": {"status": "done", "done_at": int(time.time())}},
                token) or {}
@@ -581,7 +653,9 @@ def close(key, token):
 
 
 def cmd_done(args, token):
-    print(close(args.key, token))
+    print(close(args.key, token,
+                project=os.environ.get("CLAUDE_PROJECT_DIR") or os.getcwd(),
+                force=args.force))
 
 
 def main():
@@ -609,6 +683,9 @@ def main():
 
     p = sub.add_parser("done", help="close an event by key")
     p.add_argument("key")
+    p.add_argument("--force", action="store_true",
+                   help="close even when this session is not the project's "
+                        "Event owner (only when the user asked it to take over)")
     p.set_defaults(fn=cmd_done)
 
     args = ap.parse_args()

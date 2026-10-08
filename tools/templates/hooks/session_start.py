@@ -337,6 +337,71 @@ def mark_events_shown(proj_dir, sid, keys):
         pass
 
 
+def _proc(pid):
+    """(start ticks, state letter, parent pid) of `pid` from /proc, None when gone."""
+    try:
+        with open("/proc/%d/stat" % pid) as f:
+            rest = f.read().rsplit(")", 1)[1].split()
+        return int(rest[19]), rest[0], int(rest[1])
+    except (OSError, ValueError, IndexError, TypeError):
+        return None
+
+
+def _claude_pid():
+    """This hook's Claude Code process: the nearest ancestor whose first or
+    second argv names `claude` — the same walk event-poller.py makes, so the
+    two name the same process."""
+    if os.environ.get("EVENT_POLL_OWNER_PID"):          # tests only
+        return int(os.environ["EVENT_POLL_OWNER_PID"])
+    pid = os.getppid()
+    while pid > 1:
+        try:
+            with open("/proc/%d/cmdline" % pid, "rb") as f:
+                argv = [a.decode("utf-8", "replace") for a in f.read().split(b"\0") if a]
+        except OSError:
+            return None
+        if any("claude" in os.path.basename(a) for a in argv[:2]):
+            return pid
+        st = _proc(pid)
+        if not st:
+            return None
+        pid = st[2]
+    return None
+
+
+def event_owner(proj_dir, sid):
+    """One line saying whether THIS session executes the project's Events.
+
+    Every session is shown the open Events; only the event-poller's lease
+    holder, a session id together with its Claude Code process, acts on them,
+    so two terminals resuming one session id do not both act. Read from the
+    poller's own lease file, so this line and its wake-ups cannot disagree.
+    Duplicated in session_start.py and user_prompt.py, like mark_events_shown.
+    "" on any error: an unknown owner must not cost the to-do list it annotates."""
+    try:
+        state = os.path.join(os.environ.get("DRSG_MEM_DIR") or os.path.expanduser("~/.drsg-memory"),
+                             "poller", hashlib.sha1(os.path.realpath(proj_dir).encode()).hexdigest()[:12])
+        try:
+            with open(os.path.join(state, "lease.json"), encoding="utf-8") as f:
+                lease = json.load(f)
+        except (OSError, ValueError):
+            lease = {}
+        holder = lease.get("pid")
+        st = _proc(holder) if holder else None
+        live = bool(st) and st[0] == lease.get("start") and st[1] not in ("T", "t", "Z", "X")
+        if live and lease.get("session_id") == sid and holder == _claude_pid():
+            return "本会话是这个项目的 Event owner：按 Event 流程处理。"
+        if live:
+            return ("Event owner 是会话 %s（pid %s），本会话只读：可以看、可以回答用户的问题，"
+                    "不要执行这些 Event；本会话调 event_done 会被拒绝，用户明确要求本会话接手时才带 force。"
+                    "owner 退出后，本会话的待办轮询会接管并唤醒你，到时再处理。"
+                    % (str(lease.get("session_id"))[:8], holder))
+        return ("现在没有 Event owner。本会话的待办轮询拿到租约后会唤醒你；"
+                "在那之前本会话只读，不要执行这些 Event。")
+    except Exception:
+        return ""
+
+
 def short_tag(s, n=18):
     """One compressed label per Fact summary: prefer the conclusion side of
     an arrow, cut to n chars. Zero-dependency rule compression."""
@@ -592,6 +657,10 @@ def main():
     user_msg = None
     if events:
         ev_lines = [e["line"] for e in events]
+        # Which session acts on them: every session sees the list, one executes it.
+        owner = event_owner(proj_dir, sid)
+        if owner:
+            ev_lines.insert(0, owner)
         ev_block = ("⏳ Open for you (set the Event node's `status` to \"done\" "
                     "once handled):\n" + "\n".join(ev_lines))
         parts.append(ev_block)
