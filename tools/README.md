@@ -379,8 +379,10 @@ Closing is enforced, not just advised: `event_done` (MCP) and `event.py done`
 refuse when the project (`CLAUDE_PROJECT_DIR`, else the current directory) has
 a live owner and the caller is a different Claude Code process, and write
 nothing. With no live owner, or from a plain shell (no Claude Code above it),
-closing works as before. When the user explicitly hands an Event to a
-non-owner session, close it with force (the MCP tool takes `force: true`):
+closing works as before. Inside an agent session, closing an event must use the
+MCP tool `event_done` (or `event_done force=true` when taking over). Running
+`event.py done` via Bash inside sessions is blocked by the PreToolUse hook. Outside
+sessions, humans can close an event from a shell:
 
 ```bash
 python3 ~/.drsg-memory/tools/event.py done <event-key> --force

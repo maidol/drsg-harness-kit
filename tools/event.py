@@ -635,7 +635,7 @@ def owner_refusal(project):
     return ("refused: this session is not the Event owner of %s (owner: session %s, "
             "pid %s). Only the owner closes this project's Events. If the user "
             "explicitly asked this session to take the Event over, retry with "
-            "force (event_done force=true, or event.py done --force)."
+            "force (event_done force=true)."
             % (project, str(lease.get("session_id"))[:8], holder))
 
 

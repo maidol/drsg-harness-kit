@@ -94,6 +94,13 @@ CLAUDE_PICK_MODELS="opus fable" claude   # 手动指定选单
 - **SessionEnd**：每条 Bash 命令先打码，再取前 40 个字符存进 `commands_run`；找不到脱敏模块时不存命令。
 - **`event.py post` / `event_post`**：summary 或 ref 里带密钥就拒发；找不到脱敏模块时所有待办都拒发。
 
+在 agent 会话内，一律使用 `drsg-events` MCP 工具（`event_post`、`event_list`、`event_done`）。会话内通过 Bash 运行 `event.py`（`post`、`list`、`done`）会被 `pre_tool_use.py` 钩子主动拦截拒绝，并提示改用 MCP 工具。CLI 仅供人类在终端中独立使用（若用户本人要在交互式 Claude Code 会话中运行 CLI，使用 `!` 前缀，例如 `! python3 ~/.drsg-memory/tools/event.py list`，即可在用户 shell 中执行而不触发钩子）。要在会话外查看待办或帮助：
+
+```bash
+python3 ~/.drsg-memory/tools/event.py --help
+python3 ~/.drsg-memory/tools/event.py list
+```
+
 被拒发时的输出如下，把值改写成变量名或 `<hidden>` 再发：
 
 ```text

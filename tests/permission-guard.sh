@@ -49,7 +49,7 @@ check "ask covers git -C DIR commit"              "$(count "$L" ask 'Bash(git -C
 check "ask covers rtk git push"                   "$(count "$L" ask 'Bash(rtk git push *)')" 1
 check "ask covers gh pr create"                   "$(count "$L" ask 'Bash(gh pr create *)')" 1
 check "allow adds git -C <project> status"        "$(count "$L" allow "Bash(git -C $P status *)")" 1
-check "allow adds event.py done under tools dir"  "$(count "$L" allow "Bash(python3 $DRSG_MEM_DIR/tools/event.py done *)")" 1
+check "allow does not add event.py done"          "$(count "$L" allow "Bash(python3 $DRSG_MEM_DIR/tools/event.py done *)")" 0
 check "foreign allow rule kept"                   "$(count "$L" allow 'Bash(make build *)')" 1
 check "broad rule kept without --prune-broad"     "$(count "$L" allow 'Bash(python3 *)')" 1
 check "broad rule reported"                       "$(echo "$OUT" | grep -c 'broad: *Bash(python3 \*)')" 1
@@ -70,13 +70,31 @@ json.dump(d, open(sys.argv[1], "w"))
 PY
 python3 "$PG" check --project "$P" >/dev/null;  check "check reports a missing rule" "$?" 1
 
+# inject legacy event.py rule to test check drift detection and apply pruning
+python3 - "$L" "$DRSG_MEM_DIR" <<'PY'
+import json, os, sys
+d = json.load(open(sys.argv[1]))
+d["permissions"]["allow"].append("Bash(python3 %s/tools/event.py done *)" % sys.argv[2])
+json.dump(d, open(sys.argv[1], "w"))
+PY
+python3 "$PG" check --project "$P" >/dev/null;  check "check reports stale event.py rule" "$?" 1
+
 python3 "$PG" apply --project "$P" --prune-broad >/dev/null
 check "--prune-broad removes python3 *"           "$(count "$L" allow 'Bash(python3 *)')" 0
 check "--prune-broad keeps rtk git *"             "$(count "$L" allow 'Bash(rtk git *)')" 1
+check "apply removes legacy event.py rule"        "$(count "$L" allow "Bash(python3 $DRSG_MEM_DIR/tools/event.py done *)")" 0
 
+# re-inject legacy rule to test that remove drops it as well
+python3 - "$L" "$DRSG_MEM_DIR" <<'PY'
+import json, os, sys
+d = json.load(open(sys.argv[1]))
+d["permissions"]["allow"].append("Bash(python3 %s/tools/event.py list *)" % sys.argv[2])
+json.dump(d, open(sys.argv[1], "w"))
+PY
 python3 "$PG" remove --project "$P" >/dev/null
 check "remove drops our ask rules"                "$(count "$L" ask 'Bash(git push *)')" 0
 check "remove drops our allow rules"              "$(count "$L" allow "Bash(git -C $P status *)")" 0
+check "remove drops legacy event.py rule"         "$(count "$L" allow "Bash(python3 $DRSG_MEM_DIR/tools/event.py list *)")" 0
 check "remove keeps foreign rules"                "$(count "$L" allow 'Bash(make build *)')" 1
 
 # --- user scope ----------------------------------------------------------
@@ -121,4 +139,4 @@ bash "$HERE/../setup.sh" --no-skills --no-event-poller --no-streak-hint --prune-
 check "setup rejects --prune-broad alone"             "$?" 1
 
 printf '\nPASS %d/%d\n' "$OK" "$RAN"
-[ "$RAN" -eq 43 ] && [ "$OK" -eq "$RAN" ]
+[ "$RAN" -eq 46 ] && [ "$OK" -eq "$RAN" ]

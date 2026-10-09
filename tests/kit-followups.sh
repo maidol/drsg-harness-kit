@@ -86,6 +86,7 @@ OTHER="$T/other"
 mkdir -p "$P/.claude/hooks" "$P/.drsg" "$OTHER"
 cat > "$P/.claude/settings.local.json" <<'JSON'
 {"hooks": {
+  "PreToolUse": [{"matcher": "Bash", "hooks": [{"command": "python3 pre_tool_use.py"}]}],
   "SessionStart": [{"matcher": "*", "hooks": [{"command": "python3 session_start.py"}]}],
   "UserPromptSubmit": [{"matcher": "*", "hooks": [{"command": "python3 user_prompt.py"}]}],
   "SessionEnd": [{"matcher": "*", "hooks": [{"command": "python3 session_end.py"}]}]}}

@@ -233,7 +233,7 @@ advice: this reads like a change to a judgment ('判断') — verb=impact lists 
   现在没有 Event owner。本会话的待办轮询拿到租约后会唤醒你；在那之前本会话只读，不要执行这些 Event。
   ```
 
-关 Event 是硬拦，不只是提示：项目（`CLAUDE_PROJECT_DIR`，没有就是当前目录）有活着的 owner、而调用方是另一个 Claude Code 进程时，`event_done`（MCP）和 `event.py done` 都会拒绝，什么都不写。没有活着的 owner，或者从普通 shell 里运行（上面没有 Claude Code），照旧能关。用户明确把某条 Event 交给非 owner 会话时，带 force 关（MCP 工具传 `force: true`）：
+关 Event 是硬拦，不只是提示：项目（`CLAUDE_PROJECT_DIR`，没有就是当前目录）有活着的 owner、而调用方是另一个 Claude Code 进程时，`event_done`（MCP）和 `event.py done` 都会拒绝，什么都不写。没有活着的 owner，或者从普通 shell 里运行（上面没有 Claude Code），照旧能关。在 agent 会话内，关闭待办必须使用 MCP 工具 `event_done`（接管时带 `force: true`）；在会话内通过 Bash 跑 `event.py done` 会被 PreToolUse 钩子拦截拒绝。人类在终端独立操作时，可以带 force 关：
 
 ```bash
 python3 ~/.drsg-memory/tools/event.py done <event-key> --force

@@ -149,6 +149,13 @@ If a broader exception already exists in your global rules, update it yourself t
 - **SessionEnd** masks each Bash command before keeping its first 40 characters in `commands_run`; if the redactor is missing, no commands are kept.
 - **`event.py post` / `event_post`** refuses a to-do whose summary or ref carries one; if the redactor is missing, every post is refused.
 
+Within agent sessions, always use the `drsg-events` MCP tools (`event_post`, `event_list`, `event_done`). Command-line invocations of `event.py` (`post`, `list`, `done`) via Bash inside sessions are actively denied by the `pre_tool_use.py` hook, reminding the agent to use MCP tools instead. The CLI is reserved exclusively for humans in their terminal (if a user wishes to run the CLI directly inside an interactive Claude Code session, prepend `!`, e.g. `! python3 ~/.drsg-memory/tools/event.py list`, which runs the command in the user shell without triggering the hook). To inspect events from outside an agent session or see CLI usage:
+
+```bash
+python3 ~/.drsg-memory/tools/event.py --help
+python3 ~/.drsg-memory/tools/event.py list
+```
+
 A refused post looks like this; rewrite the value as its variable name or `<hidden>`:
 
 ```text

@@ -69,6 +69,7 @@ chmod 600 "$CLAUDE_DIR/settings.json"
 cat > "$PROJ/.claude/settings.local.json" <<'JSON'
 {
   "hooks": {
+    "PreToolUse": [{"matcher": "Bash", "hooks": [{"command": "python3 pre_tool_use.py"}]}],
     "SessionStart": [{"matcher": "*", "hooks": [{"command": "python3 session_start.py"}]}],
     "UserPromptSubmit": [{"matcher": "*", "hooks": [{"command": "python3 user_prompt.py"}]}],
     "SessionEnd": [{"matcher": "*", "hooks": [{"command": "python3 session_end.py"}]}]
@@ -162,6 +163,52 @@ touch "$SKIP_PROJ/.drsg/audit-skip"
 python3 "$AUDIT" --repo "$REPO" --tools-dir "$DEPLOYED_TOOLS" --claude-dir "$CLAUDE_DIR" --project "$SKIP_PROJ" --json > "$T/out_n3.json" 2>&1 || true
 overall_n3=$(python3 -c 'import json,sys; print(json.load(open(sys.argv[1]))["overall_ok"])' "$T/out_n3.json" 2>/dev/null || echo "False")
 check "n3_audit_skip_does_not_fail" "$overall_n3" "True"
+
+echo "{\"projects\": {\"$PROJ\": {\"mcpServers\": {\"drsg\": {\"type\": \"http\"}, \"drsg-events\": {\"type\": \"stdio\"}}}, \"$T/r2_project\": {\"mcpServers\": {\"drsg\": {\"type\": \"http\"}, \"drsg-events\": {\"type\": \"stdio\"}}}}}" > "$CLAUDE_DIR/.claude.json"
+
+# R2: test audit_deployment.py distinguishes kit legacy rules from user-written event.py rules
+R2_PROJ="$T/r2_project"
+mkdir -p "$R2_PROJ/.claude/hooks" "$R2_PROJ/.drsg"
+cp -r "$REPO/tools/templates/hooks/." "$R2_PROJ/.claude/hooks/"
+cat > "$R2_PROJ/.drsg/env" <<'EOF'
+DRSG_TOKEN=token
+DRSG_API=api
+EOF
+cat > "$R2_PROJ/CLAUDE.md" <<'EOF'
+<!-- drsg-memory:events:begin -->
+events
+<!-- drsg-memory:events:end -->
+EOF
+
+# User written rule that contains 'event.py' but is NOT the kit legacy allow rule
+cat > "$R2_PROJ/.claude/settings.local.json" <<EOF
+{
+  "hooks": {
+    "PreToolUse": [{"matcher": "Bash", "hooks": [{"command": "python3 pre_tool_use.py"}]}],
+    "SessionStart": [{"matcher": "*", "hooks": [{"command": "python3 session_start.py"}]}],
+    "UserPromptSubmit": [{"matcher": "*", "hooks": [{"command": "python3 user_prompt.py"}]}],
+    "SessionEnd": [{"matcher": "*", "hooks": [{"command": "python3 session_end.py"}]}]
+  },
+  "permissions": {
+    "allow": ["Bash(git checkout --ours scripts/memory-layer/event.py)"]
+  }
+}
+EOF
+python3 "$AUDIT" --repo "$REPO" --tools-dir "$DEPLOYED_TOOLS" --claude-dir "$CLAUDE_DIR" --project "$R2_PROJ" --json > "$T/out_r2_custom.json" 2>&1 || true
+l4_r2_custom=$(find_layer_ok "$T/out_r2_custom.json" "L4")
+check "r2_user_custom_event_rule_not_drift" "$l4_r2_custom" "ok"
+
+# Now add exact legacy rule
+python3 - "$R2_PROJ/.claude/settings.local.json" "$DEPLOYED_TOOLS" <<'PY'
+import json, sys
+path, tools = sys.argv[1], sys.argv[2]
+d = json.load(open(path))
+d["permissions"]["allow"].append("Bash(python3 %s/event.py list *)" % tools)
+json.dump(d, open(path, "w"))
+PY
+python3 "$AUDIT" --repo "$REPO" --tools-dir "$DEPLOYED_TOOLS" --claude-dir "$CLAUDE_DIR" --project "$R2_PROJ" --json > "$T/out_r2_legacy.json" 2>&1 || true
+l4_r2_legacy=$(find_layer_ok "$T/out_r2_legacy.json" "L4")
+check "r2_legacy_rule_is_drift" "$l4_r2_legacy" "failed"
 
 printf '\nPASS %d/%d\n' "$OK" "$RAN"
 [ "$OK" -eq "$RAN" ]

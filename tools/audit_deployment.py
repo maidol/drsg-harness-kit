@@ -402,9 +402,17 @@ def check_layer4(project_dir, claude_json=None, tools_dir=None):
                 for g in glist
                 for h in g.get("hooks", [])
             ]
-            for script_name in ["session_start.py", "user_prompt.py", "session_end.py"]:
+            for script_name in ["pre_tool_use.py", "session_start.py", "user_prompt.py", "session_end.py"]:
                 if not any(script_name in cmd for cmd in commands):
                     issues.append(f"Hook not registered in settings.local.json: {script_name}")
+            # check legacy event.py allow rules
+            perms = d.get("permissions", {})
+            allows = perms.get("allow", []) if isinstance(perms, dict) else []
+            event = os.path.join(tools_dir or os.path.expanduser("~/.drsg-memory/tools"), "event.py")
+            legacy = {"Bash(python3 %s list *)" % event, "Bash(python3 %s done *)" % event}
+            for r in allows:
+                if r in legacy:
+                    issues.append(f"Stale event.py allow rule in settings.local.json: {r}")
         except Exception as e:
             issues.append(f"Error reading settings.local.json: {e}")
 

@@ -481,8 +481,11 @@ unreachable by every read path); and closing needs `key(e)`, because
 Times are integer Unix seconds — an ISO string does not error either, it just
 compares false against every existing value.
 
-Same three operations from a shell, if you need them outside a session:
-`python3 {tools_dir}/event.py post|list|done …`
+**Important:** Within agent sessions, always use the `drsg-events` MCP tools above.
+Do NOT run `event.py` via Bash — command-line calls inside sessions are blocked.
+`event_list` accepts a `project` parameter to view events of any project.
+The CLI (`python3 {tools_dir}/event.py post|list|done …`) is reserved exclusively
+for humans running from their own terminal outside an agent session.
 {END}"""
 
 path = os.path.join(proj_dir, "CLAUDE.md")

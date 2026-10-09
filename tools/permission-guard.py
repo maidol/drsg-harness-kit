@@ -55,8 +55,12 @@ def allow_rules(project, tools_dir):
     for sub in GIT_READ:
         out += ["Bash(git %s)" % sub, "Bash(git %s *)" % sub,
                 "Bash(git -C %s %s)" % (project, sub), "Bash(git -C %s %s *)" % (project, sub)]
+    return out
+
+
+def legacy_allow_rules(tools_dir):
     event = os.path.join(tools_dir, "event.py")
-    return out + ["Bash(python3 %s list *)" % event, "Bash(python3 %s done *)" % event]
+    return ["Bash(python3 %s list *)" % event, "Bash(python3 %s done *)" % event]
 
 
 def user_entries(reviews):
@@ -130,12 +134,17 @@ def project_apply(project, tools_dir, prune):
     added_allow = [r for r in allow_rules(project, tools_dir) if r not in allow]
     ask.extend(added_ask)
     allow.extend(added_allow)
+    legacy = legacy_allow_rules(tools_dir)
+    removed_legacy = [r for r in allow if r in legacy]
+    if removed_legacy:
+        allow[:] = [r for r in allow if r not in legacy]
     broad = [r for r in allow if BROAD.match(r)]
     if prune:
         allow[:] = [r for r in allow if not BROAD.match(r)]
-    if added_ask or added_allow or (prune and broad):
+    if added_ask or added_allow or removed_legacy or (prune and broad):
         save(path, data, 0o644)
-        print("permission guard: %d ask, %d allow added to %s" % (len(added_ask), len(added_allow), path))
+        print("permission guard: %d ask, %d allow added (%d legacy removed) to %s"
+              % (len(added_ask), len(added_allow), len(removed_legacy), path))
     else:
         print("permission guard: already current in %s" % path)
     for rule in broad:
@@ -150,15 +159,19 @@ def project_check(project, tools_dir):
     _, _, ask, allow = project_lists(project)
     missing = [r for r in ask_rules() if r not in ask] + \
               [r for r in allow_rules(project, tools_dir) if r not in allow]
+    stale = [r for r in allow if r in legacy_allow_rules(tools_dir)]
     for rule in missing:
         print("missing: %s" % rule)
-    print("permission guard: %s" % ("drift, %d rules missing" % len(missing) if missing else "ok"))
-    return 1 if missing else 0
+    for rule in stale:
+        print("stale event.py allow rule: %s (sessions must use MCP)" % rule)
+    drift = len(missing) + len(stale)
+    print("permission guard: %s" % ("drift, %d rules missing/stale" % drift if drift else "ok"))
+    return 1 if drift else 0
 
 
 def project_remove(project, tools_dir):
     path, data, ask, allow = project_lists(project)
-    ours = set(ask_rules()) | set(allow_rules(project, tools_dir))
+    ours = set(ask_rules()) | set(allow_rules(project, tools_dir)) | set(legacy_allow_rules(tools_dir))
     before = len(ask) + len(allow)
     ask[:] = [r for r in ask if r not in ours]
     allow[:] = [r for r in allow if r not in ours]
