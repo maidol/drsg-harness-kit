@@ -131,6 +131,8 @@ The distributed [agent workflow](claude/AGENT-EFFICIENCY.md#跨项目审核与�
 跨项目审核方：/absolute/path/to/reviewer-project
 ```
 
+Use three tiers: A (core architecture, trust boundaries, or cross-service contracts) is planned by the reviewer project; B (local features, docs, scripts) is planned by the executor and reviewed by the reviewer project; C (under 100 lines, one package/module, no A boundary) is handled locally by the project’s main model without a cross-project Event. When uncertain, move up a tier; if B reaches an A boundary, pause for reviewer planning; after a second failed acceptance, return planning to the reviewer project.
+
 Delegated commit authority is also opt-in and belongs only in your own global `CLAUDE.md`. If you choose to enable it, use a rule as strict as this one; installation and updates never add it:
 
 ```text
