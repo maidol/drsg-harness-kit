@@ -195,6 +195,8 @@ utilization 是一个 proxy，脚本也会明确说明这一点：它会把仅�
 
 ## 发待办（`event.py post` / `event_post`）
 
+执行方的阶段评审/验收流程及一次性提交授权边界见[全局分发规范](../claude/AGENT-EFFICIENCY.md#跨项目审核与验收按阶段交接不跳闸)；本 README 只说明 Event 操作机制。
+
 `event.py post` 和 MCP 工具 `event_post` 共用同一份实现。待办带上代码图符号和动词，收方会在它下面看到一行 `↳ graph first:`。如果是 handoff，summary 读起来像在改一个判断（守卫、过滤、跳过、暂停这类），而动词不是 `impact`，回复末尾会多一行建议。Event 照常发出。
 
 ```bash

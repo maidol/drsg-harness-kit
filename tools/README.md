@@ -290,6 +290,8 @@ majority even with no effect at all. Read `p`, not the raw count.
 
 ## Posting a to-do (`event.py post` / `event_post`)
 
+For the execution-side review/acceptance stages and the one-time commit authorization boundary, see the [globally distributed workflow](../claude/AGENT-EFFICIENCY.md#跨项目审核与验收按阶段交接不跳闸); this README covers Event mechanics only.
+
 `event.py post` and the `event_post` MCP tool share one implementation. Give a
 to-do code-graph symbols and a verb, and the recipient gets an imperative
 `↳ graph first:` line under it. When a handoff's summary reads like a change to

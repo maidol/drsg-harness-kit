@@ -123,6 +123,22 @@ process, so the poller still finds the Claude Code process it ties its lease
 to. bash only. `CLAUDE_PICK_FORCE_TTY=1` is for tests: it treats stdin and
 stdout as a terminal.
 
+## Cross-project review and acceptance (optional)
+
+The distributed [agent workflow](claude/AGENT-EFFICIENCY.md#跨项目审核与验收按阶段交接不跳闸) supports plan review and implementation acceptance through Events. It is inactive unless you identify a reviewer project in your own global `~/.claude/CLAUDE.md` (or explicitly name one for a task); the kit does not assume a reviewer or write this setting for you:
+
+```text
+跨项目审核方：/absolute/path/to/reviewer-project
+```
+
+Delegated commit authority is also opt-in and belongs only in your own global `CLAUDE.md`. If you choose to enable it, use a rule as strict as this one; installation and updates never add it:
+
+```text
+A single local git commit is authorized only after the configured reviewer sends a kind="handoff" Event whose summary begins "验收通过并授权提交：tree <12 hex chars>" and whose referenced record gives the full 40-character tree, full parent commit SHA, exact file list, and verbatim commit message. Before committing, verify the parent SHA, stage only the authorized file list, verify `git write-tree` equals the authorized tree, commit with exactly that message without a signature trailer, and verify `HEAD^{tree}` equals the authorized tree. If any check differs, stop and ask the user. This does not authorize push, PR, release, another commit, or out-of-scope changes. A kind="notice" Event beginning "验收通过：" is acceptance only and never authorizes a commit.
+```
+
+If a broader exception already exists in your global rules, update it yourself to include equivalent checks; the kit does not edit `~/.claude/CLAUDE.md`.
+
 ## Refresh the runtime copies
 
 Edit here, then rebuild the bundle and re-run its `setup.sh`. That is the same

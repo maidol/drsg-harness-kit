@@ -68,6 +68,22 @@ CLAUDE_PICK_MODELS="opus fable" claude   # 手动指定选单
 
 以下情况不弹菜单：stdin 或 stdout 不是终端；参数里已经有 `--model`、`-p`/`--print`、`--help` 或 `--version`；子命令（`claude mcp …`、`claude attach …`）。它是一个 shell 函数，不是包装进程，所以待办轮询仍能找到它要绑定租约的那个 Claude Code 进程。只支持 bash。`CLAUDE_PICK_FORCE_TTY=1` 只给测试用：把 stdin 和 stdout 当成终端。
 
+## 跨项目审核与验收（可选）
+
+分发的[执行方工作流](claude/AGENT-EFFICIENCY.md#跨项目审核与验收按阶段交接不跳闸)通过 Event 支持计划评审与实现验收。只有你在自己的全局 `~/.claude/CLAUDE.md` 指定了审核方项目（或当前任务明确指定审核方）才启用；kit 不会假定审核方，也不会替你写入此设置：
+
+```text
+跨项目审核方：/审核方项目的绝对路径
+```
+
+委托提交授权同样是可选项，唯一权威位置是你自己的全局 `CLAUDE.md`。如要启用，应加入不弱于以下内容的规则；安装或更新 kit 都不会自动加入：
+
+```text
+仅当配置的审核方通过 kind="handoff" Event 发出 summary 以“验收通过并授权提交：tree <12位十六进制>”开头的判定，且其 ref 记录完整 40 位 tree、完整父提交 SHA、精确文件清单和逐字 commit message 时，才授权一次本地 git commit。提交前核对父提交 SHA，只暂存授权清单，确认 git write-tree 等于授权 tree；提交时使用逐字 message 且不加署名行，提交后确认 HEAD^{tree} 等于授权 tree。任一项不符就停止并询问用户。此授权不包括 push、PR、发布、额外提交或范围外改动。kind="notice" 且 summary 以“验收通过：”开头只表示验收通过，永不授权提交。
+```
+
+如果全局规则里已有更宽泛的例外，请由你自行改成包含等价核对步骤的版本；kit 不会修改 `~/.claude/CLAUDE.md`。
+
 ## 刷新运行时副本
 
 在本仓库中修改后，重新构建 bundle，再次运行其中的 `setup.sh`。这是为新机器安装时使用的同一条路径，这是有意的设计——避免维护两套流程。`setup.sh` 幂等，会重新运行安装器自检，但不会触碰数据库。改的是 `tools/templates/hooks/` 底下的东西时要加 `--project DIR`：不带参数的一次运行只刷新 `~/.drsg-memory/tools/`，各项目的 `.claude/hooks/` 仍停在旧副本上，也就是之后 `install.sh --check` 会报出来的 drift。router 和 usage report 虽然会随 bundle 提供，但项目配置默认是可选的：使用 `--router DIR`、`--usage-report DIR`，或者使用显式的 `--hub DIR` 同时启用两者；只使用 `--project` 和 `--repo` 不会安装其中任何一个。
