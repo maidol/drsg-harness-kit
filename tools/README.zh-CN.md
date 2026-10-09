@@ -8,7 +8,7 @@
 
 整个系统由四个 Python hook、一个安装器和一个 daemon 控制脚本组成。不需要插件、不需要注册服务，也不会有数据离开本机。
 
-可选工具 `tools/claude-model-picker.sh` 是一个 Bash 函数，会在交互式 `claude` 启动前询问模型。用 `setup.sh --model-picker` 启用；详细说明见仓库根目录 README 的「启动前选模型」一节。
+可选工具 `tools/claude-model-picker.sh` 是一个 Bash 函数，会在交互式 `claude` 启动前询问模型。未设置 `CLAUDE_PICK_MODELS` 时，它通过 `tools/claude-model-discovery.py` 查询配置的网关；查询失败则退回静态选单。用 `setup.sh --model-picker` 启用；详细说明见仓库根目录 README 的「启动前选模型」一节。
 
 ## 代码图路由器与 usage report
 

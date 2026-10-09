@@ -41,8 +41,18 @@ claude() {
     esac
   done
 
-  local -a models
-  read -r -a models <<< "${CLAUDE_PICK_MODELS:-opus sonnet haiku fable}"
+  local picker_dir
+  picker_dir="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd)"
+  local -a models=()
+  if [ -n "${CLAUDE_PICK_MODELS:-}" ]; then
+    read -r -a models <<< "$CLAUDE_PICK_MODELS"
+  fi
+  if [ "${#models[@]}" -eq 0 ]; then
+    mapfile -t models < <(python3 "$picker_dir/claude-model-discovery.py" 2>/dev/null)
+  fi
+  if [ "${#models[@]}" -eq 0 ]; then
+    read -r -a models <<< "opus sonnet haiku fable"
+  fi
   local i choice
   echo "Model for this session (Enter = default from settings, Ctrl+C = cancel):" >&2
   for i in "${!models[@]}"; do

@@ -80,14 +80,29 @@ running daemon. Details: [tools/README.md](tools/README.md#permission-guard-perm
 `~/.drsg-memory/tools/claude-model-picker.sh`. In a new shell, an interactive
 `claude` then asks which model to use before the session starts, and runs the
 real binary with `--model <choice>` in front of your own arguments (`--resume`,
-`-c`, a prompt, …). Answer with a number, or type any model name or full id;
+`-c`, a prompt, …). Unless `CLAUDE_PICK_MODELS` supplies a non-empty list, the
+picker helper `tools/claude-model-discovery.py` fetches model IDs from the
+configured gateway on each eligible invocation (2-second hard deadline, no
+cache). If discovery is unavailable or fails, it uses the static menu `opus
+sonnet haiku fable`. Answer with a number, or type any model name or full id;
 Enter alone keeps the `model` from settings.json; Ctrl+C starts nothing.
+
+Discovery resolves `ANTHROPIC_BASE_URL`, `ANTHROPIC_API_KEY`, and
+`ANTHROPIC_AUTH_TOKEN` from the process environment, then merges `env` values
+from `~/.claude/settings.json`, the current directory's `.claude/settings.json`,
+and the current directory's `.claude/settings.local.json` in that order (later
+values win). Start `claude` from the project directory for project settings to
+be found; the picker does not search parent directories. `apiKeyHelper` and
+Claude Code OAuth credentials are not supported for discovery; the static menu
+is used instead. `ANTHROPIC_API_KEY` is sent as `x-api-key`; otherwise a
+non-empty `ANTHROPIC_AUTH_TOKEN` is sent as a Bearer token.
 
 ```bash
 /tmp/drsg-harness-kit-*/setup.sh --model-picker
-claude --resume            # menu first, then the session picker
+cd /path/to/project      # start in the directory containing .claude/settings.local.json
+claude --resume           # discover gateway models, then show the session picker
 CLAUDE_PICK_MODEL=0 claude # skip the menu once
-CLAUDE_PICK_MODELS="opus fable" claude   # a different list
+CLAUDE_PICK_MODELS="opus fable" claude   # use a manual list instead
 ```
 
 No menu when stdin or stdout is not a terminal, when the arguments already
