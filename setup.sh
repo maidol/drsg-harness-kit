@@ -99,18 +99,10 @@ fi
 chmod +x "$TOOLS"/*.sh "$TOOLS"/*.py "$TOOLS/drsg-usage-report" 2>/dev/null || true
 echo "   $(find "$TOOLS" -maxdepth 1 -type f | wc -l | tr -d ' ') files in place"
 
-# The model picker: opt-in, and only a line in ~/.bashrc that sources the
-# runtime copy, so a later refresh of the tools reaches it without touching
-# ~/.bashrc again. Idempotent: the exact line is never added twice.
+# The model picker is opt-in. The standalone command owns the exact-line
+# ~/.bashrc edit so users can also enable or disable it without rerunning setup.
 if [ "$MODEL_PICKER" -eq 1 ]; then
-  PICKER_LINE="[ -f \"$TOOLS/claude-model-picker.sh\" ] && . \"$TOOLS/claude-model-picker.sh\""
-  touch "$HOME/.bashrc"
-  if grep -qxF "$PICKER_LINE" "$HOME/.bashrc"; then
-    echo "   model picker: already sourced from $HOME/.bashrc"
-  else
-    printf '\n%s\n' "$PICKER_LINE" >> "$HOME/.bashrc"
-    echo "   model picker: source line added to $HOME/.bashrc (takes effect in a new shell)"
-  fi
+  "$TOOLS/claude-model-picker-config.sh" enable
 fi
 
 # The to-do poller: global hooks, so every session in every project checks its

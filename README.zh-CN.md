@@ -50,17 +50,21 @@ tar xzf dist/drsg-harness-kit-*.tar.gz -C /tmp
 
 ## 启动前选模型（可选）
 
-`--model-picker` 往 `~/.bashrc` 加一行，source `~/.drsg-memory/tools/claude-model-picker.sh`。开新 shell 之后，交互式的 `claude` 会在会话开始前先问用哪个模型，再把 `--model <所选>` 放在你自己的参数（`--resume`、`-c`、提示词……）前面，启动真正的 `claude`。除非设置了非空的 `CLAUDE_PICK_MODELS`，选单辅助程序 `tools/claude-model-discovery.py` 会在每次符合条件的启动时实时查询网关模型（硬性 2 秒超时，不缓存）；查询失败或没有可用模型时，退回静态选项 `opus sonnet haiku fable`。输入菜单里的数字，或者直接输入任意模型名或完整 ID；直接回车用 settings.json 里的 `model`；Ctrl+C 什么都不启动。
+picker 程序文件会随 runtime tools 一起部署，但全新安装默认不启用。安装或更新时明确传 `--model-picker`，才会在 `~/.bashrc` 添加一行，source `~/.drsg-memory/tools/claude-model-picker.sh`。开新 shell 之后，交互式的 `claude` 会在会话开始前先问用哪个模型，再把 `--model <所选>` 放在你自己的参数（`--resume`、`-c`、提示词……）前面，启动真正的 `claude`。除非设置了非空的 `CLAUDE_PICK_MODELS`，选单辅助程序 `tools/claude-model-discovery.py` 会在启用 gateway discovery 且缓存 `baseUrl` 匹配时读取 Claude Code 的模型缓存；它只读，不写入或刷新缓存。缓存不可用时，辅助程序用 2 秒墙钟超时实时查询网关；仅当 `max_input_tokens` 至少为 1,000,000 时才为模型 ID 加 `[1m]`，不按模型名称或默认设置猜上下文长度。缓存里的安全显示名称用于选单标签，模型 ID（含 `[1m]`）用于启动参数。查询失败或没有可用模型时，退回静态选项 `opus sonnet haiku fable`。输入菜单里的数字，或者直接输入任意模型名或完整 ID；直接回车用 settings.json 里的 `model`；Ctrl+C 什么都不启动。
 
 辅助程序按顺序读取进程环境、`~/.claude/settings.json`、当前工作目录下的 `.claude/settings.json`、当前工作目录下的 `.claude/settings.local.json` 中的 `env` 值，后者覆盖前者。项目设置只从当前工作目录读取，不向父目录查找；要使用项目设置，请从项目目录启动 `claude`。选单不支持 `apiKeyHelper` 或 Claude Code OAuth 认证，遇到时使用静态选项。`ANTHROPIC_API_KEY` 会作为 `x-api-key` 发送；若没有非空 API key，则使用 `ANTHROPIC_AUTH_TOKEN` Bearer token。
 
 ```bash
-/tmp/drsg-harness-kit-*/setup.sh --model-picker
+/tmp/drsg-harness-kit-*/setup.sh --model-picker  # 安装/更新时显式启用
+~/.drsg-memory/tools/claude-model-picker-config.sh enable  # 单独开启
+~/.drsg-memory/tools/claude-model-picker-config.sh disable # 单独关闭
 cd /path/to/project      # 从含有 .claude/settings.local.json 的项目目录启动
 claude --resume           # 先发现网关模型，再进会话选择列表
 CLAUDE_PICK_MODEL=0 claude # 这一次不弹菜单
 CLAUDE_PICK_MODELS="opus fable" claude   # 手动指定选单
 ```
+
+不带 `--model-picker` 的普通安装/更新不会改变已有开关状态。开启或关闭会修改 `~/.bashrc`，需在新 shell 中生效。
 
 以下情况不弹菜单：stdin 或 stdout 不是终端；参数里已经有 `--model`、`-p`/`--print`、`--help` 或 `--version`；子命令（`claude mcp …`、`claude attach …`）。它是一个 shell 函数，不是包装进程，所以待办轮询仍能找到它要绑定租约的那个 Claude Code 进程。只支持 bash。`CLAUDE_PICK_FORCE_TTY=1` 只给测试用：把 stdin 和 stdout 当成终端。
 

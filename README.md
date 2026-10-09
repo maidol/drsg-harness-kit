@@ -76,16 +76,22 @@ running daemon. Details: [tools/README.md](tools/README.md#permission-guard-perm
 
 ## Model picker at startup (opt-in)
 
-`--model-picker` adds one line to `~/.bashrc` that sources
-`~/.drsg-memory/tools/claude-model-picker.sh`. In a new shell, an interactive
+The picker runtime is deployed with the tools, but a fresh install leaves it
+disabled. Pass `--model-picker` to `setup.sh` to enable it by adding one line to
+`~/.bashrc`, which sources `~/.drsg-memory/tools/claude-model-picker.sh`. In a
+new shell, an interactive
 `claude` then asks which model to use before the session starts, and runs the
 real binary with `--model <choice>` in front of your own arguments (`--resume`,
 `-c`, a prompt, …). Unless `CLAUDE_PICK_MODELS` supplies a non-empty list, the
-picker helper `tools/claude-model-discovery.py` fetches model IDs from the
-configured gateway on each eligible invocation (2-second hard deadline, no
-cache). If discovery is unavailable or fails, it uses the static menu `opus
-sonnet haiku fable`. Answer with a number, or type any model name or full id;
-Enter alone keeps the `model` from settings.json; Ctrl+C starts nothing.
+picker helper `tools/claude-model-discovery.py` reads Claude Code's gateway
+model cache when gateway discovery is enabled and its `baseUrl` matches the
+configured gateway. It never writes or refreshes that cache. On a cache miss it
+fetches live models with a 2-second hard deadline. A cached model's safe display
+name is shown, and its `[1m]` ID is passed unchanged; live models receive `[1m]`
+only when `max_input_tokens` is at least 1,000,000. The picker does not guess
+context sizes from names or defaults. If discovery fails, it uses the static
+menu `opus sonnet haiku fable`. Answer with a number, or type any model name or
+full id; Enter alone keeps the `model` from settings.json; Ctrl+C starts nothing.
 
 Discovery resolves `ANTHROPIC_BASE_URL`, `ANTHROPIC_API_KEY`, and
 `ANTHROPIC_AUTH_TOKEN` from the process environment, then merges `env` values
@@ -98,12 +104,17 @@ is used instead. `ANTHROPIC_API_KEY` is sent as `x-api-key`; otherwise a
 non-empty `ANTHROPIC_AUTH_TOKEN` is sent as a Bearer token.
 
 ```bash
-/tmp/drsg-harness-kit-*/setup.sh --model-picker
+/tmp/drsg-harness-kit-*/setup.sh --model-picker  # explicitly enable during install/update
+~/.drsg-memory/tools/claude-model-picker-config.sh enable  # enable independently
+~/.drsg-memory/tools/claude-model-picker-config.sh disable # disable independently
 cd /path/to/project      # start in the directory containing .claude/settings.local.json
 claude --resume           # discover gateway models, then show the session picker
 CLAUDE_PICK_MODEL=0 claude # skip the menu once
 CLAUDE_PICK_MODELS="opus fable" claude   # use a manual list instead
 ```
+
+Running `setup.sh` without `--model-picker` does not change an existing choice.
+Enabling or disabling changes `~/.bashrc`; open a new shell for it to take effect.
 
 No menu when stdin or stdout is not a terminal, when the arguments already
 contain `--model`, `-p`/`--print`, `--help` or `--version`, or for a subcommand

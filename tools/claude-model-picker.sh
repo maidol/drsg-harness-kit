@@ -43,20 +43,34 @@ claude() {
 
   local picker_dir
   picker_dir="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd)"
-  local -a models=()
+  local -a models=() labels=() rows=()
   if [ -n "${CLAUDE_PICK_MODELS:-}" ]; then
     read -r -a models <<< "$CLAUDE_PICK_MODELS"
+    labels=("${models[@]}")
   fi
   if [ "${#models[@]}" -eq 0 ]; then
-    mapfile -t models < <(python3 "$picker_dir/claude-model-discovery.py" 2>/dev/null)
+    mapfile -t rows < <(python3 "$picker_dir/claude-model-discovery.py" 2>/dev/null)
+    local row model label
+    for row in "${rows[@]}"; do
+      if [[ "$row" == *$'\t'* ]]; then
+        model="${row%%$'\t'*}"
+        label="${row#*$'\t'}"
+      else
+        model="$row"
+        label="$row"
+      fi
+      models+=("$model")
+      labels+=("$label")
+    done
   fi
   if [ "${#models[@]}" -eq 0 ]; then
     read -r -a models <<< "opus sonnet haiku fable"
+    labels=("${models[@]}")
   fi
   local i choice
   echo "Model for this session (Enter = default from settings, Ctrl+C = cancel):" >&2
   for i in "${!models[@]}"; do
-    printf '  %d) %s\n' "$((i + 1))" "${models[i]}" >&2
+    printf '  %d) %s\n' "$((i + 1))" "${labels[i]}" >&2
   done
   if ! read -r -p "> " choice; then
     echo >&2

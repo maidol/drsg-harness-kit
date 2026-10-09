@@ -17,11 +17,16 @@ briefing instead of a blank slate.
 The whole thing is four Python hooks, an installer, and a daemon control
 script. No plugin, no service to sign up for, no data leaving the machine.
 
-The opt-in `tools/claude-model-picker.sh` Bash function asks which model to use
-before an interactive `claude` starts. Unless `CLAUDE_PICK_MODELS` is set, it
-uses `tools/claude-model-discovery.py` to query the configured gateway and falls
-back to a static list on failure. Enable it with `setup.sh --model-picker`; full
-instructions are in the root README's “Model picker at startup” section.
+The `tools/claude-model-picker.sh` Bash function asks which model to use before
+an interactive `claude` starts. Unless `CLAUDE_PICK_MODELS` is set, it uses
+`tools/claude-model-discovery.py` to query the configured gateway and falls back
+to a static list on failure. Its runtime files are deployed with the tools, but
+fresh installs leave it disabled. Enable during setup with
+`setup.sh --model-picker`, or later run
+`~/.drsg-memory/tools/claude-model-picker-config.sh enable`; disable with the
+same command and `disable`. Ordinary setup/update runs preserve the current
+choice. Full instructions are in the root README's “Model picker at startup”
+section.
 
 ## Code graph router and usage reporting
 

@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Print validated model IDs from the configured Claude gateway, if available."""
+"""Print validated model IDs and labels from the configured Claude gateway."""
 import ipaddress
 import json
 import os
@@ -11,7 +11,8 @@ import urllib.parse
 import urllib.request
 
 _DEADLINE_SECONDS = 2.0
-_MODEL_ID = re.compile(r"^[A-Za-z0-9._:/@\[\]-]{1,128}$")
+_MODEL_ID = re.compile(r"^[A-Za-z0-9._:/@\[\]-]{1,256}$")
+_MODEL_LABEL = re.compile(r"^[ -~]{1,80}$")
 
 
 def _merged_env():
@@ -60,11 +61,48 @@ def _opener_for(hostname):
     return urllib.request.build_opener()
 
 
-def _read_models():
-    env = _merged_env()
-    base_url = env.get("ANTHROPIC_BASE_URL", "")
-    if not base_url:
+def _cache_models(env, base_url):
+    if env.get("CLAUDE_CODE_ENABLE_GATEWAY_MODEL_DISCOVERY") != "1":
         return None
+    try:
+        with open(
+            os.path.expanduser("~/.claude/cache/gateway-models.json"),
+            encoding="utf-8",
+        ) as cache_file:
+            cache = json.load(cache_file)
+    except (OSError, ValueError, UnicodeError):
+        return None
+    if not isinstance(cache, dict):
+        return None
+    cached_url = cache.get("baseUrl")
+    rows = cache.get("models")
+    if (
+        not isinstance(cached_url, str)
+        or cached_url.rstrip("/") != base_url.rstrip("/")
+        or not isinstance(rows, list)
+        or not rows
+    ):
+        return None
+    result = []
+    seen = set()
+    for row in rows:
+        model_id = row.get("id") if isinstance(row, dict) else None
+        if not isinstance(model_id, str) or not _MODEL_ID.fullmatch(model_id):
+            continue
+        if model_id in seen:
+            continue
+        seen.add(model_id)
+        display_name = row.get("display_name")
+        label = (
+            display_name
+            if isinstance(display_name, str) and _MODEL_LABEL.fullmatch(display_name)
+            else model_id
+        )
+        result.append((model_id, label))
+    return result or None
+
+
+def _read_models(env, base_url):
     endpoint = _models_url(base_url)
     if endpoint is None:
         return None
@@ -87,15 +125,21 @@ def _read_models():
         return None
     result = []
     seen = set()
-    for item in data:
-        model_id = item.get("id") if isinstance(item, dict) else None
+    for row in data:
+        model_id = row.get("id") if isinstance(row, dict) else None
+        if not isinstance(model_id, str) or not _MODEL_ID.fullmatch(model_id):
+            continue
+        max_input_tokens = row.get("max_input_tokens")
         if (
-            isinstance(model_id, str)
-            and _MODEL_ID.fullmatch(model_id)
-            and model_id not in seen
+            type(max_input_tokens) is int
+            and max_input_tokens >= 1_000_000
+            and not model_id.endswith("[1m]")
         ):
-            seen.add(model_id)
-            result.append(model_id)
+            model_id += "[1m]"
+        if not _MODEL_ID.fullmatch(model_id) or model_id in seen:
+            continue
+        seen.add(model_id)
+        result.append((model_id, model_id))
     return result or None
 
 
@@ -105,13 +149,17 @@ def main():
     signal.setitimer(signal.ITIMER_REAL, _DEADLINE_SECONDS)
     _started_at = time.monotonic()
     try:
-        models = _read_models()
+        env = _merged_env()
+        base_url = env.get("ANTHROPIC_BASE_URL", "")
+        models = _cache_models(env, base_url) if base_url else None
+        if not models and base_url:
+            models = _read_models(env, base_url)
     except Exception:
         models = None
     if not models:
         signal.setitimer(signal.ITIMER_REAL, 0)
         return 1
-    output = "".join(model_id + "\n" for model_id in models)
+    output = "".join(f"{model_id}\t{label}\n" for model_id, label in models)
     signal.setitimer(signal.ITIMER_REAL, 0)
     sys.stdout.write(output)
     return 0
