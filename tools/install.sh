@@ -413,6 +413,8 @@ if [ "$(cd "$SCRIPT_DIR" && pwd -P)" != "$(mkdir -p "$TOOLS_DIR" && cd "$TOOLS_D
   echo "== parking the Event tooling in $TOOLS_DIR"
   mkdir -p "$TOOLS_DIR"
   cp -a "$SCRIPT_DIR/mcp_events.py" "$SCRIPT_DIR/event.py" "$TOOLS_DIR/"
+  # event.py refuses every post without its redactor; it travels with it.
+  cp -a "$SCRIPT_DIR/templates/hooks/secret_redact.py" "$TOOLS_DIR/"
   chmod +x "$TOOLS_DIR/mcp_events.py" "$TOOLS_DIR/event.py"
 fi
 

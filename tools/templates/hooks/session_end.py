@@ -35,6 +35,13 @@ import sys
 import time
 from collections import Counter, defaultdict
 
+# commands_run is stored on the Session node. Without the redactor no command
+# text is stored at all, rather than a prefix that may carry a key.
+try:
+    from secret_redact import redact
+except Exception:
+    redact = None
+
 # --- Configuration (overridable via .drsg/env) -----------------------------
 API = "http://127.0.0.1:7700/rpc"
 PLANE = "memory"
@@ -231,8 +238,10 @@ def mine(transcript_path):
                         fp = t.get("input", {}).get("file_path") or t.get("input", {}).get("path")
                         if fp:
                             files[os.path.basename(fp)] += 1
-                    elif name == "Bash":
-                        cmd = (t.get("input", {}).get("command") or "")[:40]
+                    elif name == "Bash" and redact is not None:
+                        # Mask the whole command first: cut to 40 characters
+                        # before masking, a key is too short to be recognised.
+                        cmd = redact(t.get("input", {}).get("command") or "")[0][:40]
                         if cmd:
                             commands[re.sub(r"\\s+", " ", cmd)] += 1
                 elif t.get("type") == "tool_result":

@@ -141,6 +141,29 @@ A single local git commit is authorized only after the configured reviewer sends
 
 If a broader exception already exists in your global rules, update it yourself to include equivalent checks; the kit does not edit `~/.claude/CLAUDE.md`.
 
+## Secrets
+
+`tools/templates/hooks/secret_redact.py` masks secret-shaped values (API keys such as `sk-…`, GitHub and Slack tokens, AWS access keys, JWTs, private-key blocks, `Bearer …`, URL passwords, and `password=` / `token=` / `api_key=` style assignments) at the three places text leaves a session:
+
+- **L3 digest** masks the transcript tail before `digest.run` sends it to the LLM provider; if the redactor is missing, nothing is sent.
+- **SessionEnd** masks each Bash command before keeping its first 40 characters in `commands_run`; if the redactor is missing, no commands are kept.
+- **`event.py post` / `event_post`** refuses a to-do whose summary or ref carries one; if the redactor is missing, every post is refused.
+
+A refused post looks like this; rewrite the value as its variable name or `<hidden>`:
+
+```text
+drsg: refused: summary/ref looks like it carries a secret (github-token). Write the variable name or <hidden> instead of the value.
+```
+
+The path & token gate checks the same shapes, so a fake key committed to the kit fails `tests/test-all.sh`:
+
+```bash
+python3 tools/check-no-machine-paths.py tools tests skills claude
+bash tests/secret-redaction.sh
+```
+
+Masking goes by shape: a secret that looks like none of these passes. Facts are not checked at all — the write-memory protocol and `claude/AGENT-EFFICIENCY.md` tell the model not to write values. Two boundaries to know: every project shares one daemon token, so any project's session can read every project's Facts, Events and Sessions; and turning on L3 (`DRSG_L3_CHAT`) sends the masked conversation tail to that provider. Projects installed before this change pick up `secret_redact.py` on the next `./setup.sh --project DIR`; until then `tools/install.sh --audit` reports their hooks as drifted.
+
 ## Refresh the runtime copies
 
 Edit here, then rebuild the bundle and re-run its `setup.sh`. That is the same

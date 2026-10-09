@@ -20,6 +20,13 @@ import socket
 import sys
 import time
 
+# The transcript tail goes to a third-party LLM provider. Without the redactor
+# nothing is sent at all (extract_tail returns ""), never the raw text.
+try:
+    from secret_redact import redact
+except Exception:
+    redact = None
+
 # --- Configuration --------------------------------------------------------
 # All values are read from the environment (populated from .drsg/env by
 # load_env) with project-agnostic defaults. install.sh writes .drsg/env.
@@ -218,6 +225,9 @@ def extract_tail(transcript_path):
     """Last meaningful conversation text: user prompts + assistant text replies,
     tool noise dropped."""
     msgs = []
+    if redact is None:
+        log("secret_redact.py missing next to this hook; refusing to send transcript text")
+        return ""
     if not transcript_path or not os.path.exists(transcript_path):
         return ""
     with open(transcript_path, encoding="utf-8", errors="replace") as f:
@@ -242,7 +252,7 @@ def extract_tail(transcript_path):
                 for item in content or []:
                     if isinstance(item, dict) and item.get("type") == "text":
                         msgs.append("ASSISTANT: " + str(item.get("text", "")).strip())
-    return "\n".join(msgs)[-TAIL_CHARS:]
+    return redact("\n".join(msgs))[0][-TAIL_CHARS:]
 
 
 def main():

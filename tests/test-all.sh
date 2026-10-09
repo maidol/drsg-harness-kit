@@ -30,6 +30,7 @@ bash "$REPO/tests/setup-reuse-token.sh"
 bash "$REPO/tests/retro.sh"
 bash "$REPO/tests/recall-fixes.sh"
 bash "$REPO/tests/kit-followups.sh"
+bash "$REPO/tests/secret-redaction.sh"
 
 echo ""
 echo "All test suites and quality gates PASSED."

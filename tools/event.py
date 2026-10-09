@@ -164,6 +164,33 @@ def resolve_plane(target, from_path):
     return plane_for(target) or plane_for(from_path)
 
 
+def check_secrets(summary, ref):
+    """Refuse a to-do whose summary or ref carries a secret-shaped value.
+
+    An Event is injected verbatim into another project's session and printed
+    to its terminal, so a key written here leaks twice. Refused rather than
+    masked: the sender rewrites it with the variable name or `<hidden>`, and
+    nothing secret is ever written. Looked for next to this file (the parked
+    copy) or in templates/hooks/ (the checkout); without it, posting fails
+    closed instead of skipping the check."""
+    here = os.path.dirname(os.path.abspath(__file__))
+    for d in (here, os.path.join(here, "templates", "hooks")):
+        path = os.path.join(d, "secret_redact.py")
+        if os.path.exists(path):
+            spec = importlib.util.spec_from_file_location("secret_redact", path)
+            mod = importlib.util.module_from_spec(spec)
+            spec.loader.exec_module(mod)
+            break
+    else:
+        raise ValueError("secret check unavailable: secret_redact.py is missing next to "
+                         "%s — re-run install.sh for this project" % __file__)
+    kinds = sorted(set(mod.redact(summary or "")[1] + mod.redact(ref or "")[1]))
+    if kinds:
+        raise ValueError("refused: summary/ref looks like it carries a secret (%s). "
+                         "Write the variable name or <hidden> instead of the value."
+                         % ", ".join(kinds))
+
+
 def check_symbols(symbols, verb):
     """Reject the two ways this field gets misused, before anything is written.
 
@@ -413,6 +440,7 @@ def post(target, pid, summary, kind, ref, from_project, token,
     graph got to confirm them. Raises on any step that did not change the
     graph. Shared with mcp_events.py so the CLI and the MCP tool cannot drift
     on what a well-formed to-do is."""
+    check_secrets(summary, ref)
     symbols, verb = check_symbols(symbols, verb)
     unverified = None
     if symbols:

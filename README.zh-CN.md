@@ -86,6 +86,29 @@ CLAUDE_PICK_MODELS="opus fable" claude   # 手动指定选单
 
 如果全局规则里已有更宽泛的例外，请由你自行改成包含等价核对步骤的版本；kit 不会修改 `~/.claude/CLAUDE.md`。
 
+## 密钥
+
+`tools/templates/hooks/secret_redact.py` 按形状给密钥打码（`sk-…` 这类 API key、GitHub 和 Slack token、AWS access key、JWT、私钥块、`Bearer …`、URL 里的口令，以及 `password=` / `token=` / `api_key=` 这类赋值），用在文本离开会话的三个地方：
+
+- **L3 蒸馏**：`digest.run` 把会话末尾发给 LLM 服务商之前先打码；找不到脱敏模块时什么都不发。
+- **SessionEnd**：每条 Bash 命令先打码，再取前 40 个字符存进 `commands_run`；找不到脱敏模块时不存命令。
+- **`event.py post` / `event_post`**：summary 或 ref 里带密钥就拒发；找不到脱敏模块时所有待办都拒发。
+
+被拒发时的输出如下，把值改写成变量名或 `<hidden>` 再发：
+
+```text
+drsg: refused: summary/ref looks like it carries a secret (github-token). Write the variable name or <hidden> instead of the value.
+```
+
+路径与 token 检查用的是同一套形状，往 kit 里提交假 key 会让 `tests/test-all.sh` 失败：
+
+```bash
+python3 tools/check-no-machine-paths.py tools tests skills claude
+bash tests/secret-redaction.sh
+```
+
+打码只认形状，长得不像这些的密钥会漏过去。Fact 写入完全不检查，靠写记忆约定和 `claude/AGENT-EFFICIENCY.md` 要求模型不写值。另有两条边界：所有项目共用一个 daemon token，任何项目的会话都能读到全部项目的 Fact、Event 和 Session；开启 L3（`DRSG_L3_CHAT`）就会把打过码的会话末尾发给服务商。这次改动之前安装的项目，要再跑一次 `./setup.sh --project DIR` 才会装上 `secret_redact.py`，在那之前 `tools/install.sh --audit` 会报它们的 hooks 有漂移。
+
 ## 刷新运行时副本
 
 在本仓库中修改后，重新构建 bundle，再次运行其中的 `setup.sh`。这是为新机器安装时使用的同一条路径，这是有意的设计——避免维护两套流程。`setup.sh` 幂等，会重新运行安装器自检，但不会触碰数据库。改的是 `tools/templates/hooks/` 底下的东西时要加 `--project DIR`：不带参数的一次运行只刷新 `~/.drsg-memory/tools/`，各项目的 `.claude/hooks/` 仍停在旧副本上，也就是之后 `install.sh --check` 会报出来的 drift。router 和 usage report 虽然会随 bundle 提供，但项目配置默认是可选的：使用 `--router DIR`、`--usage-report DIR`，或者使用显式的 `--hub DIR` 同时启用两者；只使用 `--project` 和 `--repo` 不会安装其中任何一个。

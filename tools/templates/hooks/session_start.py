@@ -79,6 +79,8 @@ def protocol(slug, plane, path):
         "`created_at` as the current Unix time (integer seconds);\n"
         "- not progress: \"X accepted / committed / tests pass\" is a status, "
         "not a conclusion — it goes in the Event receipt or the commit, not a Fact;\n"
+        "- never a secret value: an API key, token, password or private key is "
+        "written as its variable name or `<hidden>` — nothing checks a Fact on the way in;\n"
         "- scope: a Fact is for what would help work in ANOTHER project. If your "
         "system prompt names an auto-memory directory, a lesson that matters only "
         "inside this project goes there, not in both — two copies drift apart and "

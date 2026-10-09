@@ -34,6 +34,12 @@ PATTERNS = [
     (r"\b(?:[0-9]{1,3}\.){3}[0-9]{1,3}\b(?<!127\.0\.0\.1)", "硬编码 IP"),
     (r"\b[0-9a-f]{32}\b", "疑似 token"),
 ]
+# Secret shapes come from the same rules the runtime redactor masks, so the
+# gate and the hooks cannot disagree on what a secret looks like. A missing
+# file is an ImportError here, not a gate that silently stopped looking.
+sys.path.insert(0, os.path.join(os.path.dirname(os.path.abspath(__file__)), "templates", "hooks"))
+from secret_redact import RULES as SECRET_RULES  # noqa: E402
+PATTERNS += [(pattern, "疑似密钥（%s）" % kind) for kind, pattern in SECRET_RULES]
 ALLOW = {
     # 路径 -> 允许的原因。留空 dict 表示没有例外。
 }

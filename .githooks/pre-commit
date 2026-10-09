@@ -5,3 +5,5 @@ set -euo pipefail
 
 REPO_ROOT="$(git rev-parse --show-toplevel)"
 python3 "$REPO_ROOT/tools/check-docs.py"
+python3 "$REPO_ROOT/tools/check-no-machine-paths.py" \
+  "$REPO_ROOT/tools" "$REPO_ROOT/tests" "$REPO_ROOT/skills" "$REPO_ROOT/claude"
