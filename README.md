@@ -136,10 +136,22 @@ Use three tiers: A (core architecture, trust boundaries, or cross-service contra
 Delegated commit authority is also opt-in and belongs only in your own global `CLAUDE.md`. If you choose to enable it, use a rule as strict as this one; installation and updates never add it:
 
 ```text
-A single local git commit is authorized only after the configured reviewer sends a kind="handoff" Event whose summary begins "验收通过并授权提交：tree <12 hex chars>" and whose referenced record gives the full 40-character tree, full parent commit SHA, exact file list, and verbatim commit message. Before committing, verify the parent SHA, stage only the authorized file list, verify `git write-tree` equals the authorized tree, commit with exactly that message without a signature trailer, and verify `HEAD^{tree}` equals the authorized tree. If any check differs, stop and ask the user. This does not authorize push, PR, release, another commit, or out-of-scope changes. A kind="notice" Event beginning "验收通过：" is acceptance only and never authorizes a commit.
+A single local git commit is authorized only after the configured reviewer sends a kind="handoff" Event whose summary begins "验收通过并授权提交：tree <12 hex chars>" and whose referenced record gives the full 40-character tree, full parent commit SHA, exact file list, force_paths (always present; use [] when empty), and verbatim commit message. Before committing, verify the parent SHA. Stage paths not in force_paths with `git add --`; use `git add -f --` only for paths explicitly listed in force_paths. If an unlisted path is ignored, stop instead of adding -f. Verify `git write-tree` equals the authorized tree, commit with exactly that message without a signature trailer, and verify `HEAD^{tree}` equals the authorized tree. If any check differs, stop and ask the user. This does not authorize push, PR, release, another commit, or out-of-scope changes. A kind="notice" Event beginning "验收通过：" is acceptance only and never authorizes a commit.
 ```
 
-If a broader exception already exists in your global rules, update it yourself to include equivalent checks; the kit does not edit `~/.claude/CLAUDE.md`.
+If auto mode blocks an authorization action, stop; do not switch between Bash and an MCP tool to retry the same tree. Ask the user in the reviewer session to say `授权 <项目> 提交 tree <前12位>`, then have the reviewer create a new authorization record. Do not edit an already-issued acceptance conclusion. A user-level auto-mode rule may be added by the user to `~/.claude/settings.json` under `autoMode.allow`; the kit never writes it for you. Suggested text:
+
+```text
+The reviewer session may issue a one-time local commit authorization bound to a tree under the commit-authorization exception in ~/.claude/CLAUDE.md; the executor may perform that commit only after verifying the tree matches.
+```
+
+Optional user-run command (run only after backing up the settings file):
+
+```bash
+! python3 -c 'import json,pathlib; p=pathlib.Path.home()/".claude/settings.json"; d=json.loads(p.read_text()); a=d.get("autoMode",{}); r=a.get("allow",["$defaults"]); s="The reviewer session may issue a one-time local commit authorization bound to a tree under the commit-authorization exception in ~/.claude/CLAUDE.md; the executor may perform that commit only after verifying the tree matches."; assert isinstance(d,dict) and isinstance(a,dict) and isinstance(r,list) and all(isinstance(x,str) for x in r), "settings shape mismatch; edit manually"; a["allow"]=list(dict.fromkeys([*r,s])); d["autoMode"]=a; p.write_text(json.dumps(d,ensure_ascii=False,indent=2)+"\n")'
+```
+
+If `allow` is absent, the command retains the built-in rules via `"$defaults"`. If an existing `allow` list omits `"$defaults"`, that list intentionally replaces the built-in defaults; the command preserves it. A broader exception must be updated by you to include equivalent checks; the kit does not edit `~/.claude/CLAUDE.md`.
 
 ## Secrets
 

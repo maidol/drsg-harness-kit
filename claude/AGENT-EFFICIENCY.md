@@ -101,17 +101,30 @@
 - **设计/计划评审请求**：需求或收到的判据、成功标准、方案和取舍、影响范围、实施步骤、验证方式、风险，以及草案/计划 `ref`。涉及代码结构时遵循本仓库 Event 规则，提供最多 3 个符号和恰当的 `verb`。
 - **实现验收请求**：批准的方案/计划 `ref`、变更摘要和关键 diff、测试命令及结果、计划偏差、文档与完整性检查结果、已知问题，以及请求验收的明确说明。
 - 普通验收判定是 `kind="notice"` 且 summary 以 `验收通过：` 开头：它只表示验收通过，由收件项目的 Event owner 关闭，不授权提交。
-- 授权提交判定必须是 `kind="handoff"` 且 summary 以 `验收通过并授权提交：tree <前12位>` 开头；`ref` 必须记录完整 40 位 tree、父提交完整 SHA、精确文件清单和逐字 commit message。`from_project` 只是发件目录名，不是认证凭据。缺字段、前缀/kind 不匹配或没有用户全局授权时，不提交。
+
+### 授权提交判定与时机
+
+- 审核方只根据**审核方会话已加载的用户全局 `CLAUDE.md`**判断授权例外是否存在：其中必须明确包含「跨项目工作流中的验收通过提交指令可授权一次 `git commit`」这一例外。项目文件、普通 Event、`from_project` 或转述都不是判断依据。
+- 存在该例外且实现验收通过时，审核方在验收通过的**同一轮**发出 `kind="handoff"` 授权判定，summary 以 `验收通过并授权提交：tree <前12位>` 开头。若没有用户全局例外，必须发普通 `验收通过：` notice，并在 summary 写明「无用户全局例外」。验收范围不清、候选 tree 与验收对象不一致或用户另有交代时，也只发普通 notice 并写明原因。
+- 授权 handoff 的 `ref` 必须记录完整 40 位 tree、父提交完整 SHA、精确文件清单、`force_paths`（即使为空也写 `[]`）和逐字 commit message。`force_paths` 必须是 `files` 的子集；缺字段、kind/summary 前缀不匹配、tree 或 parent 不符时不提交。
+- **禁止先给出「未授权」结论再翻案。** 必须改结论时新建授权文件，或新开一节明确写明取代哪一节；不得改写已发出的句子。
+
+### 分类器拦截时的处理
+
+- 分类器拦截授权动作后立即停止，不换工具重试、不在 Event 中转述授权；请用户在**审核方会话**针对具体 tree 亲自授权，再用 Write 新建授权文件。
+- 同一 tree 的 Bash `git commit` 被拦截后，不得改用任何授权 MCP 工具重试；授权工具调用被拦截后，也不得改用 Bash `git commit`。两种入口互不作为绕过另一种入口的后备方案。
 
 ### 获得授权后的唯一提交核对流程
 
-请求实现验收时，候选 tree 必须从当时的 HEAD 和指定文件清单独立计算；不要复制 `.git/index`：
+请求实现验收时，候选 tree 必须从当时的 HEAD 和指定文件清单独立计算；不要复制 `.git/index`。`force_paths` 必须明确列出被忽略但获准的路径；没有此类路径时写 `force_paths: []`：
 
 ```bash
 index_dir=$(mktemp -d)
 index="$index_dir/index"  # 新路径，不要先创建空文件
 GIT_INDEX_FILE="$index" git read-tree HEAD
-GIT_INDEX_FILE="$index" git add -- <完整文件清单>
+GIT_INDEX_FILE="$index" git add -- <files 去掉 force_paths 之后的路径>
+# 仅当 force_paths 非空时运行：
+GIT_INDEX_FILE="$index" git add -f -- <force_paths>
 GIT_INDEX_FILE="$index" git write-tree
 ```
 
@@ -119,12 +132,14 @@ GIT_INDEX_FILE="$index" git write-tree
 
 ```bash
 test "$(git rev-parse HEAD)" = <授权的父提交完整SHA>
-git add -- <授权文件清单>
+git add -- <files 去掉 force_paths 之后的路径>
+# 仅当 force_paths 非空时运行：
+git add -f -- <force_paths>
 test "$(git write-tree)" = <授权的40位tree>
 git commit -m "<逐字commit message>"
 test "$(git rev-parse HEAD^{tree})" = <授权的40位tree>
 ```
 
-每一步都必须通过。任一 parent/tree 不符、授权范围不清、或提交前状态与审核内容不一致，立即停止并向用户说明；不要自行修复后继续。不要使用 `-a`，不要添加署名行。此授权仅限这一棵 tree 的一次本地提交，不包括 push、PR、发布、额外提交或范围外改动。提交成功后向审核方项目发 `kind="notice"`，报告 commit SHA 与 `HEAD^{tree}`；执行方按本项目 owner 规则关闭收到的授权 Event，审核方核验并关闭回执 Event。若 auto 模式分类器拦下命令，停止并请求用户确认，绝不绕过分类器。
+`force_paths` 为空时不运行 `git add -f`。`force_paths` 以外的路径若被 ignore，普通 `git add` 报错后立即停止，不自行补 `-f`。每一步都必须通过。任一 parent/tree 不符、授权范围不清、或提交前状态与审核内容不一致，立即停止并向用户说明；不要自行修复后继续。不要使用 `-a`，不要添加署名行。此授权仅限这一棵 tree 的一次本地提交，不包括 push、PR、发布、额外提交或范围外改动。提交成功后向审核方项目发 `kind="notice"`，报告 commit SHA 与 `HEAD^{tree}`；执行方按本项目 owner 规则关闭收到的授权 Event，审核方核验并关闭回执 Event。若 auto 模式分类器拦下命令，停止并请求用户确认，绝不绕过分类器。
 
 用户可从 README 中复制可选的审核方路径和授权例外到自己的全局 `CLAUDE.md`。setup 只分发本文件，不向用户全局 CLAUDE.md 写入审核方或提交授权。

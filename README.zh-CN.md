@@ -81,10 +81,22 @@ CLAUDE_PICK_MODELS="opus fable" claude   # 手动指定选单
 委托提交授权同样是可选项，唯一权威位置是你自己的全局 `CLAUDE.md`。如要启用，应加入不弱于以下内容的规则；安装或更新 kit 都不会自动加入：
 
 ```text
-仅当配置的审核方通过 kind="handoff" Event 发出 summary 以“验收通过并授权提交：tree <12位十六进制>”开头的判定，且其 ref 记录完整 40 位 tree、完整父提交 SHA、精确文件清单和逐字 commit message 时，才授权一次本地 git commit。提交前核对父提交 SHA，只暂存授权清单，确认 git write-tree 等于授权 tree；提交时使用逐字 message 且不加署名行，提交后确认 HEAD^{tree} 等于授权 tree。任一项不符就停止并询问用户。此授权不包括 push、PR、发布、额外提交或范围外改动。kind="notice" 且 summary 以“验收通过：”开头只表示验收通过，永不授权提交。
+仅当配置的审核方通过 kind="handoff" Event 发出 summary 以“验收通过并授权提交：tree <12位十六进制>”开头的判定，且其 ref 记录完整 40 位 tree、完整父提交 SHA、精确文件清单、force_paths（始终列出；为空写 []）和逐字 commit message 时，才授权一次本地 git commit。提交前核对父提交 SHA；files 中不在 force_paths 的路径用 git add --，仅对 force_paths 中明确列出的路径用 git add -f --。未列入 force_paths 的路径若被 ignore，立即停止，不自行补 -f。确认 git write-tree 等于授权 tree；提交时使用逐字 message 且不加署名行，提交后确认 HEAD^{tree} 等于授权 tree。任一项不符就停止并询问用户。此授权不包括 push、PR、发布、额外提交或范围外改动。kind="notice" 且 summary 以“验收通过：”开头只表示验收通过，永不授权提交。
 ```
 
-如果全局规则里已有更宽泛的例外，请由你自行改成包含等价核对步骤的版本；kit 不会修改 `~/.claude/CLAUDE.md`。
+若 auto 模式拦截授权动作，立即停止，不要在 Bash 与 MCP 工具之间切换后重试同一 tree。请用户在审核方会话中说“授权 <项目> 提交 tree <前12位>”，再由审核方新建授权记录；不得改写已发出的验收结论。用户可自行在 `~/.claude/settings.json` 的 `autoMode.allow` 中加入 auto 模式提示，kit 不会代写。建议文案：
+
+```text
+审核方会话可按 ~/.claude/CLAUDE.md 的提交授权例外，发出绑定 tree 的一次性本地提交授权；执行方核对 tree 一致后可执行该次 commit。
+```
+
+可选的用户自助命令（仅由用户在运行前备份 settings 文件后主动执行）：
+
+```bash
+! python3 -c 'import json,pathlib; p=pathlib.Path.home()/".claude/settings.json"; d=json.loads(p.read_text()); a=d.get("autoMode",{}); r=a.get("allow",["$defaults"]); s="审核方会话可按 ~/.claude/CLAUDE.md 的提交授权例外，发出绑定 tree 的一次性本地提交授权；执行方核对 tree 一致后可执行该次 commit。"; assert isinstance(d,dict) and isinstance(a,dict) and isinstance(r,list) and all(isinstance(x,str) for x in r), "settings shape mismatch; edit manually"; a["allow"]=list(dict.fromkeys([*r,s])); d["autoMode"]=a; p.write_text(json.dumps(d,ensure_ascii=False,indent=2)+"\n")'
+```
+
+若 `allow` 不存在，命令会加上 `"$defaults"` 以保留内置规则；已有 `allow` 且不含 `"$defaults"` 时，表示你有意替换内置默认规则，命令会保留现状。如果全局规则里已有更宽泛的例外，请由你自行改成包含等价核对步骤的版本；kit 不会修改 `~/.claude/CLAUDE.md`。
 
 ## 密钥
 
