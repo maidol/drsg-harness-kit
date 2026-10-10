@@ -21,6 +21,8 @@ check README.zh-CN.md 'autoMode.allow'
 check README.md '授权 <项目> 提交 tree <前12位>'
 check README.zh-CN.md '授权 <项目> 提交 tree <前12位>'
 check claude/AGENT-EFFICIENCY.md '--no-verify'
+check claude/AGENT-EFFICIENCY.md 'C 级被用户要求发给审核方时，按实际验收决定授权'
+check claude/AGENT-EFFICIENCY.md '能否授权看这次有没有真的验收，不看级别标签'
 if [ "$CONTENT_FAILS" -ne 0 ]; then
   printf 'FAIL %d content check(s) failed\n' "$CONTENT_FAILS" >&2
   exit 1
