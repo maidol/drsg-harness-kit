@@ -48,7 +48,9 @@ chmod +x "$PROJ/.claude/hooks/"*.py
 
 echo "rules" > "$REPO/claude/AGENT-EFFICIENCY.md"
 cp "$REPO/claude/AGENT-EFFICIENCY.md" "$CLAUDE_DIR/AGENT-EFFICIENCY.md"
-echo "@AGENT-EFFICIENCY.md" > "$CLAUDE_DIR/CLAUDE.md"
+cp "$HERE/../claude/MAIN-BRANCH-WORKFLOW.md" "$REPO/claude/MAIN-BRANCH-WORKFLOW.md"
+cp "$REPO/claude/MAIN-BRANCH-WORKFLOW.md" "$CLAUDE_DIR/MAIN-BRANCH-WORKFLOW.md"
+printf '@AGENT-EFFICIENCY.md\n@MAIN-BRANCH-WORKFLOW.md\n' > "$CLAUDE_DIR/CLAUDE.md"
 echo "skill" > "$REPO/skills/agent-efficiency-retro/SKILL.md"
 echo "skill" > "$REPO/skills/codegraph/SKILL.md"
 echo "skill" > "$REPO/skills/diagram-conventions/SKILL.md"
@@ -106,6 +108,18 @@ except Exception:
 PY
 }
 
+find_layer_details() {
+  python3 - "$1" "$2" <<'PY'
+import json, sys
+try:
+    data = json.load(open(sys.argv[1]))
+    matching = [l for l in data.get("layers", []) if l["name"].startswith(sys.argv[2])]
+    print("\\n".join(matching[0].get("details", [])) if matching else "missing")
+except Exception:
+    print("error")
+PY
+}
+
 # 1. Hermetic audit: all in sync
 python3 "$AUDIT" --repo "$REPO" --tools-dir "$DEPLOYED_TOOLS" --claude-dir "$CLAUDE_DIR" --project "$PROJ" --json > "$T/out1.json" 2>&1 || true
 l1_status=$(find_layer_ok "$T/out1.json" "L1")
@@ -155,6 +169,60 @@ python3 "$AUDIT" --repo "$REPO" --tools-dir "$DEPLOYED_TOOLS" --claude-dir "$CLA
 l2_n2_status=$(find_layer_ok "$T/out_n2.json" "L2")
 check "n2_settings_permissions_reported" "$l2_n2_status" "failed"
 chmod 600 "$CLAUDE_DIR/settings.json"
+
+# Main-branch workflow: enabled/disabled are healthy, partial installs are drift.
+python3 "$AUDIT" --repo "$REPO" --tools-dir "$DEPLOYED_TOOLS" --claude-dir "$CLAUDE_DIR" --project "$PROJ" --json > "$T/out_main_enabled.json" 2>&1 || true
+l2_main_enabled=$(find_layer_ok "$T/out_main_enabled.json" "L2")
+check "main_branch_enabled_state_is_healthy" "$l2_main_enabled" "ok"
+printf '用户手写：不要自行新建功能分支或 worktree\n' >> "$CLAUDE_DIR/CLAUDE.md"
+python3 "$AUDIT" --repo "$REPO" --tools-dir "$DEPLOYED_TOOLS" --claude-dir "$CLAUDE_DIR" --project "$PROJ" --json > "$T/out_main_advisory.json" 2>&1 || true
+main_advisory_details=$(find_layer_details "$T/out_main_advisory.json" "L2")
+case "$main_advisory_details" in *"managed main-branch policy is authoritative"*) check "main_branch_audit_advisory_is_reported" yes yes ;; *) check "main_branch_audit_advisory_is_reported" no yes ;; esac
+if grep -Fq '用户手写：不要自行新建功能分支或 worktree' "$T/out_main_advisory.json"; then
+  check "main_branch_audit_does_not_dump_user_text" no yes
+else
+  check "main_branch_audit_does_not_dump_user_text" yes yes
+fi
+
+MAIN_IMPORT='@MAIN-BRANCH-WORKFLOW.md'
+MAIN_MARKER="$CLAUDE_DIR/.main-branch-workflow.disabled"
+MAIN_RULE="$CLAUDE_DIR/MAIN-BRANCH-WORKFLOW.md"
+touch "$MAIN_MARKER"
+python3 - "$CLAUDE_DIR/CLAUDE.md" <<'PY'
+import pathlib, sys
+p = pathlib.Path(sys.argv[1])
+data = p.read_bytes()
+imp = b'@MAIN-BRANCH-WORKFLOW.md'
+p.write_bytes(b''.join(line for line in data.splitlines(keepends=True)
+                       if line.rstrip(b'\r\n') != imp))
+PY
+python3 "$AUDIT" --repo "$REPO" --tools-dir "$DEPLOYED_TOOLS" --claude-dir "$CLAUDE_DIR" --project "$PROJ" --json > "$T/out_main_disabled.json" 2>&1 || true
+l2_main_disabled=$(find_layer_ok "$T/out_main_disabled.json" "L2")
+detail_main_disabled=$(find_layer_details "$T/out_main_disabled.json" "L2")
+check "main_branch_opt_out_is_healthy" "$l2_main_disabled" "ok"
+case "$detail_main_disabled" in *disabled*) check "main_branch_opt_out_is_reported" yes yes ;; *) check "main_branch_opt_out_is_reported" no yes ;; esac
+
+rm -f "$MAIN_MARKER" "$MAIN_RULE"
+python3 "$AUDIT" --repo "$REPO" --tools-dir "$DEPLOYED_TOOLS" --claude-dir "$CLAUDE_DIR" --project "$PROJ" --json > "$T/out_main_missing.json" 2>&1 || true
+l2_main_missing=$(find_layer_ok "$T/out_main_missing.json" "L2")
+detail_main_missing=$(find_layer_details "$T/out_main_missing.json" "L2")
+check "main_branch_not_installed_is_drift" "$l2_main_missing" "failed"
+case "$detail_main_missing" in *not-installed*enable*) check "main_branch_missing_state_has_setup_hint" yes yes ;; *) check "main_branch_missing_state_has_setup_hint" no yes ;; esac
+
+cp "$REPO/claude/MAIN-BRANCH-WORKFLOW.md" "$MAIN_RULE"
+python3 "$AUDIT" --repo "$REPO" --tools-dir "$DEPLOYED_TOOLS" --claude-dir "$CLAUDE_DIR" --project "$PROJ" --json > "$T/out_main_partial.json" 2>&1 || true
+check "main_branch_partial_install_is_drift" "$(find_layer_ok "$T/out_main_partial.json" "L2")" "failed"
+printf '@AGENT-EFFICIENCY.md\n@MAIN-BRANCH-WORKFLOW.md\n' > "$CLAUDE_DIR/CLAUDE.md"
+touch "$MAIN_MARKER"
+python3 "$AUDIT" --repo "$REPO" --tools-dir "$DEPLOYED_TOOLS" --claude-dir "$CLAUDE_DIR" --project "$PROJ" --json > "$T/out_main_stale_marker.json" 2>&1 || true
+check "main_branch_marker_with_import_is_drift" "$(find_layer_ok "$T/out_main_stale_marker.json" "L2")" "failed"
+rm -f "$MAIN_MARKER"
+printf '@AGENT-EFFICIENCY.md\n@MAIN-BRANCH-WORKFLOW.md\n' > "$CLAUDE_DIR/CLAUDE.md"
+printf 'local edit\\n' >> "$MAIN_RULE"
+python3 "$AUDIT" --repo "$REPO" --tools-dir "$DEPLOYED_TOOLS" --claude-dir "$CLAUDE_DIR" --project "$PROJ" --json > "$T/out_main_copy_drift.json" 2>&1 || true
+check "main_branch_modified_copy_is_drift" "$(find_layer_ok "$T/out_main_copy_drift.json" "L2")" "failed"
+cp "$REPO/claude/MAIN-BRANCH-WORKFLOW.md" "$MAIN_RULE"
+printf '@AGENT-EFFICIENCY.md\n@MAIN-BRANCH-WORKFLOW.md\n' > "$CLAUDE_DIR/CLAUDE.md"
 
 # 7. N3: project with .drsg/audit-skip is skipped and does not fail audit
 SKIP_PROJ="$T/skip_project"

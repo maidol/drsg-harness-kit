@@ -29,6 +29,7 @@
 #   --tools-dir DIR   where the runtime copies go   (default ~/.drsg-memory/tools)
 #   --fetch-drsg      download a release binary if none is found (network)
 #   --no-skills       do not install the bundled skills or AGENT-EFFICIENCY.md
+#   --no-main-branch-workflow  leave the managed main-branch rule disabled
 #   --no-event-poller do not register the global to-do poller hooks
 #   --no-streak-hint do not register the global single-tool reminder hook
 #   --permission-guard DIR  add commit/push ask rules and narrow read-only allow
@@ -43,7 +44,7 @@ set -euo pipefail
 HERE="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 PROJECT=""; REPO=""; HUB=""; ROUTER=""; USAGE_REPORT=""; BIN=""; ADDR=""; TOKEN=""; PORT=""
 TOOLS="${DRSG_MEM_DIR:-$HOME/.drsg-memory}/tools"
-FETCH=0; SKILLS=1; POLLER=1; STREAK_HINT=1
+FETCH=0; SKILLS=1; MAIN_BRANCH_WORKFLOW=1; POLLER=1; STREAK_HINT=1
 PG_DIR=""; REVIEWS_DIR=""; PRUNE=0; MODEL_PICKER=0
 
 while [ $# -gt 0 ]; do
@@ -60,6 +61,7 @@ while [ $# -gt 0 ]; do
     --tools-dir)  TOOLS="${2:?--tools-dir needs a path}"; shift 2 ;;
     --fetch-drsg) FETCH=1; shift ;;
     --no-skills)  SKILLS=0; shift ;;
+    --no-main-branch-workflow) MAIN_BRANCH_WORKFLOW=0; shift ;;
     --no-event-poller) POLLER=0; shift ;;
     --no-streak-hint) STREAK_HINT=0; shift ;;
     --permission-guard) PG_DIR="${2:?--permission-guard needs a path}"; shift 2 ;;
@@ -97,7 +99,29 @@ else
   cp -a "$HERE/tools/." "$TOOLS/"
 fi
 chmod +x "$TOOLS"/*.sh "$TOOLS"/*.py "$TOOLS/drsg-usage-report" 2>/dev/null || true
+if [ -f "$HERE/claude/MAIN-BRANCH-WORKFLOW.md" ]; then
+  cp "$HERE/claude/MAIN-BRANCH-WORKFLOW.md" "$TOOLS/main-branch-workflow-rule.md"
+fi
 echo "   $(find "$TOOLS" -maxdepth 1 -type f | wc -l | tr -d ' ') files in place"
+
+# The managed main-branch rule is default-on and independent of --no-skills.
+CLAUDE_DIR="${CLAUDE_CONFIG_DIR:-$HOME/.claude}"
+MAIN_BRANCH_MARKER="$CLAUDE_DIR/.main-branch-workflow.disabled"
+MAIN_BRANCH_RULE="$CLAUDE_DIR/MAIN-BRANCH-WORKFLOW.md"
+mkdir -p "$CLAUDE_DIR"
+if [ "$MAIN_BRANCH_WORKFLOW" -eq 0 ]; then
+  # Keep a local source copy so the standalone enable command can restore it.
+  if [ ! -e "$MAIN_BRANCH_MARKER" ] && [ ! -e "$MAIN_BRANCH_RULE" ]; then
+    cp "$HERE/claude/MAIN-BRANCH-WORKFLOW.md" "$MAIN_BRANCH_RULE"
+  fi
+  "$TOOLS/main-branch-workflow-config.sh" disable
+elif [ -e "$MAIN_BRANCH_MARKER" ]; then
+  "$TOOLS/main-branch-workflow-config.sh" disable
+  echo "   main-branch workflow remains disabled ($MAIN_BRANCH_MARKER)"
+else
+  MAIN_BRANCH_RULE_SOURCE="$HERE/claude/MAIN-BRANCH-WORKFLOW.md" \
+    "$TOOLS/main-branch-workflow-config.sh" enable
+fi
 
 # The model picker is opt-in. The standalone command owns the exact-line
 # ~/.bashrc edit so users can also enable or disable it without rerunning setup.

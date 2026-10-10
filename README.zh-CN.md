@@ -16,6 +16,7 @@ DrSG 的智能体侧工具集，集中在一个仓库中：为 Claude Code 提�
 | `skills/agent-efficiency-retro/` | 会话效率复盘 skill：统计工具调用、一轮多调用比例、单轮耗时随上下文的变化，安装到 `~/.claude/skills/`。 |
 | `skills/diagram-conventions/` | 出图约定 skill：按句子里的连接词选架构图/流程图/时序图，安装到 `~/.claude/skills/`。第三方的 `archify` 不归本仓库分发，它指向本 skill 的那段是手工追加在其 SKILL.md 末尾的 `<!-- local: diagram-conventions -->`，重装 archify 后要补回。 |
 | `claude/AGENT-EFFICIENCY.md` | Agent 执行效率规则，复制到 `~/.claude/` 并由全局 CLAUDE.md 用 `@` 引入（setup 第 2 步）。 |
+| `claude/MAIN-BRANCH-WORKFLOW.md` | 用户级主工作区/当前分支工作流规则，默认安装，可独立开关。 |
 | `docs/{en,zh}/src/` | 使用指南，包含五张图。 |
 | `setup.sh` | 在新机器上安装；从解包后的 bundle 中运行。 |
 | `pack.sh` | 构建 bundle。 |
@@ -36,6 +37,17 @@ tar xzf dist/drsg-harness-kit-*.tar.gz -C /tmp
 对已安装项目重新运行 setup 时，安装器会在进程内部复用项目 `.drsg/env` 中的凭据：不打印 token、不将其放入命令行。`drsg-events` MCP 条目会刷新；已有 `drsg` 条目会保留。若 `drsg` 注册缺失，setup 会警告，`install.sh --audit` 也会报告漂移；请通过安全的凭据流程手动注册。新项目加入正在运行的 daemon 时仍需通过 `--token <t>` 提供 token；安装器不会自行生成替代 token，因为这会使已写入的客户端配置失效。
 
 `--project` 还会在该项目里装一个 git pre-commit hook，运行 `completeness-guard.py --staged`：新增的命令行选项、环境变量、路由或配置键在文档里找不到时打印提示；只有项目声明了 `.completeness.json` 才会拦下提交。项目已有自己的 pre-commit hook、或者设了 `core.hooksPath` 时不动它，安装器会打印手动串联的那一行。用法和声明文件见 [tools/README.zh-CN.md](tools/README.zh-CN.md#通用交付闭环守卫completeness-guardpy)。
+
+`setup.sh` 默认把 `claude/MAIN-BRANCH-WORKFLOW.md` 安装为用户级指令，且独立于 skills 安装选项。“主分支”指主工作区当前检出的分支，不一定名为 `main`；该规则不会切换分支，也不是强制执行的沙箱。可用 `--no-main-branch-workflow` 独立关闭，或运行下列工具切换。关闭状态记录在 `$CLAUDE_CONFIG_DIR/.main-branch-workflow.disabled`（通常是 `~/.claude/.main-branch-workflow.disabled`）；`status` 会报告当前状态。若全局文件中有手写的重复规则，它仍归用户所有；若不再需要，请由用户自行删除。
+
+```bash
+/tmp/drsg-harness-kit-*/setup.sh --no-main-branch-workflow  # 安装时关闭
+~/.drsg-memory/tools/main-branch-workflow-config.sh status
+~/.drsg-memory/tools/main-branch-workflow-config.sh disable
+~/.drsg-memory/tools/main-branch-workflow-config.sh enable
+```
+
+重新连接时，`claude -c` 会继续当前目录中最近的会话，不接收会话 ID；按 ID 恢复请用 `claude -r <session-id>`。如果会话在 worktree 中，`/exit` 会返回主工作区，但不会终止 Claude Code。若原进程仍在运行，优先使用 `tmux attach` 回到该进程。
 
 
 ## 权限护栏（可选）
@@ -78,7 +90,7 @@ CLAUDE_PICK_MODELS="opus fable" claude   # 手动指定选单
 ! python3 ~/.drsg-memory/tools/event-poller.py --take
 ```
 
-此操作不会停止或杀掉旧进程，也不会立即轮询。旧轮询器仍存活时，会在下一个 tick 观察到租约转移；否则要等之后的 Stop hook 才会启动轮询。如果旧轮询器已退出并唤醒了旧模型，仍开放的 Event 可能被再次通知和处理。只有能接受这种重复工作的可能性时，才使用此显式接管。命令会从本项目轮询状态文件推导会话身份；若 `CLAUDE_SESSION_ID` 可用，必须与推导结果一致；PID 匹配缺失或有歧义时会拒绝接管。仅供测试的 `EVENT_POLL_TEST_MIN_LIFETIME` 可缩短唤醒前至少三秒的等待。
+此操作不会停止或杀掉旧进程，也不会立即轮询。当前进程的轮询器仍在运行时，会在下一个 tick 发现租约已转给本进程；否则要等之后的 Stop hook 才会启动轮询。如果旧轮询器已退出并唤醒了旧模型，仍开放的 Event 可能被再次通知和处理。只有能接受这种重复工作的可能性时，才使用此显式接管。命令会从本项目轮询状态文件推导会话身份；若 `CLAUDE_SESSION_ID` 可用，必须与推导结果一致；PID 匹配缺失或有歧义时会拒绝接管。仅供测试的 `EVENT_POLL_TEST_MIN_LIFETIME` 可缩短唤醒前至少三秒的等待。
 
 ## 跨项目审核与验收（可选）
 

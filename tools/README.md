@@ -28,6 +28,14 @@ same command and `disable`. Ordinary setup/update runs preserve the current
 choice. Full instructions are in the root README's “Model picker at startup”
 section.
 
+The main-worktree/current-branch rule is installed by `setup.sh` by default,
+independently of `--no-skills`. Manage its user-level import and persistent opt-out
+with `~/.drsg-memory/tools/main-branch-workflow-config.sh enable|disable|status`;
+`setup.sh --no-main-branch-workflow` also opts out. The marker is stored in
+`$CLAUDE_CONFIG_DIR/.main-branch-workflow.disabled` (normally
+`~/.claude/.main-branch-workflow.disabled`). This is guidance, not an enforcement
+sandbox; it never switches branches.
+
 ## Code graph router and usage reporting
 
 The runtime bundle includes the router and usage-report binaries, but project
@@ -232,7 +240,7 @@ useful than a second registry that can disagree with the first.
 
 - **L0: Project Discovery** (when running `--all`): Discovers known projects from the memory plane via proxy-safe connection, failing explicitly on discovery errors.
 - **L1: Global Runtime Tools**: Compares `~/.drsg-memory/tools/` against the git `HEAD` release baseline and verifies execution permissions; uncommitted drafts are noted as advisory hints without failing audit.
-- **L2: Global Configuration & Skills**: Verifies `~/.claude/AGENT-EFFICIENCY.md`, skills, global hooks, and verifies `settings.json` permissions (`0600`).
+- **L2: Global Configuration & Skills**: Verifies `~/.claude/AGENT-EFFICIENCY.md`, skills, managed main-branch workflow state (enabled, intentional opt-out, or drift), global hooks, and `settings.json` permissions (`0600`).
 - **L3: Project Memory Hooks**: Compares `.claude/hooks/*.py` in each project against canonical templates.
 - **L4: Project Settings & Docs**: Checks `.claude/settings.local.json` registrations, `.drsg/env` credentials, `CLAUDE.md` cross-agent Event documentation, and that the `drsg` and `drsg-events` MCP servers are registered for the project in `~/.claude.json` (local or user scope; `$CLAUDE_CONFIG_DIR/.claude.json` when that is set, or the `--claude-dir` directory). A missing one is reported together with the command that registers it.
 - **L5: Code Graph Status**: Verifies code graph daemon health and `.mcp.json` port bindings, recognizing on-demand stopped daemons as normal state.

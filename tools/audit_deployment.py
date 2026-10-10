@@ -184,15 +184,44 @@ def check_layer2(repo_dir, claude_dir):
         elif digest_file(repo_eff) != digest_file(dep_eff):
             issues.append(f"Drift in {dep_eff} vs repository source")
 
-    # 2. @AGENT-EFFICIENCY.md in CLAUDE.md
+    # 2. Global CLAUDE.md imports and managed main-branch workflow state
     global_claude_md = os.path.join(claude_dir, "CLAUDE.md")
+    global_bytes = b""
     if os.path.exists(global_claude_md):
-        with open(global_claude_md, encoding="utf-8") as f:
-            c = f.read()
-        if "@AGENT-EFFICIENCY.md" not in c:
+        with open(global_claude_md, "rb") as f:
+            global_bytes = f.read()
+        if b"@AGENT-EFFICIENCY.md" not in global_bytes:
             issues.append(f"Missing @AGENT-EFFICIENCY.md import in {global_claude_md}")
     else:
         issues.append(f"Missing global {global_claude_md}")
+
+    main_rule_source = os.path.join(repo_dir, "claude", "MAIN-BRANCH-WORKFLOW.md")
+    if not os.path.isfile(main_rule_source):
+        main_rule_source = os.path.join(repo_dir, "main-branch-workflow-rule.md")
+    main_rule_copy = os.path.join(claude_dir, "MAIN-BRANCH-WORKFLOW.md")
+    main_marker = os.path.join(claude_dir, ".main-branch-workflow.disabled")
+    main_import = b"@MAIN-BRANCH-WORKFLOW.md"
+    imports = [line for line in global_bytes.splitlines(keepends=True)
+               if line.rstrip(b"\r\n") == main_import]
+    has_rule = os.path.isfile(main_rule_copy)
+    if os.path.exists(main_marker):
+        if imports:
+            issues.append("Inconsistent main-branch workflow state: disabled marker conflicts with managed import")
+        else:
+            res["details"].append("Main-branch workflow intentionally disabled (opt-out marker present)")
+    elif not has_rule and not imports:
+        issues.append("Main-branch workflow not-installed; run the config command enable or setup.sh")
+    elif has_rule and len(imports) == 1:
+        if not os.path.isfile(main_rule_source):
+            issues.append(f"Main-branch workflow source missing: {main_rule_source}")
+        elif digest_file(main_rule_source) != digest_file(main_rule_copy):
+            issues.append(f"Drift in {main_rule_copy} vs repository source")
+        else:
+            res["details"].append("Main-branch workflow enabled (managed rule and import present)")
+    else:
+        issues.append("Inconsistent main-branch workflow state: expected a managed rule copy and one exact import, or an opt-out marker without import")
+    if "不要自行新建功能分支或 worktree".encode("utf-8") in global_bytes:
+        res["details"].append("Advisory: the managed main-branch policy is authoritative; remove any hand-written duplicate yourself")
 
     # 3. Global skills
     skills_dir = os.path.join(claude_dir, "skills")
@@ -244,7 +273,7 @@ def check_layer2(repo_dir, claude_dir):
 
     if issues:
         res["ok"] = False
-        res["details"] = issues
+        res["details"] = issues + res["details"]
     else:
         res["details"].append("AGENT-EFFICIENCY.md, skills, settings.json permissions and hooks fully configured")
     return res

@@ -2,11 +2,13 @@
 set -euo pipefail
 HERE="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 REPO="$(cd "$HERE/.." && pwd)"
+CONTENT_FAILS=0
 check() {
   if ! grep -Fq -- "$2" "$REPO/$1"; then
     printf 'FAIL %s missing %s\n' "$1" "$2" >&2
-    exit 1
+    CONTENT_FAILS=$((CONTENT_FAILS + 1))
   fi
+  return 0
 }
 check claude/AGENT-EFFICIENCY.md '验收通过并授权提交'
 check claude/AGENT-EFFICIENCY.md '无用户全局例外'
@@ -19,6 +21,10 @@ check README.zh-CN.md 'autoMode.allow'
 check README.md '授权 <项目> 提交 tree <前12位>'
 check README.zh-CN.md '授权 <项目> 提交 tree <前12位>'
 check claude/AGENT-EFFICIENCY.md '--no-verify'
+if [ "$CONTENT_FAILS" -ne 0 ]; then
+  printf 'FAIL %d content check(s) failed\n' "$CONTENT_FAILS" >&2
+  exit 1
+fi
 python3 - "$REPO/claude/AGENT-EFFICIENCY.md" <<'PY'
 import sys
 text = open(sys.argv[1], encoding="utf-8").read()

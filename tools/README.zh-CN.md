@@ -14,6 +14,8 @@
 
 运行时 bundle 包含 router 和 usage-report 二进制，但项目配置默认是可选的。使用 `codegraph-router-setup.sh` 配置 router MCP 访问，使用 `codegraph-usage-setup.sh` 配置 Stop hook 报告，或者使用显式的组合封装脚本 `codegraph-hub-setup.sh`。usage report 同时统计本地原生代码图调用和经由 router 的 `codegraph` 调用；它不会由 `install.sh` 或默认的 `setup.sh` 安装。
 
+主工作区/当前分支规则由 `setup.sh` 默认安装，且独立于 `--no-skills`。可用 `~/.drsg-memory/tools/main-branch-workflow-config.sh enable|disable|status` 管理用户级导入和持久关闭状态；`setup.sh --no-main-branch-workflow` 也可关闭。标记文件位于 `$CLAUDE_CONFIG_DIR/.main-branch-workflow.disabled`（通常是 `~/.claude/.main-branch-workflow.disabled`）。这是指导规则，不是强制执行的沙箱，也不会切换分支。
+
 ## 架构
 
 ```
@@ -154,7 +156,7 @@ python3 migrate.py load --api http://127.0.0.1:7700/rpc --token <new token> \
 
 - **L0: 项目发现层**（`--all` 全量模式）：通过无代理连接从 memory plane 发现所有登记项目，异常时显式报错；
 - **L1: 全局运行时工具层**：将 `~/.drsg-memory/tools/` 与 git `HEAD` 对应版本对比，校验执行权限；工作区未提交草稿单独做提示，不计为漂移；
-- **L2: 全局规则与技能层**：核验 `~/.claude/AGENT-EFFICIENCY.md`、skills、全局 hooks，并校验 `settings.json` 的 `0600` 安全权限；
+- **L2: 全局规则与技能层**：核验 `~/.claude/AGENT-EFFICIENCY.md`、skills、主分支工作流规则状态（启用、主动关闭或漂移）、全局 hooks，并校验 `settings.json` 的 `0600` 安全权限；
 - **L3: 项目钩子层**：比对各项目 `.claude/hooks/*.py` 哈希与执行权限；
 - **L4: 项目设置与文档层**：核验各项目 `.claude/settings.local.json` 注册、`.drsg/env` 凭据、`CLAUDE.md` 跨项目 Event 引导块，以及 `~/.claude.json` 里该项目是否注册了 `drsg` 和 `drsg-events` 两个 MCP server（local 或 user 范围；设了 `$CLAUDE_CONFIG_DIR` 时读 `$CLAUDE_CONFIG_DIR/.claude.json`，给了 `--claude-dir` 时读那个目录下的）。缺哪个就报哪个，并给出补注册的命令；
 - **L5: 代码图健康层**：检查代码图 daemon 运行健康状态与 `.mcp.json` 端口匹配，正确将按需待机识别为正常状态。

@@ -23,6 +23,7 @@ read it before running it.
 | `skills/agent-efficiency-retro/` | retrospective on why a session was slow: tool-call counts, calls per turn, latency vs context size — installed under `~/.claude/skills/` |
 | `skills/diagram-conventions/` | choosing architecture / workflow / sequence diagrams by the connective in the sentence — installed under `~/.claude/skills/`. The third-party `archify` skill is not ours to ship, so its pointer to this one is a hand-added `<!-- local: diagram-conventions -->` block at the end of its SKILL.md; re-add it after reinstalling archify |
 | `claude/AGENT-EFFICIENCY.md` | agent efficiency rules, copied to `~/.claude/` and `@`-imported by the global CLAUDE.md (setup step 2) |
+| `claude/MAIN-BRANCH-WORKFLOW.md` | user-level primary-worktree/current-branch workflow, installed by default and independently toggleable |
 | `docs/{en,zh}/src/` | the guide, with five diagrams |
 | `setup.sh` | install on a fresh machine — runs from an unpacked bundle |
 | `pack.sh` | build that bundle |
@@ -48,6 +49,29 @@ register it manually through a secret-safe workflow. A new project joining a
 running daemon still needs its token via `--token <t>`; the installer never
 mints a replacement, because that invalidates every client config already
 written.
+
+`setup.sh` also installs `claude/MAIN-BRANCH-WORKFLOW.md` as user-level
+instructions by default, independently of the skills installation option. It
+applies to the primary worktree's currently checked-out branch, which may not
+be named `main`; it never switches branches, and it is not an enforcement
+sandbox. To opt out,
+pass `--no-main-branch-workflow` or run the standalone toggle. The opt-out is
+remembered in `$CLAUDE_CONFIG_DIR/.main-branch-workflow.disabled` (normally
+`~/.claude/.main-branch-workflow.disabled`); `status` reports the current state.
+A hand-written duplicate remains yours to remove if redundant.
+
+```bash
+/tmp/drsg-harness-kit-*/setup.sh --no-main-branch-workflow  # opt out during setup
+~/.drsg-memory/tools/main-branch-workflow-config.sh status
+~/.drsg-memory/tools/main-branch-workflow-config.sh disable
+~/.drsg-memory/tools/main-branch-workflow-config.sh enable
+```
+
+When reconnecting, `claude -c` continues the most recent session in the current
+directory and takes no session ID; use `claude -r <session-id>` to resume by ID.
+If the session runs in a worktree, `/exit` returns to the primary worktree but
+does not terminate Claude Code. Prefer `tmux attach` to reconnect to an existing
+process when one is running.
 
 `--project` also installs a git pre-commit hook in that project that runs
 `completeness-guard.py --staged`. A new CLI option, environment variable,
