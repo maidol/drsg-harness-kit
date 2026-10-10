@@ -298,6 +298,30 @@ to-do code-graph symbols and a verb, and the recipient gets an imperative
 a judgment (a guard, a filter, a skip, a pause) and the verb is not `impact`,
 the reply ends with one line of advice. The Event is posted either way.
 
+A reply may identify the Event it answers with MCP field `reply_to` or CLI
+option `--reply-to <event-key>`:
+
+```bash
+python3 ~/.drsg-memory/tools/event.py post /path/to/reviewer-project \
+    "验收通过：已完成检查" --kind notice --reply-to evt-my-project-1791620000-a1b2c3
+```
+
+The target must be an Event sent by this recipient to the current project; its
+NOTIFY edge must also target the current project. Old Events without a stored
+sender path cannot be verified and are rejected with this prompt to resend
+without `reply_to`, adding the context in the body:
+
+```text
+reply_to 指向的 Event 是旧格式（没有 from_path），无法核对来源；请去掉 reply_to 重发，正文里写明在回复哪一条。
+```
+
+Missing or misdirected Events are rejected with a prompt to check the key or
+resend without `reply_to`.  The reply association only adds context in wake-up
+text and `event_list`; it does not authorize actions or close the original Event. The original Event owner still closes it with
+`event_done`. Both projects must deploy the updated `drsg-events` runtime and
+restart Claude Code before using `reply_to`; if you deploy manually, run the
+setup command from your own shell with the `!` prefix.
+
 ```bash
 python3 ~/.drsg-memory/tools/event.py post /path/to/other-repo \
     "粘性取号缺代理判断" --symbol getSchedulableAccount --verb context

@@ -119,6 +119,32 @@ def fetch(path, token):
     return res.get("nodes", [])
 
 
+def reply_line(reply_to, events, token):
+    """Render the original Event's summary for a reply, without changing it."""
+    if not reply_to:
+        return ""
+    matches = [n for n in events or []
+               if n.get("external_key") == reply_to
+               and "Event" in (n.get("labels") or [])]
+    if len(matches) != 1:
+        try:
+            res = rpc("plane.cypher", {"plane": PLANE,
+                "query": "MATCH (e:Event) WHERE key(e) = $key RETURN e",
+                "params": {"key": reply_to}}, token)
+            matches = [n for n in res.get("nodes", [])
+                       if "Event" in (n.get("labels") or [])]
+        except Exception:
+            matches = []
+    if len(matches) != 1:
+        summary = "（原待办摘要不可用）"
+    else:
+        summary = (matches[0].get("properties") or {}).get("summary") or ""
+        summary = summary[:40] if isinstance(summary, str) else ""
+        if not summary:
+            summary = "（原待办摘要不可用）"
+    return "↳ 回复你发出的 %s：%s" % (reply_to, summary)
+
+
 def plane_for(path):
     """The plane a repository answers on, or "" if it has no graph.
 
@@ -430,8 +456,39 @@ def verb_advice(kind, summary, symbols, verb):
             "lists every caller by distance; %s walks one hop" % (m.group(0), verb))
 
 
+def _reply_to_source(reply_to, target, sender_path, token):
+    """Validate that `reply_to` was sent by `target` to this project."""
+    if not isinstance(reply_to, str) or not reply_to:
+        raise ValueError("reply_to must be a non-empty Event key")
+    check_secrets(reply_to, "")
+    params = {"key": reply_to, "sender_path": sender_path}
+    res = rpc("plane.cypher", {"plane": PLANE,
+        "query": ("MATCH (p:Project)<-[:NOTIFY]-(e:Event) "
+                  "WHERE p.path = $sender_path AND key(e) = $key RETURN e"),
+        "params": params}, token)
+    matches = res.get("nodes", [])
+    if not matches:
+        res = rpc("plane.cypher", {"plane": PLANE,
+            "query": "MATCH (e:Event) WHERE key(e) = $key RETURN e",
+            "params": {"key": reply_to}}, token)
+        events = res.get("nodes", [])
+        if not events or any("Event" not in (e.get("labels") or []) for e in events):
+            raise ValueError("reply_to 目标 Event 不存在或不是 Event；请核对 key，或去掉 reply_to 重发。")
+        raise ValueError("reply_to 目标 Event 未发给当前项目；请核对 key，或去掉 reply_to 重发。")
+    if len(matches) != 1 or "Event" not in (matches[0].get("labels") or []):
+        raise ValueError("reply_to 目标 Event 不唯一或不是 Event；请核对 key，或去掉 reply_to 重发。")
+    props = matches[0].get("properties") or {}
+    if "from_path" not in props:
+        raise ValueError("reply_to 指向的 Event 是旧格式（没有 from_path），无法核对来源；请去掉 reply_to 重发，正文里写明在回复哪一条。")
+    source_path = props.get("from_path")
+    if (props.get("from_project") != os.path.basename(target)
+            or not isinstance(source_path, str)
+            or os.path.abspath(os.path.normpath(source_path)) != target):
+        raise ValueError("reply_to 发件方与 recipient 不匹配；请核对 key，或去掉 reply_to 重发。")
+
+
 def post(target, pid, summary, kind, ref, from_project, token,
-         symbols=None, verb=None, plane=None, from_path=None):
+         symbols=None, verb=None, plane=None, from_path=None, reply_to=None):
     """Create the Event and its NOTIFY edge.
 
     Returns `{key, symbols, plane, hint, unverified, advice}` — the outcome, not just
@@ -440,6 +497,8 @@ def post(target, pid, summary, kind, ref, from_project, token,
     graph got to confirm them. Raises on any step that did not change the
     graph. Shared with mcp_events.py so the CLI and the MCP tool cannot drift
     on what a well-formed to-do is."""
+    target = os.path.abspath(os.path.normpath(target))
+    sender_path = os.path.abspath(os.path.normpath(from_path or os.getcwd()))
     check_secrets(summary, ref)
     symbols, verb = check_symbols(symbols, verb)
     unverified = None
@@ -447,27 +506,31 @@ def post(target, pid, summary, kind, ref, from_project, token,
         # Before anything is written: a rejected address must leave no node
         # behind, or the sender fixes the message while a broken to-do sits in
         # the recipient's queue.
-        plane = plane or resolve_plane(target, from_path)
+        plane = plane or resolve_plane(target, sender_path)
         try:
             symbols, unverified = verify_symbols(symbols, plane)
         except AddressRejected as e:
             # Logged here rather than inside verify_symbols: this is where the
             # sender and recipient are known, and the verifier stays a pure
             # question about symbols.
-            telemetry(from_path or os.getcwd(),
+            telemetry(sender_path,
                       {"event": "refused", "to": target, "from": from_project,
                        "plane": plane, "verb": verb, "symbols": symbols,
                        "problems": e.problems})
             raise
+    if reply_to is not None:
+        _reply_to_source(reply_to, target, sender_path, token)
     ts = int(time.time())
     h = hashlib.sha1(summary.encode("utf-8")).hexdigest()[:6]
     key = f"evt-{os.path.basename(target)}-{ts}-{h}"
     props = {"kind": kind, "status": "open", "summary": summary,
-             "from_project": from_project,
+             "from_project": from_project, "from_path": sender_path,
              "from_session": os.environ.get("CLAUDE_SESSION_ID", ""),
              "created_at": ts}
     if ref:
         props["ref"] = ref
+    if reply_to is not None:
+        props["reply_to"] = reply_to
     if symbols:
         props["symbols"] = symbols
         props["verb"] = verb
@@ -541,7 +604,8 @@ def cmd_post(args, token):
     here = os.path.abspath(os.getcwd())
     print(report(post(target, pid, args.summary, args.kind, args.ref,
                       os.path.basename(here), token, symbols=args.symbol,
-                      verb=args.verb, plane=args.plane, from_path=here),
+                      verb=args.verb, plane=args.plane, from_path=here,
+                      reply_to=args.reply_to),
                  target))
 
 
@@ -565,11 +629,16 @@ def receipt(pr):
 
 def cmd_list(args, token):
     path = os.path.abspath(os.path.normpath(args.project or os.getcwd()))
-    for n in fetch(path, token):
+    events = fetch(path, token)
+    for n in events:
         pr = n.get("properties", {})
         print("%-9s %-8s %-14s %s  %s" % (pr.get("status", "?"), pr.get("kind", "?"),
                                           receipt(pr), n.get("external_key", "?"),
                                           pr.get("summary", "")))
+        if pr.get("reply_to"):
+            line = reply_line(pr["reply_to"], events, token)
+            if line:
+                print("%-9s %s" % ("", line))
         # The sender's only view of what the recipient is actually shown.
         if pr.get("graph_hint"):
             print("%-9s %s" % ("", pr["graph_hint"]))
@@ -695,6 +764,8 @@ def main():
     p.add_argument("summary")
     p.add_argument("--kind", default="handoff", choices=["handoff", "notice"])
     p.add_argument("--ref", default="")
+    p.add_argument("--reply-to", default=None, metavar="KEY",
+                   help="Event key this post is replying to")
     p.add_argument("--symbol", action="append", default=[], metavar="KEY",
                    help="code-graph symbol key the recipient should start "
                         "from; repeatable, at most %d" % MAX_SYMBOLS)

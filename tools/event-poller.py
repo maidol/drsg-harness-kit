@@ -278,12 +278,17 @@ def open_events(project):
     ev.API = os.environ.get("DRSG_API", ev.API)
     ev.PLANE = os.environ.get("DRSG_PLANE", ev.PLANE)
     out = []
-    for n in ev.fetch(project, os.environ.get("DRSG_TOKEN", "")):
+    events = ev.fetch(project, os.environ.get("DRSG_TOKEN", ""))
+    token = os.environ.get("DRSG_TOKEN", "")
+    for n in events:
         pr = n.get("properties") or {}
         if pr.get("status") == "open":
-            out.append({"key": n.get("external_key"), "kind": pr.get("kind", ""),
-                        "summary": pr.get("summary", ""), "ref": pr.get("ref", ""),
-                        "status": "open"})
+            row = {"key": n.get("external_key"), "kind": pr.get("kind", ""),
+                   "summary": pr.get("summary", ""), "ref": pr.get("ref", ""),
+                   "status": "open"}
+            if pr.get("reply_to"):
+                row["reply_line"] = ev.reply_line(pr["reply_to"], events, token)
+            out.append(row)
     return out
 
 
@@ -293,6 +298,11 @@ def wake_text(new):
         lines.append("- %s [%s] %s" % (e["key"], e["kind"], e["summary"]))
         if e.get("ref"):
             lines.append("  ref: %s" % e["ref"])
+        if e.get("reply_line"):
+            lines.append("  " + e["reply_line"])
+        elif e.get("reply_to"):
+            summary = (e.get("reply_summary") or "（原待办摘要不可用）")[:40]
+            lines.append("  ↳ 回复你发出的 %s：%s" % (e["reply_to"], summary))
     lines += [
         "按 CLAUDE.md 的 Event 流程处理：读 ref 指的文档，照做；做完发回执（notice）并 event_done。",
         "例外：summary 以「验收通过：」开头的判定只需 event_done，不要为它回 notice；回执的回执只会让对方多关一次单。",

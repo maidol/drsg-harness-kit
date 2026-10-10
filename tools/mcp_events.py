@@ -67,6 +67,8 @@ TOOLS = [
                          "default": "handoff"},
                 "ref": {"type": "string", "description":
                         "Optional pointer — a doc path, commit or issue."},
+                "reply_to": {"type": "string", "description":
+                             "Event key this post is replying to."},
                 "symbols": {
                     "type": "array", "items": {"type": "string"},
                     "description":
@@ -179,20 +181,26 @@ def call_tool(name, args, token):
                     args.get("kind") or "handoff", args.get("ref") or "",
                     os.path.basename(proj), token,
                     symbols=args.get("symbols"), verb=args.get("verb"),
-                    plane=args.get("plane"), from_path=proj),
+                    plane=args.get("plane"), from_path=proj,
+                    reply_to=args.get("reply_to")),
             target)
 
     if name == "event_list":
         path = os.path.abspath(os.path.normpath(args.get("project") or proj))
         want = args.get("status") or "open"
         rows = []
-        for n in ev.fetch(path, token):
+        events = ev.fetch(path, token)
+        for n in events:
             pr = n.get("properties", {})
             if want != "all" and pr.get("status") != want:
                 continue
             rows.append("%-6s %-8s %-14s %s  %s" % (
                 pr.get("status", "?"), pr.get("kind", "?"), ev.receipt(pr),
                 n.get("external_key", "?"), pr.get("summary", "")))
+            if pr.get("reply_to"):
+                line = ev.reply_line(pr["reply_to"], events, token)
+                if line:
+                    rows.append("%-6s %s" % ("", line))
             # The sender's only view of the second line the recipient gets.
             if pr.get("graph_hint"):
                 rows.append("%-6s %s" % ("", pr["graph_hint"]))

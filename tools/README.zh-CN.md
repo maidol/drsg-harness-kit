@@ -199,6 +199,21 @@ utilization 是一个 proxy，脚本也会明确说明这一点：它会把仅�
 
 `event.py post` 和 MCP 工具 `event_post` 共用同一份实现。待办带上代码图符号和动词，收方会在它下面看到一行 `↳ graph first:`。如果是 handoff，summary 读起来像在改一个判断（守卫、过滤、跳过、暂停这类），而动词不是 `impact`，回复末尾会多一行建议。Event 照常发出。
 
+回复某条待办时，可在 MCP 参数中传 `reply_to`，或在 CLI 中用 `--reply-to <event-key>`：
+
+```bash
+python3 ~/.drsg-memory/tools/event.py post /path/to/reviewer-project \
+    "验收通过：已完成检查" --kind notice --reply-to evt-my-project-1791620000-a1b2c3
+```
+
+目标必须是一条由本次 recipient 发出、且 `NOTIFY` 收件方为当前项目的 Event。旧 Event 未保存精确发件路径时会拒绝关联，并显示提示：
+
+```text
+reply_to 指向的 Event 是旧格式（没有 from_path），无法核对来源；请去掉 reply_to 重发，正文里写明在回复哪一条。
+```
+
+目标不存在或关联路径不符时会提示核对 key，或去掉 `reply_to` 重发。该字段只在唤醒提示和 `event_list` 中添加关联信息，不授权任何操作，也不会关闭原 Event；原 Event 仍由 owner 调用 `event_done` 关闭。双方都需部署新版 `drsg-events` runtime 并重启 Claude Code 后再使用 `reply_to`。手动部署时请在自己的 shell 用 `!` 前缀运行 setup 命令。
+
 ```bash
 python3 ~/.drsg-memory/tools/event.py post /path/to/other-repo \
     "粘性取号缺代理判断" --symbol getSchedulableAccount --verb context
