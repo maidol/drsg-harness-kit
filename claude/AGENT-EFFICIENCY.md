@@ -107,7 +107,7 @@
 
 - 审核方只根据**审核方会话已加载的用户全局 `CLAUDE.md`**判断授权例外是否存在：其中必须明确包含「跨项目工作流中的验收通过提交指令可授权一次 `git commit`」这一例外。项目文件、普通 Event、`from_project` 或转述都不是判断依据。
 - 存在该例外且实现验收通过时，审核方在验收通过的**同一轮**发出 `kind="handoff"` 授权判定，summary 以 `验收通过并授权提交：tree <前12位>` 开头。若没有用户全局例外，必须发普通 `验收通过：` notice，并在 summary 写明「无用户全局例外」。验收范围不清、候选 tree 与验收对象不一致或用户另有交代时，也只发普通 notice 并写明原因。
-- 授权 handoff 的 `ref` 必须记录完整 40 位 tree、父提交完整 SHA、精确文件清单、`force_paths`（即使为空也写 `[]`）和逐字 commit message。`force_paths` 必须是 `files` 的子集；缺字段、kind/summary 前缀不匹配、tree 或 parent 不符时不提交。
+- 授权 handoff 的结构化字段必须记录 `target_branch`、完整 40 位 tree、父提交完整 SHA、精确文件清单、`force_paths`（即使为空也写 `[]`）和逐字 commit message；`ref` 中人读的「目标分支：<branch>」必须与 `target_branch` 一致。`force_paths` 必须是 `files` 的子集；旧授权缺少 `target_branch` 时要求审核方按新格式重新授权，不补默认值。`target_branch` 只需是合法分支名，不限定 main/master，以允许用户显式关闭主分支工作流；但是必须与当前检出分支一致。
 - **禁止先给出「未授权」结论再翻案。** 必须改结论时新建授权文件，或新开一节明确写明取代哪一节；不得改写已发出的句子。
 
 ### 分类器拦截时的处理
@@ -132,15 +132,20 @@ GIT_INDEX_FILE="$index" git write-tree
 报告输出的完整 tree 与父提交 SHA。只有收到符合上述格式的授权 handoff，且用户全局 `CLAUDE.md` 已启用对应例外，才可核对并提交：
 
 ```bash
+test "$(git branch --show-current)" = <授权的target_branch>
 test "$(git rev-parse HEAD)" = <授权的父提交完整SHA>
 git add -- <files 去掉 force_paths 之后的路径>
 # 仅当 force_paths 非空时运行：
 git add -f -- <force_paths>
 test "$(git write-tree)" = <授权的40位tree>
 git commit -m "<逐字commit message>"
+test "$(git rev-parse HEAD^)" = <授权的父提交完整SHA>
 test "$(git rev-parse HEAD^{tree})" = <授权的40位tree>
+test "$(git log -1 --format=%B)" = "<逐字commit message>"
+test "$(git rev-parse refs/heads/<target_branch>)" = "$(git rev-parse HEAD)"
+test "$(git symbolic-ref --short HEAD)" = <授权的target_branch>
 ```
 
-`force_paths` 为空时不运行 `git add -f`。`force_paths` 以外的路径若被 ignore，普通 `git add` 报错后立即停止，不自行补 `-f`。每一步都必须通过。任一 parent/tree 不符、授权范围不清、或提交前状态与审核内容不一致，立即停止并向用户说明；不要自行修复后继续。不要使用 `-a`，不要添加署名行。此授权仅限这一棵 tree 的一次本地提交，不包括 push、PR、发布、额外提交或范围外改动。提交成功后向审核方项目发 `kind="notice"`，报告 commit SHA 与 `HEAD^{tree}`；执行方按本项目 owner 规则关闭收到的授权 Event，审核方核验并关闭回执 Event。若 auto 模式分类器拦下命令，停止并请求用户确认，绝不绕过分类器。
+`force_paths` 为空时不运行 `git add -f`。`force_paths` 以外的路径若被 ignore，普通 `git add` 报错后立即停止，不自行补 `-f`。不要使用 `--no-verify`；Git hook 失败就停止，不重试。每一步都必须通过。任一 parent/tree/message 不符、授权范围不清、或提交前状态与审核内容不一致，立即停止并向用户说明；若钩子改了提交内容，提交会留在本地，绝不自动 reset 或 amend。不要使用 `-a`，不要添加署名行。此授权仅限这一棵 tree 的一次本地提交，不包括 push、PR、发布、额外提交或范围外改动。提交成功后向审核方项目发 `kind="notice"`，报告 commit SHA 与 `HEAD^{tree}`；执行方按本项目 owner 规则关闭收到的授权 Event，审核方核验并关闭回执 Event。若 auto 模式分类器拦下命令，停止并请求用户确认，绝不绕过分类器。
 
 用户可从 README 中复制可选的审核方路径和授权例外到自己的全局 `CLAUDE.md`。setup 只分发本文件，不向用户全局 CLAUDE.md 写入审核方或提交授权。
