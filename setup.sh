@@ -189,7 +189,7 @@ if [ "$SKILLS" -eq 1 ] && [ -d "$HERE/skills" ]; then
   mkdir -p "$SKILLS_DIR"
   cp -a "$HERE/skills/." "$SKILLS_DIR/"
   # Agent efficiency rules: loaded every session through an @-import in the
-  # global CLAUDE.md, the same way RTK.md is. The copy is overwritten on every
+  # global CLAUDE.md. The copy is overwritten on every
   # run — edit claude/AGENT-EFFICIENCY.md in the repository, not the copy.
   if [ -f "$HERE/claude/AGENT-EFFICIENCY.md" ]; then
     CLAUDE_DIR="${CLAUDE_CONFIG_DIR:-$HOME/.claude}"
