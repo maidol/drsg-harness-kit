@@ -88,5 +88,26 @@ check "git commit -m mentioning event.py list allowed" "$OUT" ""
 OUT="$(call_hook "Bash" "rg \"event.py list\" docs/")"
 check "rg with double quotes mentioning event.py list allowed" "$OUT" ""
 
+# 7. event-poller --take is user-only; unrelated poller commands remain available
+OUT="$(call_hook "Bash" "python3 ~/.drsg-memory/tools/event-poller.py --take")"
+DECISION="$(python3 -c "import json,sys; print(json.loads(sys.argv[1]).get('hookSpecificOutput',{}).get('permissionDecision',''))" "$OUT")"
+REASON="$(python3 -c "import json,sys; print(json.loads(sys.argv[1]).get('hookSpecificOutput',{}).get('permissionDecisionReason',''))" "$OUT")"
+check "python3 event-poller --take is denied" "$DECISION" "deny"
+check "take denial directs user to bang shell" "$(echo "$REASON" | grep -ic 'only the user.*run ! python3')" 1
+
+OUT="$(call_hook "Bash" "python /path/event-poller.py --take")"
+DECISION="$(python3 -c "import json,sys; print(json.loads(sys.argv[1]).get('hookSpecificOutput',{}).get('permissionDecision',''))" "$OUT")"
+check "python event-poller --take is denied" "$DECISION" "deny"
+
+OUT="$(call_hook "Bash" "~/.drsg-memory/tools/event-poller.py --take")"
+DECISION="$(python3 -c "import json,sys; print(json.loads(sys.argv[1]).get('hookSpecificOutput',{}).get('permissionDecision',''))" "$OUT")"
+check "direct event-poller --take is denied" "$DECISION" "deny"
+
+OUT="$(call_hook "Bash" "python3 tools/event-poller.py --help")"
+check "event-poller help remains allowed" "$OUT" ""
+
+OUT="$(call_hook "Bash" "python3 tools/event-poller.py --status")"
+check "unrelated event-poller command remains allowed" "$OUT" ""
+
 printf '\nPASS %d/%d\n' "$OK" "$RAN"
-[ "$RAN" -eq 18 ] && [ "$OK" -eq "$RAN" ]
+[ "$RAN" -eq 24 ] && [ "$OK" -eq "$RAN" ]

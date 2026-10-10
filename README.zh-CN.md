@@ -68,6 +68,18 @@ CLAUDE_PICK_MODELS="opus fable" claude   # 手动指定选单
 
 以下情况不弹菜单：stdin 或 stdout 不是终端；参数里已经有 `--model`、`-p`/`--print`、`--help` 或 `--version`；子命令（`claude mcp …`、`claude attach …`）。它是一个 shell 函数，不是包装进程，所以待办轮询仍能找到它要绑定租约的那个 Claude Code 进程。只支持 bash。`CLAUDE_PICK_FORCE_TTY=1` 只给测试用：把 stdin 和 stdout 当成终端。
 
+## 重新连接后恢复待办轮询
+
+用 `-c` / `--resume` 重新连接同一个 Claude 会话时，如果原会话是在 tmux 中启动的，优先用 `tmux attach` 回到原进程。另开一个相同会话的新进程可能让两个终端同时可见。只有旧进程的轮询器仍存活、处于空闲等待时，较新的进程才会接管 Event owner 租约；旧进程不会自动抢回租约。轮询器至少运行三秒后才会因待办唤醒模型，让宿主有时间接收 hook 的 stderr。
+
+如果无法回到原进程，用户可在 `!` shell 中显式把当前项目的租约转给当前会话：
+
+```bash
+! python3 ~/.drsg-memory/tools/event-poller.py --take
+```
+
+此操作不会停止或杀掉旧进程，也不会立即轮询。旧轮询器仍存活时，会在下一个 tick 观察到租约转移；否则要等之后的 Stop hook 才会启动轮询。如果旧轮询器已退出并唤醒了旧模型，仍开放的 Event 可能被再次通知和处理。只有能接受这种重复工作的可能性时，才使用此显式接管。命令会从本项目轮询状态文件推导会话身份；若 `CLAUDE_SESSION_ID` 可用，必须与推导结果一致；PID 匹配缺失或有歧义时会拒绝接管。仅供测试的 `EVENT_POLL_TEST_MIN_LIFETIME` 可缩短唤醒前至少三秒的等待。
+
 ## 跨项目审核与验收（可选）
 
 分发的[执行方工作流](claude/AGENT-EFFICIENCY.md#跨项目审核与验收按阶段交接不跳闸)通过 Event 支持计划评审与实现验收。只有你在自己的全局 `~/.claude/CLAUDE.md` 指定了审核方项目（或当前任务明确指定审核方）才启用；kit 不会假定审核方，也不会替你写入此设置：

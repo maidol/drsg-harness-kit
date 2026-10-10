@@ -13,10 +13,11 @@ both be woken for the same Event and both act on it. The right to poll is a
 exit to wake its model, and a lock that died with it would hand the project to
 another session at exactly the moment the first one starts working on the
 Event. The lease names the session and its Claude Code process; a waiting
-poller takes it over only when that process is gone, so a session that exits
-(cleanly or not) is replaced within one tick. The one exception is a background
-session (under `claude bg-pty-host`): `/exit` there only detaches it and its
-process lives on, so a foreground session takes the lease from it.
+poller takes it over when that process is gone, or when a strictly newer process
+for the same session appears while the old poller is still idle. The one
+exception is a background session (under `claude bg-pty-host`): `/exit` there
+only detaches it and its process lives on, so a foreground session takes the
+lease from it.
 
   SessionStart / Stop / StopFailure   start this session's poller unless it is running
   SessionEnd            stop it and give the lease back
@@ -30,6 +31,7 @@ import hashlib
 import importlib.util
 import json
 import os
+import re
 import signal
 import sys
 import time
@@ -37,6 +39,7 @@ import time
 INTERVAL = int(os.environ.get("EVENT_POLL_INTERVAL", "900"))   # 15 minutes
 TICK = int(os.environ.get("EVENT_POLL_TICK", "60"))             # takeover latency
 KICK_STEP = float(os.environ.get("EVENT_POLL_KICK_STEP", "1"))  # seconds between looks at `kick`
+MIN_POLL_LIFETIME = float(os.environ.get("EVENT_POLL_TEST_MIN_LIFETIME", "3"))  # tests only
 LOG_MAX = int(os.environ.get("EVENT_POLL_LOG_MAX", "262144"))   # bytes before poller.log rotates
 SEEN_MAX_AGE = 14 * 86400                                       # orphaned seen files, seconds
 STATE_ROOT = os.path.join(os.environ.get("DRSG_MEM_DIR") or
@@ -211,23 +214,39 @@ def holds(lease, sid, pid, start):
             and lease.get("start") == start)
 
 
+def live_poller(state, sid, pid):
+    """Whether the lease owner's recorded poller process is still active."""
+    info = read_json(os.path.join(state, tag(sid, pid) + ".pid"), {})
+    poller_pid, poller_start = info.get("pid"), info.get("start")
+    return (alive(poller_pid, poller_start)
+            and any(MARK in arg for arg in cmdline(poller_pid)))
+
+
 def take_lease(state, sid, pid, start, bg):
     """(held, fresh): whether this process holds the lease after the call, and
     whether it has only just taken it (from another process, or from nobody).
-    The owner is a session and its process, so a second process on the same
-    session id waits like any other session. A background holder is taken over
-    by a foreground session; background sessions never take it from each
-    other, so two of them cannot flap."""
+    Existing owner/dead-owner/background priorities precede the monotonic
+    same-session process takeover, which requires the old poller to be alive."""
     path = os.path.join(state, "lease.json")
     with Locked(state):
         lease = read_json(path, {})
+        old_sid, old_pid = lease.get("session_id"), lease.get("pid")
         mine = holds(lease, sid, pid, start)
-        gone = not alive(lease.get("pid"), lease.get("start"))
-        if mine or gone or (lease.get("bg") and not bg):
+        gone = not alive(old_pid, lease.get("start"))
+        background_take = bool(lease.get("bg") and not bg)
+        newer_same_session = (old_sid == sid and old_pid != pid
+                              and isinstance(start, int) and isinstance(lease.get("start"), int)
+                              and start > lease["start"] and not (lease.get("bg") and bg)
+                              and live_poller(state, old_sid, old_pid))
+        if mine or gone or background_take or newer_same_session:
             if not mine:
-                log(state, "lease -> %s (was %s%s)" % (tag(sid, pid),
-                                                       tag(lease.get("session_id"), lease.get("pid")),
-                                                       "" if gone else ", background"))
+                if newer_same_session and not gone and not background_take:
+                    log(state, "lease -> %s (was %s, same session newer process)" %
+                        (tag(sid, pid), tag(old_sid, old_pid)))
+                else:
+                    log(state, "lease -> %s (was %s%s)" % (tag(sid, pid),
+                                                           tag(old_sid, old_pid),
+                                                           "" if gone else ", background"))
             write_json(path, {"session_id": sid, "pid": pid, "start": start, "bg": bg,
                               "updated": int(time.time())})
             return True, not mine
@@ -292,7 +311,7 @@ def open_events(project):
     return out
 
 
-def wake_text(new):
+def wake_text(new, fresh=False):
     lines = ["【待办轮询】本项目有 %d 条新的待办 Event（drsg-events）：" % len(new)]
     for e in new:
         lines.append("- %s [%s] %s" % (e["key"], e["kind"], e["summary"]))
@@ -303,6 +322,8 @@ def wake_text(new):
         elif e.get("reply_to"):
             summary = (e.get("reply_summary") or "（原待办摘要不可用）")[:40]
             lines.append("  ↳ 回复你发出的 %s：%s" % (e["reply_to"], summary))
+    if fresh:
+        lines.append("本会话现在持有本项目的 Event owner 租约，可以处理下面列出的 Event。")
     lines += [
         "按 CLAUDE.md 的 Event 流程处理：读 ref 指的文档，照做；做完发回执（notice）并 event_done。",
         "例外：summary 以「验收通过：」开头的判定只需 event_done，不要为它回 notice；回执的回执只会让对方多关一次单。",
@@ -314,6 +335,7 @@ def wake_text(new):
 
 
 def poll(project, state, sid):
+    poll_started_at = time.monotonic()
     pid, start = owner_process()
     if not pid:
         log(state, "no claude ancestor for %s; not polling" % sid)
@@ -340,6 +362,7 @@ def poll(project, state, sid):
             release(state, sid, pid, start)
             diagnostic(state, "poll_owner_gone", sid, pid)
             return 0
+        seen = set(read_json(seen_path, []))
         k = mtime(kick)
         if k != kicked:                                  # a sender just posted here
             kicked, next_check = k, 0
@@ -359,15 +382,27 @@ def poll(project, state, sid):
                 log(state, "check failed: %r" % (exc,))
                 new = []
             if new:
-                seen.update(e["key"] for e in new)
-                write_json(seen_path, sorted(seen))
-                log(state, "wake %s: %s" % (sid, ",".join(e["key"] for e in new)))
+                remaining = MIN_POLL_LIFETIME - (time.monotonic() - poll_started_at)
+                if remaining > 0:
+                    time.sleep(remaining)
                 with Locked(state):
+                    lease = read_json(os.path.join(state, "lease.json"), {})
+                    if not holds(lease, sid, pid, start):
+                        log(state, "wake cancelled: lease lost by %s" % tag(sid, pid))
+                        try:
+                            os.remove(pidfile)
+                        except OSError:
+                            pass
+                        diagnostic(state, "poll_lease_lost_before_wake", sid, pid)
+                        return 0
+                    seen.update(e["key"] for e in new)
+                    write_json(seen_path, sorted(seen))
+                    log(state, "wake %s: %s" % (sid, ",".join(e["key"] for e in new)))
                     try:
                         os.remove(pidfile)
                     except OSError:
                         pass
-                sys.stderr.write(wake_text(new) + "\n")
+                sys.stderr.write(wake_text(new, fresh=fresh) + "\n")
                 diagnostic(state, "poll_wake", sid, pid)
                 return 2                                 # lease stays with this session
         wait(kick, kicked, TICK)
@@ -386,7 +421,68 @@ def stop_poller(state, sid, pid, start):
     release(state, sid, pid, start)
 
 
+def resolve_session_id(state, pid):
+    """Resolve exactly one session id from this process's poller state files."""
+    if not pid:
+        raise ValueError("cannot identify the current Claude process")
+    matches = set()
+    suffix = re.compile(r"^(.+)\.%s\.(?:pid|seen\.json)$" % re.escape(str(pid)))
+    try:
+        names = os.listdir(state)
+    except OSError:
+        names = []
+    for name in names:
+        match = suffix.match(name)
+        if match:
+            matches.add(match.group(1))
+    if len(matches) != 1:
+        raise ValueError("cannot resolve exactly one session id from poller state")
+    sid = next(iter(matches))
+    supplied = os.environ.get("CLAUDE_SESSION_ID")
+    if supplied and supplied != sid:
+        raise ValueError("CLAUDE_SESSION_ID does not match the state-file identity")
+    return sid
+
+
+def manual_take():
+    """Move the current project's lease on explicit user request; never poll."""
+    project = os.path.realpath(os.environ.get("CLAUDE_PROJECT_DIR") or os.getcwd())
+    drsg_dir = os.path.join(project, ".drsg")
+    if not os.path.isdir(drsg_dir) or not os.path.isfile(os.path.join(drsg_dir, "env")):
+        print("manual takeover requires .drsg/env in the current project", file=sys.stderr)
+        return 1
+    state = os.path.join(STATE_ROOT, hashlib.sha1(project.encode()).hexdigest()[:12])
+    os.makedirs(state, exist_ok=True)
+    try:
+        pid, start = owner_process()
+        sid = resolve_session_id(state, pid)
+        if not start:
+            raise ValueError("cannot identify the current Claude process start time")
+    except (OSError, ValueError, TypeError) as exc:
+        print(str(exc), file=sys.stderr)
+        return 1
+    bg = background(pid)
+    path = os.path.join(state, "lease.json")
+    with Locked(state):
+        write_json(path, {"session_id": sid, "pid": pid, "start": start, "bg": bg,
+                          "updated": int(time.time())})
+        log(state, "lease -> %s (manual user takeover)" % tag(sid, pid))
+        seen_path = os.path.join(state, tag(sid, pid) + ".seen.json")
+        try:
+            os.remove(seen_path)
+        except OSError:
+            pass
+    if live_poller(state, sid, pid):
+        print("Event-owner lease transferred to this process; its poller will observe it on the next TICK.")
+    else:
+        print("Event-owner lease transferred to this process; no live poller is recorded, so wait for a later Stop hook.")
+    print("Open Events may be announced and handled twice if the previous model had already woken.")
+    return 0
+
+
 def main():
+    if sys.argv[1:] == ["--take"]:
+        return manual_take()
     try:
         hook = json.load(sys.stdin)
     except ValueError:

@@ -301,7 +301,7 @@ def event_owner(proj_dir, sid):
         st = _proc(holder) if holder else None
         live = bool(st) and st[0] == lease.get("start") and st[1] not in ("T", "t", "Z", "X")
         if live and lease.get("session_id") == sid and holder == _claude_pid():
-            return "本会话是这个项目的 Event owner：按 Event 流程处理。"
+            return "本会话是这个项目的 Event owner，现持有租约：可以处理本项目的待办 Event；按 Event 流程处理。"
         if live:
             return ("Event owner 是会话 %s（pid %s），本会话只读：可以看、可以回答用户的问题，"
                     "不要执行这些 Event；本会话调 event_done 会被拒绝，用户明确要求本会话接手时才带 force。"

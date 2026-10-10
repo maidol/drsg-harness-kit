@@ -123,6 +123,18 @@ process, so the poller still finds the Claude Code process it ties its lease
 to. bash only. `CLAUDE_PICK_FORCE_TTY=1` is for tests: it treats stdin and
 stdout as a terminal.
 
+## Recover the to-do poller after reconnect
+
+When reconnecting to the same Claude session with `-c` / `--resume`, prefer returning to the original process with `tmux attach` when it was started in tmux. Starting a second process for the same session can make both terminals visible. The newer process takes the Event-owner lease only while the older process's poller is still alive and idle; the older process will not automatically take the lease back. The poller waits at least three seconds before waking the model for an Event, giving the host time to attach the hook's stderr.
+
+If the original process is unreachable, a user can explicitly transfer the current project's lease from the `!` shell:
+
+```bash
+! python3 ~/.drsg-memory/tools/event-poller.py --take
+```
+
+This does not stop or kill the old process and does not poll immediately. A live poller notices the transfer on its next tick; otherwise, a later Stop hook must start it. If the old poller had already exited to wake its model, the still-open Event may be announced and handled twice. Use this explicit override only when that duplicate-work possibility is acceptable. The command identifies the session from this project's poller state files; when `CLAUDE_SESSION_ID` is available it must agree with that identity, and ambiguous or missing PID matches are refused. For tests only, `EVENT_POLL_TEST_MIN_LIFETIME` can shorten the three-second minimum wake delay.
+
 ## Cross-project review and acceptance (optional)
 
 The distributed [agent workflow](claude/AGENT-EFFICIENCY.md#跨项目审核与验收按阶段交接不跳闸) supports plan review and implementation acceptance through Events. It is inactive unless you identify a reviewer project in your own global `~/.claude/CLAUDE.md` (or explicitly name one for a task); the kit does not assume a reviewer or write this setting for you:
