@@ -12,6 +12,16 @@ mkdir -p "$T/proj/.drsg" "$T/mem"; touch "$T/proj/.drsg/env"
 echo '[{"key":"e1","kind":"handoff","summary":"x","status":"open"}]' > "$T/events.json"
 export DRSG_MEM_DIR="$T/mem" EVENT_POLL_TICK=1 EVENT_POLL_FAKE="$T/events.json" CLAUDE_PROJECT_DIR="$T/proj"
 LEASE="$T/mem/poller/$(python3 -c 'import hashlib,os,sys; print(hashlib.sha1(os.path.realpath(sys.argv[1]).encode()).hexdigest()[:12])' "$T/proj")/lease.json"
+STATE="$(dirname "$LEASE")"
+state_for() { printf '%s/%s\n' "$T/mem/poller" "$(python3 -c 'import hashlib,os,sys; print(hashlib.sha1(os.path.realpath(sys.argv[1]).encode()).hexdigest()[:12])' "$1")"; }
+diag_has() { grep -Fq "diag branch=$2 sid=$3 pid=$4" "$1/poller.log" 2>/dev/null && echo yes || echo no; }
+run_hook() { printf '%s\n' "$1" | CLAUDE_PROJECT_DIR="$3" EVENT_POLL_OWNER_PID="$2" timeout 5 python3 "$POLLER" >/dev/null 2>&1; echo $?; }
+owner_start() { python3 - "$1" <<'PY'
+import sys
+with open("/proc/%s/stat" % sys.argv[1]) as f:
+    print(int(f.read().rsplit(")", 1)[1].split()[19]))
+PY
+}
 RAN=0; OK=0
 check() { RAN=$((RAN+1)); if [ "$2" = "$3" ]; then OK=$((OK+1)); echo "ok   $1"; else echo "FAIL $1: got '$2' want '$3'"; fi; }
 holder() { python3 -c 'import json,sys; print(json.load(open(sys.argv[1])).get("session_id",""))' "$LEASE" 2>/dev/null; }
@@ -30,12 +40,16 @@ reset() { rm -rf "$T/mem/poller"; }
 # 1. a foreground holder is not taken over while it lives; kill -9 hands it on
 reset; fg_owner; A=$OWNER; fg_owner; B=$OWNER
 check "first session wakes"            "$(run A $A)" 2
+check "poller entry diagnostic is logged" "$(diag_has "$STATE" entry A "$A")" yes
+check "wake branch diagnostic is logged" "$(diag_has "$STATE" poll_wake A "$A")" yes
+check "main return diagnostic is logged" "$(diag_has "$STATE" main_poll_return A -)" yes
 check "second waits while holder lives" "$(run B $B Stop 3)" 124
 check "lease still with A"             "$(holder)" A
 kill -9 $A
 check "kill -9 holder: B wakes"        "$(run B $B)" 2
 check "lease moved to B"               "$(holder)" B
 run B $B SessionEnd >/dev/null
+check "SessionEnd diagnostic is logged" "$(diag_has "$STATE" session_end B "$B")" yes
 check "SessionEnd releases"            "$([ -e "$LEASE" ] && echo kept || echo released)" released
 
 # 2. a background holder yields to a foreground session, never to another background one
@@ -49,7 +63,6 @@ run A $A Stop 3 >/dev/null   # A has seen e1, so its exit code says nothing; the
 check "background does not take it back" "$(holder)" B
 
 # 3. seen.json lives exactly as long as its session; a dead session's leftovers age out
-STATE="$(dirname "$LEASE")"
 reset; fg_owner; A=$OWNER
 run A $A >/dev/null
 check "Stop after a wake does not wake again" "$(run A $A Stop 3)" 124
@@ -107,6 +120,7 @@ kill -STOP $A
 check "stopped holder: B takes over and wakes" "$(run B $B)" 2
 check "lease moved off the stopped holder"     "$(holder)" B
 check "a stopped session's own poller exits"   "$(run A $A Stop 3)" 0
+check "stopped owner exit branch is logged"     "$(diag_has "$STATE" poll_owner_gone A "$A")" yes
 kill -CONT $A
 
 # 7. setup.sh registers the poller on StopFailure too: a turn that ends in an API error
@@ -262,5 +276,33 @@ for p in mcp cli; do
   check "$p: owner gone, anyone closes"         "$(EVENT_POLL_OWNER_PID=$B close_as $p plain)" closed
 done
 
+# 14. branch diagnostics are persisted without leaking full IDs or exception messages
+reset; NO_DRSG="$T/no-drsg"; mkdir -p "$NO_DRSG"; fg_owner; A=$OWNER
+check "project without .drsg returns cleanly" "$(run_hook '{"session_id":"unmanaged","hook_event_name":"Stop"}' "$A" "$NO_DRSG")" 0
+check "project without .drsg creates no poller state" "$([ -e "$T/mem/poller" ] && echo created || echo absent)" absent
+
+reset; NO_ENV="$T/noenv"; mkdir -p "$NO_ENV/.drsg"; fg_owner; A=$OWNER
+NO_ENV_STATE="$(state_for "$NO_ENV")"; NO_ENV_SID="upgrade-session"
+check "missing env returns cleanly" "$(run_hook "{\"session_id\":\"$NO_ENV_SID\",\"hook_event_name\":\"Stop\"}" "$A" "$NO_ENV")" 0
+check "missing env branch records short sid and owner pid" "$(diag_has "$NO_ENV_STATE" skip_missing_env "${NO_ENV_SID:0:8}" "$A")" yes
+check "diagnostics omit the full missing-env sid" "$(grep -F 'diag ' "$NO_ENV_STATE/poller.log" | grep -F "$NO_ENV_SID" >/dev/null && echo leaked || echo redacted)" redacted
+
+reset; fg_owner; A=$OWNER
+check "missing sid returns cleanly" "$(run_hook '{}' "$A" "$T/proj")" 0
+check "missing sid branch uses sid placeholder and owner pid" "$(diag_has "$STATE" skip_no_session_id - "$A")" yes
+
+reset
+check "missing owner returns cleanly" "$(run_hook '{"session_id":"no-owner","hook_event_name":"Stop"}' 0 "$T/proj")" 0
+check "missing owner branch uses pid placeholder" "$(diag_has "$STATE" poll_no_owner no-owner -)" yes
+
+reset; fg_owner; A=$OWNER; ALREADY_SID=already; mkdir -p "$STATE"
+printf '{"pid":%s,"start":%s}\n' "$A" "$(owner_start "$A")" > "$STATE/$ALREADY_SID.$A.pid"
+check "already-running poller returns cleanly" "$(run_hook "{\"session_id\":\"$ALREADY_SID\",\"hook_event_name\":\"Stop\"}" "$A" "$T/proj")" 0
+check "already-running branch is logged" "$(diag_has "$STATE" poll_already_running "$ALREADY_SID" "$A")" yes
+
+reset; fg_owner; A=$OWNER; CRASH_SID=crash; mkdir -p "$STATE/lease.json"
+check "poll exception remains nonzero" "$(run_hook "{\"session_id\":\"$CRASH_SID\",\"hook_event_name\":\"Stop\"}" "$A" "$T/proj")" 1
+check "poll exception type is logged without message" "$(diag_has "$STATE" poll_crash:IsADirectoryError "$CRASH_SID" -)" yes
+
 echo "PASS $OK/$RAN"
-[ "$RAN" -eq 55 ] && [ "$OK" -eq "$RAN" ]
+[ "$RAN" -eq 73 ] && [ "$OK" -eq "$RAN" ]

@@ -53,6 +53,12 @@ def log(state, msg):
         pass
 
 
+def diagnostic(state, branch, sid, pid):
+    sid = sid if isinstance(sid, str) and sid else "-"
+    log(state, "diag branch=%s sid=%s pid=%s" % (
+        branch, sid[:8], pid or "-"))
+
+
 def rotate(state):
     """Keep poller.log bounded: past LOG_MAX it becomes poller.log.1, replacing
     the previous one, so two files at most and the newest lines always survive.
@@ -301,12 +307,14 @@ def poll(project, state, sid):
     pid, start = owner_process()
     if not pid:
         log(state, "no claude ancestor for %s; not polling" % sid)
+        diagnostic(state, "poll_no_owner", sid, pid)
         return 0
     bg = background(pid)
     pidfile = os.path.join(state, tag(sid, pid) + ".pid")
     with Locked(state):
         running = read_json(pidfile, {})
         if alive(running.get("pid"), running.get("start")):
+            diagnostic(state, "poll_already_running", sid, pid)
             return 0                                     # already polling for this process
         write_json(pidfile, {"pid": os.getpid(), "start": proc_start(os.getpid())})
         sweep_seen(state, tag(sid, pid))
@@ -320,6 +328,7 @@ def poll(project, state, sid):
         if not alive(pid, start):
             log(state, "claude %d gone; poller for %s exits" % (pid, tag(sid, pid)))
             release(state, sid, pid, start)
+            diagnostic(state, "poll_owner_gone", sid, pid)
             return 0
         k = mtime(kick)
         if k != kicked:                                  # a sender just posted here
@@ -349,6 +358,7 @@ def poll(project, state, sid):
                     except OSError:
                         pass
                 sys.stderr.write(wake_text(new) + "\n")
+                diagnostic(state, "poll_wake", sid, pid)
                 return 2                                 # lease stays with this session
         wait(kick, kicked, TICK)
 
@@ -373,15 +383,38 @@ def main():
         hook = {}
     sid = hook.get("session_id") or ""
     project = os.path.realpath(os.environ.get("CLAUDE_PROJECT_DIR") or hook.get("cwd") or os.getcwd())
-    if not sid or not os.path.exists(os.path.join(project, ".drsg", "env")):
+    drsg_dir = os.path.join(project, ".drsg")
+    if not os.path.isdir(drsg_dir):
         return 0
     state = os.path.join(STATE_ROOT, hashlib.sha1(project.encode()).hexdigest()[:12])
     os.makedirs(state, exist_ok=True)
+    try:
+        owner_pid, _ = owner_process()
+    except Exception:
+        owner_pid = None
+    diagnostic(state, "entry", sid, owner_pid)
+    if not sid:
+        diagnostic(state, "skip_no_session_id", sid, owner_pid)
+        return 0
+    if not os.path.exists(os.path.join(drsg_dir, "env")):
+        diagnostic(state, "skip_missing_env", sid, owner_pid)
+        return 0
     if hook.get("hook_event_name") == "SessionEnd":
         pid, start = owner_process()
-        stop_poller(state, sid, pid, start)
+        try:
+            stop_poller(state, sid, pid, start)
+        except Exception as e:
+            diagnostic(state, "session_end_crash:" + type(e).__name__, sid, pid)
+            raise
+        diagnostic(state, "session_end", sid, pid)
         return 0
-    return poll(project, state, sid)
+    try:
+        rc = poll(project, state, sid)
+    except Exception as e:
+        diagnostic(state, "poll_crash:" + type(e).__name__, sid, None)
+        raise
+    diagnostic(state, "main_poll_return", sid, None)
+    return rc
 
 
 if __name__ == "__main__":
