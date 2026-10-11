@@ -158,7 +158,7 @@ python3 migrate.py load --api http://127.0.0.1:7700/rpc --token <new token> \
 - **L1: 全局运行时工具层**：将 `~/.drsg-memory/tools/` 与 git `HEAD` 对应版本对比，校验执行权限；工作区未提交草稿单独做提示，不计为漂移；
 - **L2: 全局规则与技能层**：核验 `~/.claude/AGENT-EFFICIENCY.md`、skills、主分支工作流规则状态（启用、主动关闭或漂移）、全局 hooks，并校验 `settings.json` 的 `0600` 安全权限；
 - **L3: 项目钩子层**：比对各项目 `.claude/hooks/*.py` 哈希与执行权限；
-- **L4: 项目设置与文档层**：核验各项目 `.claude/settings.local.json` 注册、`.drsg/env` 凭据、`CLAUDE.md` 跨项目 Event 引导块，以及 `~/.claude.json` 里该项目是否注册了 `drsg` 和 `drsg-events` 两个 MCP server（local 或 user 范围；设了 `$CLAUDE_CONFIG_DIR` 时读 `$CLAUDE_CONFIG_DIR/.claude.json`，给了 `--claude-dir` 时读那个目录下的）。缺哪个就报哪个，并给出补注册的命令；
+- **L4: 项目设置与文档层**：核验各项目 `.claude/settings.local.json` 注册、`.drsg/env` 凭据、`CLAUDE.md` 跨项目 Event 引导块，以及 `~/.claude.json` 里该项目是否注册了 `drsg` 和 `drsg-events` 两个 MCP server（local 或 user 范围；设了 `$CLAUDE_CONFIG_DIR` 时读 `$CLAUDE_CONFIG_DIR/.claude.json`，给了 `--claude-dir` 时读那个目录下的）。缺哪个就报哪个，并给出补注册的命令。另外报告该项目的 pre-commit 钩子（completeness-guard 已启用、自定义钩子或没有），按 git 实际找钩子的目录查，设了 `core.hooksPath` 的也算；这一行只做提示，不会让这一层失败；
 - **L5: 代码图健康层**：检查代码图 daemon 运行健康状态与 `.mcp.json` 端口匹配，正确将按需待机识别为正常状态。
 
 ```bash
@@ -199,7 +199,7 @@ utilization 是一个 proxy，脚本也会明确说明这一点：它会把仅�
 
 执行方的阶段评审/验收流程及一次性提交授权边界见[全局分发规范](../claude/AGENT-EFFICIENCY.md#跨项目审核与验收按阶段交接不跳闸)；本 README 只说明 Event 操作机制。
 
-`event.py post` 和 MCP 工具 `event_post` 共用同一份实现。待办带上代码图符号和动词，收方会在它下面看到一行 `↳ graph first:`。如果是 handoff，summary 读起来像在改一个判断（守卫、过滤、跳过、暂停这类），而动词不是 `impact`，回复末尾会多一行建议。Event 照常发出。
+`event.py post` 和 MCP 工具 `event_post` 共用同一份实现。MCP 工具不接受把本会话所在的项目当收件方：Event 是给别的 agent 的，要在本项目记住什么就写 Fact，要告诉用户就直接回复。待办带上代码图符号和动词，收方会在它下面看到一行 `↳ graph first:`。如果是 handoff，summary 读起来像在改一个判断（守卫、过滤、跳过、暂停这类），而动词不是 `impact`，回复末尾会多一行建议。Event 照常发出。
 
 回复某条待办时，可在 MCP 参数中传 `reply_to`，或在 CLI 中用 `--reply-to <event-key>`：
 
@@ -272,6 +272,9 @@ Bash 的 `git commit` 仍保留 `ask` 规则，照样会问你：
 ! python3 -c 'import json,pathlib; p=pathlib.Path.home()/".claude/settings.json"; d=json.loads(p.read_text()); a=d.setdefault("permissions",{}).setdefault("allow",[]); assert isinstance(a,list), "permissions.allow is not a list; edit manually"; t="mcp__drsg-events__commit_auth_apply"; a.append(t) if t not in a else None; p.write_text(json.dumps(d,ensure_ascii=False,indent=2)+"\n")'
 ```
 
+整行粘贴。终端把它折成几行时，Python 会报 `IndentationError`；这时把 `python3 -c`
+后面的参数存成文件，再运行那个文件。
+
 关闭：删掉 `~/.drsg-memory/commit-auth.json`，再从 `permissions.allow` 里去掉 `mcp__drsg-events__commit_auth_apply`。
 
 ## 待办轮询（`event-poller.py`）
@@ -317,6 +320,20 @@ echo '{"error":"rate_limit","error_details":"429 Too Many Requests"}' \
 
 ```bash
 DRSG_STOP_FAILURE_NOTIFY_DISABLED=1 claude
+```
+
+## 单调用提醒（`single-tool-streak.py`）
+
+`setup.sh` 还会把这个脚本注册成 `~/.claude/settings.json` 里的全局 `PostToolUse` hook（`--no-streak-hint` 可跳过）。每次工具调用后，它读会话 transcript 的末尾；最近三次模型回复都只发了一个调用、而且是 `Read`、`Edit` 或 `Write` 时，往模型上下文里加一句：
+
+```text
+最近几轮都只发了一个调用。下一步如果有几处互不依赖的修改或读取，在同一轮里一起发；改完跑测试的那一步照旧单独发。
+```
+
+每五次回复最多提醒一次，从不拦截工具调用；transcript 或状态文件出错时直接跳过。想保留注册、但不出提醒，启动 Claude Code 时设上这个变量：
+
+```bash
+DRSG_SINGLE_TOOL_STREAK_DISABLED=1 claude
 ```
 
 ## 权限护栏（`permission-guard.py`）

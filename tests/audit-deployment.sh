@@ -266,6 +266,19 @@ python3 "$AUDIT" --repo "$REPO" --tools-dir "$DEPLOYED_TOOLS" --claude-dir "$CLA
 l4_r2_custom=$(find_layer_ok "$T/out_r2_custom.json" "L4")
 check "r2_user_custom_event_rule_not_drift" "$l4_r2_custom" "ok"
 
+# The pre-commit report follows core.hooksPath, where a project may keep its hook.
+git -C "$R2_PROJ" init -q
+mkdir -p "$R2_PROJ/.githooks"
+printf '#!/bin/sh\npython3 completeness-guard.py --staged\n' > "$R2_PROJ/.githooks/pre-commit"
+chmod +x "$R2_PROJ/.githooks/pre-commit"
+git -C "$R2_PROJ" config core.hooksPath .githooks
+python3 "$AUDIT" --repo "$REPO" --tools-dir "$DEPLOYED_TOOLS" --claude-dir "$CLAUDE_DIR" --project "$R2_PROJ" --json > "$T/out_hookspath.json" 2>&1 || true
+case "$(find_layer_details "$T/out_hookspath.json" "L4")" in
+  *"completeness-guard pre-commit hook active"*) check "l4_precommit_follows_core_hookspath" yes yes ;;
+  *) check "l4_precommit_follows_core_hookspath" no yes ;;
+esac
+rm -rf "$R2_PROJ/.git" "$R2_PROJ/.githooks"
+
 # Now add exact legacy rule
 python3 - "$R2_PROJ/.claude/settings.local.json" "$DEPLOYED_TOOLS" <<'PY'
 import json, sys

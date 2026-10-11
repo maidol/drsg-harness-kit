@@ -469,10 +469,18 @@ def check_layer4(project_dir, claude_json=None, tools_dir=None):
     elif hooks_installed:
         issues.append("Missing CLAUDE.md while hooks are installed")
 
-    # 4. pre-commit completeness-guard status
+    # 4. pre-commit completeness-guard status. Ask git where its hooks live:
+    # a project that sets core.hooksPath keeps pre-commit there, not in .git/hooks.
     git_dir = os.path.join(project_dir, ".git")
     if os.path.isdir(git_dir):
-        pre_commit = os.path.join(git_dir, "hooks", "pre-commit")
+        try:
+            hooks_dir = subprocess.run(
+                ["git", "-C", project_dir, "rev-parse", "--git-path", "hooks"],
+                capture_output=True, text=True, timeout=5, check=True).stdout.strip()
+            hooks_dir = os.path.join(project_dir, hooks_dir)
+        except Exception:
+            hooks_dir = os.path.join(git_dir, "hooks")
+        pre_commit = os.path.join(hooks_dir, "pre-commit")
         if os.path.exists(pre_commit):
             try:
                 with open(pre_commit, encoding="utf-8") as f:

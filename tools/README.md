@@ -242,7 +242,7 @@ useful than a second registry that can disagree with the first.
 - **L1: Global Runtime Tools**: Compares `~/.drsg-memory/tools/` against the git `HEAD` release baseline and verifies execution permissions; uncommitted drafts are noted as advisory hints without failing audit.
 - **L2: Global Configuration & Skills**: Verifies `~/.claude/AGENT-EFFICIENCY.md`, skills, managed main-branch workflow state (enabled, intentional opt-out, or drift), global hooks, and `settings.json` permissions (`0600`).
 - **L3: Project Memory Hooks**: Compares `.claude/hooks/*.py` in each project against canonical templates.
-- **L4: Project Settings & Docs**: Checks `.claude/settings.local.json` registrations, `.drsg/env` credentials, `CLAUDE.md` cross-agent Event documentation, and that the `drsg` and `drsg-events` MCP servers are registered for the project in `~/.claude.json` (local or user scope; `$CLAUDE_CONFIG_DIR/.claude.json` when that is set, or the `--claude-dir` directory). A missing one is reported together with the command that registers it.
+- **L4: Project Settings & Docs**: Checks `.claude/settings.local.json` registrations, `.drsg/env` credentials, `CLAUDE.md` cross-agent Event documentation, and that the `drsg` and `drsg-events` MCP servers are registered for the project in `~/.claude.json` (local or user scope; `$CLAUDE_CONFIG_DIR/.claude.json` when that is set, or the `--claude-dir` directory). A missing one is reported together with the command that registers it. It also reports the project's pre-commit hook (completeness-guard active, a custom hook, or none), looked up where git looks for hooks, so a `core.hooksPath` directory counts; this line is informational and never fails the layer.
 - **L5: Code Graph Status**: Verifies code graph daemon health and `.mcp.json` port bindings, recognizing on-demand stopped daemons as normal state.
 
 ```bash
@@ -300,7 +300,7 @@ majority even with no effect at all. Read `p`, not the raw count.
 
 For the execution-side review/acceptance stages and the one-time commit authorization boundary, see the [globally distributed workflow](../claude/AGENT-EFFICIENCY.md#跨项目审核与验收按阶段交接不跳闸); this README covers Event mechanics only.
 
-`event.py post` and the `event_post` MCP tool share one implementation. Give a
+`event.py post` and the `event_post` MCP tool share one implementation. The MCP tool refuses the session's own project as recipient: an Event is for another agent, so write a Fact to remember something here, or tell the user directly. Give a
 to-do code-graph symbols and a verb, and the recipient gets an imperative
 `↳ graph first:` line under it. When a handoff's summary reads like a change to
 a judgment (a guard, a filter, a skip, a pause) and the verb is not `impact`,
@@ -508,6 +508,26 @@ To keep the hook registered but silent, start Claude Code with the variable set:
 
 ```bash
 DRSG_STOP_FAILURE_NOTIFY_DISABLED=1 claude
+```
+
+## Single-tool reminder (`single-tool-streak.py`)
+
+`setup.sh` also registers this script as a global `PostToolUse` hook in
+`~/.claude/settings.json` (skip with `--no-streak-hint`). After each tool call
+it reads the tail of the session transcript; when the last three model replies
+each made exactly one call and that call was `Read`, `Edit` or `Write`, it adds
+one line to the model's context:
+
+```text
+最近几轮都只发了一个调用。下一步如果有几处互不依赖的修改或读取，在同一轮里一起发；改完跑测试的那一步照旧单独发。
+```
+
+It fires at most once per five replies and never blocks the tool call; any
+transcript or state error just skips it. To keep the hook registered but silent,
+start Claude Code with the variable set:
+
+```bash
+DRSG_SINGLE_TOOL_STREAK_DISABLED=1 claude
 ```
 
 ## Permission guard (`permission-guard.py`)
