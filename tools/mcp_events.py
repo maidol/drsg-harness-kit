@@ -600,7 +600,11 @@ def _commit_auth_apply(args, proj, token):
                            label="git write-tree (formal index)")
     if final_tree != auth["tree"]:
         raise ValueError("formal index tree mismatch; commit refused")
-    _git(repo, ["commit", "--cleanup=verbatim", "-m", auth["message"]], live_env)
+    # Hooks inherit this environment. Literal pathspecs would break any hook
+    # that globs; the kit's own check-docs.py runs `git ls-files "*.md"`.
+    commit_env = _git_environment()
+    commit_env.pop("GIT_LITERAL_PATHSPECS", None)
+    _git(repo, ["commit", "--cleanup=verbatim", "-m", auth["message"]], commit_env)
     steps.append("git commit --cleanup=verbatim -m <authorized message>: completed")
     commit = _git_step(repo, ["rev-parse", "HEAD"], steps)
     committed_parent = _git_step(repo, ["rev-parse", "HEAD^"], steps)

@@ -805,6 +805,9 @@ class CommitAuthTests(unittest.TestCase):
                     stdout = "main\n"
                 elif git_args[:1] == ["commit"]:
                     self.assertEqual(git_args, ["commit", "--cleanup=verbatim", "-m", auth["message"]])
+                    # Key check only: a failing assertNotIn on env would print every value.
+                    self.assertFalse("GIT_LITERAL_PATHSPECS" in env,
+                                     "commit must not pass GIT_LITERAL_PATHSPECS to hooks")
                     state["committed"] = True
                     state["commits"] += 1
                     stdout = ""
