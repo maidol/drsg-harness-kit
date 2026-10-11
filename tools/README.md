@@ -400,6 +400,10 @@ rule and still prompts:
 ! python3 -c 'import json,pathlib; p=pathlib.Path.home()/".claude/settings.json"; d=json.loads(p.read_text()); a=d.setdefault("permissions",{}).setdefault("allow",[]); assert isinstance(a,list), "permissions.allow is not a list; edit manually"; t="mcp__drsg-events__commit_auth_apply"; a.append(t) if t not in a else None; p.write_text(json.dumps(d,ensure_ascii=False,indent=2)+"\n")'
 ```
 
+Paste it as one line. If your terminal breaks it across lines, Python stops with
+`IndentationError`; save the `python3 -c` argument to a file and run that file
+instead.
+
 Turn them off by deleting `~/.drsg-memory/commit-auth.json` and removing
 `mcp__drsg-events__commit_auth_apply` from `permissions.allow`.
 
