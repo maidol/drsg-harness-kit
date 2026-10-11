@@ -41,6 +41,7 @@ cat > "$BASE/tests/test-all.sh" <<'STUB'
 #!/usr/bin/env bash
 set -eu
 printf 'run\n' >> "${RELEASE_TEST_COUNTER:?}"
+printf 'fixture test-all ran\n'
 exit "${RELEASE_TEST_STATUS:-0}"
 STUB
 chmod +x "$BASE/tests/test-all.sh" "$BASE/release.sh" "$BASE/tests/release.sh"
@@ -135,6 +136,8 @@ new_case happy
 run_check v1.7.1 > "$TMP/happy-check.out"
 grep -Fq 'release v1.7.1: check passed' "$TMP/happy-check.out" || fail 'check succeeds on clean candidate'
 check 'check runs the fixture test stub once' "$(count_lines "$COUNTER")" 1
+TESTS_LOG=$(sed -n 's/^tests: passed (log \(.*\))$/\1/p' "$TMP/happy-check.out")
+check 'test log survives the later completeness step' "$(grep -c 'fixture test-all ran' "$TESTS_LOG" 2>/dev/null || true)" 1
 notes_file
 if ! run_publish v1.7.1 "$NOTES" > "$TMP/happy-publish.out"; then
   fail 'publish completes end to end'

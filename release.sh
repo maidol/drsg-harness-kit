@@ -205,14 +205,14 @@ if [ "$ACTION" = check ]; then
   if [ "$TESTED_TREE" = "$HEAD_TREE" ]; then
     printf 'tests: skipped, tree %.12s matches --tested-tree\n' "$HEAD_TREE"
   else
-    if ! bash "$ROOT/tests/test-all.sh" >"$LOG" 2>&1; then
-      show_failures "$LOG"
+    if ! bash "$ROOT/tests/test-all.sh" >"$LOG.tests" 2>&1; then
+      show_failures "$LOG.tests"
       stop tests 'tests/test-all.sh failed'
     fi
-    printf 'tests: passed (log %s)\n' "$LOG"
+    printf 'tests: passed (log %s)\n' "$LOG.tests"
   fi
-  if ! python3 "$ROOT/tools/completeness-guard.py" --repo "$ROOT" --base "$PRIOR_TAG" >"$LOG" 2>&1; then
-    show_failures "$LOG"
+  if ! python3 "$ROOT/tools/completeness-guard.py" --repo "$ROOT" --base "$PRIOR_TAG" >"$LOG.completeness" 2>&1; then
+    show_failures "$LOG.completeness"
     stop completeness 'completeness-guard failed'
   fi
   printf 'completeness: passed against %s\n' "$PRIOR_TAG"
@@ -246,16 +246,16 @@ else
 fi
 [ "$("${GIT[@]}" describe --tags --exact-match HEAD 2>/dev/null || true)" = "$VERSION" ] || stop tag 'tag does not exactly match HEAD'
 
-if ! (cd "$ROOT" && ./pack.sh) >"$LOG" 2>&1; then
-  show_failures "$LOG"
+if ! (cd "$ROOT" && ./pack.sh) >"$LOG.pack" 2>&1; then
+  show_failures "$LOG.pack"
   stop package 'pack.sh failed'
 fi
 TARBALL="$ROOT/dist/drsg-harness-kit-$VERSION.tar.gz"
 CHECKSUM="$TARBALL.sha256"
 [ -s "$TARBALL" ] && [ -s "$CHECKSUM" ] || stop package 'pack.sh did not create both package assets'
 printf 'package: built %s\n' "$TARBALL"
-if ! (cd "$ROOT" && sha256sum -c "$CHECKSUM") >"$LOG" 2>&1; then
-  show_failures "$LOG"
+if ! (cd "$ROOT" && sha256sum -c "$CHECKSUM") >"$LOG.checksum" 2>&1; then
+  show_failures "$LOG.checksum"
   stop package 'checksum verification failed'
 fi
 MANIFEST=$(tar -xOf "$TARBALL" "drsg-harness-kit-$VERSION/MANIFEST" 2>"$TMP_ERR") || stop package 'cannot read bundle manifest'
@@ -271,13 +271,13 @@ peeled=$(printf '%s\n' "$remote_tags" | awk -v ref="refs/tags/$VERSION^{}" '$2 =
 [ -n "$peeled" ] || peeled=$(printf '%s\n' "$remote_tags" | awk -v ref="refs/tags/$VERSION" '$2 == ref {print $1}')
 if [ -n "$peeled" ]; then
   [ "$peeled" = "$HEAD_SHA" ] || stop remote 'remote tag points to a different commit'
-  if ! "${GIT[@]}" push origin main >"$LOG" 2>&1; then
-    show_failures "$LOG"
+  if ! "${GIT[@]}" push origin main >"$LOG.push" 2>&1; then
+    show_failures "$LOG.push"
     stop push 'git push origin main failed'
   fi
 else
-  if ! "${GIT[@]}" push origin main "$VERSION" >"$LOG" 2>&1; then
-    show_failures "$LOG"
+  if ! "${GIT[@]}" push origin main "$VERSION" >"$LOG.push" 2>&1; then
+    show_failures "$LOG.push"
     stop push 'git push origin main <tag> failed'
   fi
 fi
@@ -285,8 +285,8 @@ printf 'push: main and %s pushed without force\n' "$VERSION"
 
 RELEASE_STATE=$(query_release "$TMP_JSON" "$TMP_ERR") || stop release 'gh query failed'
 if [ "$RELEASE_STATE" = absent ]; then
-  if ! gh release create "$VERSION" --verify-tag --title "drsg-harness-kit $VERSION" --notes-file "$NOTES" "$TARBALL" "$CHECKSUM" >"$LOG" 2>&1; then
-    show_failures "$LOG"
+  if ! gh release create "$VERSION" --verify-tag --title "drsg-harness-kit $VERSION" --notes-file "$NOTES" "$TARBALL" "$CHECKSUM" >"$LOG.release" 2>&1; then
+    show_failures "$LOG.release"
     stop release 'gh release create failed'
   fi
   printf 'release: created %s\n' "$VERSION"
