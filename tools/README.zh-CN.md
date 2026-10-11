@@ -323,6 +323,18 @@ echo '{"error":"rate_limit","error_details":"429 Too Many Requests"}' \
 DRSG_STOP_FAILURE_NOTIFY_DISABLED=1 claude
 ```
 
+## 文本化工具调用防护（`textual-tool-call-guard.py`）
+
+`setup.sh` 会将此脚本注册为 `~/.claude/settings.json` 里的全局 `Stop` hook（`--no-textual-tool-call-guard` 可跳过）。当模型把工具调用仅以文本形式输出（如 `<mcp__drsg-events__event_list>{"status":"all"}</mcp__drsg-events__event_list>` 或 `<Bash>{"command":"..."}</Bash>`）而缺少结构化 `tool_use` 块时，钩子通过 `{"decision": "block", "reason": "..."}` 阻止回合结束并要求模型用真正的工具调用重发。
+
+- 此前安装的环境需重跑 `setup.sh` 才会注册到全局。
+- 前后带正文解释或多段工具调用时放行，不影响普通对话。
+- 要在运行时禁用：
+
+```bash
+DRSG_STOP_TEXTUAL_TOOL_CALL_GUARD_DISABLED=1 claude
+```
+
 ## 单调用提醒（`single-tool-streak.py`）
 
 `setup.sh` 还会把这个脚本注册成 `~/.claude/settings.json` 里的全局 `PostToolUse` hook（`--no-streak-hint` 可跳过）。每次工具调用后，它读会话 transcript 的末尾；最近三次模型回复都只发了一个调用、而且是 `Read`、`Edit` 或 `Write` 时，往模型上下文里加一句：

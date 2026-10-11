@@ -61,7 +61,10 @@ cp "$REPO/skills/diagram-conventions/SKILL.md" "$CLAUDE_DIR/skills/diagram-conve
 cat > "$CLAUDE_DIR/settings.json" <<'JSON'
 {
   "hooks": {
-    "Stop": [{"matcher": "*", "hooks": [{"command": "python3 /path/event-poller.py"}]}],
+    "Stop": [
+      {"matcher": "*", "hooks": [{"command": "python3 /path/event-poller.py"}]},
+      {"matcher": "*", "hooks": [{"command": "python3 /path/textual-tool-call-guard.py"}]}
+    ],
     "PostToolUse": [{"matcher": "*", "hooks": [{"command": "python3 /path/single-tool-streak.py"}]}]
   }
 }

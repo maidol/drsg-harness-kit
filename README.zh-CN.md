@@ -166,7 +166,31 @@ bash tests/secret-redaction.sh
 
 ## 刷新运行时副本
 
-在本仓库中修改后，重新构建 bundle，再次运行其中的 `setup.sh`。这是为新机器安装时使用的同一条路径，这是有意的设计——避免维护两套流程。`setup.sh` 幂等，会重新运行安装器自检，但不会触碰数据库。改的是 `tools/templates/hooks/` 底下的东西时要加 `--project DIR`：不带参数的一次运行只刷新 `~/.drsg-memory/tools/`，各项目的 `.claude/hooks/` 仍停在旧副本上，也就是之后 `install.sh --check` 会报出来的 drift。router 和 usage report 虽然会随 bundle 提供，但项目配置默认是可选的：使用 `--router DIR`、`--usage-report DIR`，或者使用显式的 `--hub DIR` 同时启用两者；只使用 `--project` 和 `--repo` 不会安装其中任何一个。
+在本仓库中修改后，重新构建 bundle，再次运行其中的 `setup.sh`。这是为新机器安装时使用的同一条路径，这是有意的设计——避免维护两套流程。`setup.sh` 幂等，会重新运行安装器自检，但不会触碰数据库。重跑 `setup.sh` 也是将新增的全局 hook（例如 `textual-tool-call-guard.py`）注册到 `~/.claude/settings.json` 的必要步骤。改的是 `tools/templates/hooks/` 底下的东西时要加 `--project DIR`：不带参数的一次运行只刷新 `~/.drsg-memory/tools/`，各项目的 `.claude/hooks/` 仍停在旧副本上，也就是之后 `install.sh --check` 会报出来的 drift。router 和 usage report 虽然会随 bundle 提供，但项目配置默认是可选的：使用 `--router DIR`、`--usage-report DIR`，或者使用显式的 `--hub DIR` 同时启用两者；只使用 `--project` 和 `--repo` 不会安装其中任何一个。
+
+## 文本化工具调用防护（`textual-tool-call-guard.py`）
+
+当模型（如部分非原生工具调用模型或网关转换异常时）把工具调用仅以文本标签形式输出（如 `<mcp__drsg-events__event_list>{"status":"all"}</mcp__drsg-events__event_list>` 或 `<Bash>{"command":"..."}</Bash>`）而缺少结构化 `tool_use` 块时，Claude Code 会把其误当成正常回答结束回合。`setup.sh` 会将 `textual-tool-call-guard.py` 注册为 `~/.claude/settings.json` 里的全局 `Stop` 钩子（`--no-textual-tool-call-guard` 可跳过）。触发时阻止回合结束，提示模型重发真正的工具调用。
+
+- 全新安装或重跑 `./setup.sh` 时默认开启；此前安装的环境需重跑 `setup.sh` 才会注册到全局。
+- 文本前后带解释或包含多段调用时会自动放行，不影响普通对话。
+- 安装时跳过注册：
+
+```bash
+/tmp/drsg-harness-kit-*/setup.sh --no-textual-tool-call-guard
+```
+
+- 要保留注册但在运行时禁用：
+
+```bash
+DRSG_STOP_TEXTUAL_TOOL_CALL_GUARD_DISABLED=1 claude
+```
+
+核对全局 Stop hook 注册状态：
+
+```bash
+python3 -c 'import json, os; d=json.load(open(os.path.expanduser("~/.claude/settings.json"))); print([h.get("command") for g in d.get("hooks",{}).get("Stop",[]) for h in g.get("hooks",[]) if "textual-tool-call-guard" in h.get("command","")])'
+```
 
 ## 检查运行状态
 

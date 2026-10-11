@@ -240,12 +240,38 @@ Masking goes by shape: a secret that looks like none of these passes. Facts are 
 Edit here, then rebuild the bundle and re-run its `setup.sh`. That is the same
 path used to set a new machine up, deliberately — one way to do it rather than
 two. `setup.sh` is idempotent, re-runs the installers' self-checks, and touches
-no database. Add `--project DIR` when what you edited was under
+no database. Re-running `setup.sh` is also required to register newly added global hooks
+(such as `textual-tool-call-guard.py`) into `~/.claude/settings.json`. Add `--project DIR` when what you edited was under
 `tools/templates/hooks/`: a bare run refreshes `~/.drsg-memory/tools/` only,
 leaving each project's `.claude/hooks/` on the previous copy — the drift
 `install.sh --check` reports afterwards. The router and usage report are bundled but their project
 configuration is opt-in: use `--router DIR`, `--usage-report DIR`, or explicit
 `--hub DIR` for both; `--project` and `--repo` alone install neither.
+
+## Textual tool call stop guard (`textual-tool-call-guard.py`)
+
+When a model outputs a tool call purely as text markup (e.g. `<mcp__tool_name>{"arg": "value"}</mcp__tool_name>` or `<Bash>{"command": "..."}</Bash>`) without structured `tool_use` blocks, Claude Code mistakes it for a completed turn. `setup.sh` registers `textual-tool-call-guard.py` as a global `Stop` hook in `~/.claude/settings.json` (skip registration with `--no-textual-tool-call-guard`). When triggered, it blocks the turn from completing and instructs the model to reissue the call as a real tool call.
+
+- Registered automatically on fresh setup or by re-running `./setup.sh`.
+- Re-running `./setup.sh` is required to register it on machines deployed earlier.
+- Multi-call outputs or text containing surrounding commentary are safely allowed without interruption.
+- To skip registering it during setup:
+
+```bash
+/tmp/drsg-harness-kit-*/setup.sh --no-textual-tool-call-guard
+```
+
+To keep the hook registered but disable it at runtime:
+
+```bash
+DRSG_STOP_TEXTUAL_TOOL_CALL_GUARD_DISABLED=1 claude
+```
+
+To verify its registration:
+
+```bash
+python3 -c 'import json, os; d=json.load(open(os.path.expanduser("~/.claude/settings.json"))); print([h.get("command") for g in d.get("hooks",{}).get("Stop",[]) for h in g.get("hooks",[]) if "textual-tool-call-guard" in h.get("command","")])'
+```
 
 ## Check it is healthy
 

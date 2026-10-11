@@ -262,10 +262,13 @@ def check_layer2(repo_dir, claude_dir):
             ]
             has_poller = any("event-poller" in cmd for cmd in commands)
             has_streak = any("single-tool-streak" in cmd for cmd in commands)
+            has_textual_guard = any("textual-tool-call-guard" in cmd for cmd in commands)
             if not has_poller:
                 issues.append("Global event-poller hook missing in settings.json")
             if not has_streak:
                 issues.append("Global single-tool-streak hook missing in settings.json")
+            if not has_textual_guard:
+                issues.append("Global textual-tool-call-guard hook missing in settings.json")
         except Exception as e:
             issues.append(f"Error reading {settings_file}: {e}")
     else:

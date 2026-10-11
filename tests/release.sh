@@ -35,6 +35,9 @@ if [ ! -f "$RELEASE_SCRIPT" ]; then
 fi
 
 git -C "$REPO" archive HEAD | tar -x -C "$BASE"
+if [ -f "$REPO/tools/textual-tool-call-guard.py" ]; then
+  cp "$REPO/tools/textual-tool-call-guard.py" "$BASE/tools/textual-tool-call-guard.py"
+fi
 cp "$RELEASE_SCRIPT" "$BASE/release.sh"
 cp "$HERE/release.sh" "$BASE/tests/release.sh"
 cat > "$BASE/tests/test-all.sh" <<'STUB'

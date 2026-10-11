@@ -512,6 +512,18 @@ To keep the hook registered but silent, start Claude Code with the variable set:
 DRSG_STOP_FAILURE_NOTIFY_DISABLED=1 claude
 ```
 
+## Textual tool call stop guard (`textual-tool-call-guard.py`)
+
+`setup.sh` registers this script as a global `Stop` hook in `~/.claude/settings.json` (skip with `--no-textual-tool-call-guard`). When a model outputs tool calls purely as textual markup (e.g. `<mcp__tool_name>{"arg": "value"}</mcp__tool_name>` or `<Bash>{"command": "..."}</Bash>`) without structured `tool_use` blocks, Claude Code treats it as a completed turn. This hook blocks completion via `{"decision": "block", "reason": "..."}` and prompts the model to reissue the call as a real tool call.
+
+- Re-running `setup.sh` is required to register the hook on previously deployed machines.
+- Multi-call outputs or regular prose mentioning tags are allowed without blocking.
+- To disable at runtime:
+
+```bash
+DRSG_STOP_TEXTUAL_TOOL_CALL_GUARD_DISABLED=1 claude
+```
+
 ## Single-tool reminder (`single-tool-streak.py`)
 
 `setup.sh` also registers this script as a global `PostToolUse` hook in
