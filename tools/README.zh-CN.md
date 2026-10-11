@@ -338,10 +338,10 @@ DRSG_SINGLE_TOOL_STREAK_DISABLED=1 claude
 
 ## 权限护栏（`permission-guard.py`）
 
-可选开启。你不要求就什么都不写：可以经 `setup.sh`（`--permission-guard DIR`、`--reviews-dir DIR`、`--prune-broad`），也可以直接运行工具。分两个范围：
+可选开启。你不要求就什么都不写：可以经 `setup.sh`（`--permission-guard DIR`、`--reviews-dir DIR`、`--prune-broad`、`--self-commit`），也可以直接运行工具。分两个范围：
 
-- **项目**（`--project DIR`）：只写 `DIR/.claude/settings.local.json`——`DIR/.claude/settings.json` 可能被 git 跟踪，一律不动。它为 `git commit` / `git push` 的各种写法（`git`、`rtk git`、`/usr/bin/git`；不带参数、带 `-C DIR`、带 `-c k=v`）以及 `gh pr create` 加上 `ask` 规则。ask 规则优先于 allow 规则，所以文件里已有的 `Bash(rtk git *)` 这类宽规则再也不能不问就 commit 或 push。它还为只读 git、`event.py list|done` 和 modern-go 指引脚本加上窄 `allow` 规则：auto 模式保留窄规则，并且不调用分类器就能放行。`Bash(python3 *)` 这类宽解释器规则——auto 模式会丢弃它，其他模式下等于放行一切——只报告；加 `--prune-broad` 才删除。除此之外什么都不删。
-- **用户**（`--user --reviews-dir DIR`）：写 `~/.claude/settings.json`（或 `$CLAUDE_CONFIG_DIR/settings.json`）里的 `autoMode`，这是 Claude Code 读取它的唯一位置。三条自然语言规则告诉 auto 模式分类器：DIR 下的脚本，在 agent 用 Write 把一份原样副本写到 `/tmp` 之后可以运行——分类器看的是工具输入、看不到工具输出，所以 `cat` 不算——并且可以往那里写回执文件。每条以 `(drsg-harness-kit permission-guard)` 开头；手写的同内容规则会被替换，其他条目保留。
+- **项目**（`--project DIR`）：只写 `DIR/.claude/settings.local.json`——`DIR/.claude/settings.json` 可能被 git 跟踪，一律不动。它为 `git commit` / `git push` 的各种写法（`git`、`rtk git`、`/usr/bin/git`；不带参数、带 `-C DIR`、带 `-c k=v`）以及 `gh pr create` 加上 `ask` 规则。ask 规则优先于 allow 规则，所以文件里已有的 `Bash(rtk git *)` 这类宽规则再也不能不问就 commit 或 push。它还为只读 git、`event.py list|done` 和 modern-go 指引脚本加上窄 `allow` 规则：auto 模式保留窄规则，并且不调用分类器就能放行。`Bash(python3 *)` 这类宽解释器规则——auto 模式会丢弃它，其他模式下等于放行一切——只报告；加 `--prune-broad` 才删除。加 `--self-commit` 时不写 `git commit` 的 ask 规则，本工具以前写过的会删掉（你自己写的保留）；`git push` 和 `gh pr create` 照旧要问，`check --self-commit` 会把残留的 commit ask 规则报成漂移。除此之外什么都不删。
+- **用户**（`--user --reviews-dir DIR`）：写 `~/.claude/settings.json`（或 `$CLAUDE_CONFIG_DIR/settings.json`）里的 `autoMode`，这是 Claude Code 读取它的唯一位置。三条自然语言规则告诉 auto 模式分类器：DIR 下的脚本，在 agent 用 Write 把一份原样副本写到 `/tmp` 之后可以运行——分类器看的是工具输入、看不到工具输出，所以 `cat` 不算——并且可以往那里写回执文件。每条以 `(drsg-harness-kit permission-guard)` 开头；手写的同内容规则会被替换，其他条目保留。`--self-commit` 再加第四条：在当前分支上把本会话改过的文件提交到本地、不改写已 push 的历史、不用 `--no-verify`，可以不问；push、tag、发版和 PR 一律不在其中。不带这个选项重跑 `apply --user` 就会去掉它。
 
 ```bash
 # 项目范围；重复运行不会重复添加
@@ -349,15 +349,20 @@ python3 ~/.drsg-memory/tools/permission-guard.py apply --project /path/to/projec
 python3 ~/.drsg-memory/tools/permission-guard.py apply --project /path/to/project --prune-broad
 python3 ~/.drsg-memory/tools/permission-guard.py check --project /path/to/project   # 有漂移时退出码 1
 python3 ~/.drsg-memory/tools/permission-guard.py remove --project /path/to/project
+python3 ~/.drsg-memory/tools/permission-guard.py apply --project /path/to/project --self-commit
+python3 ~/.drsg-memory/tools/permission-guard.py check --project /path/to/project --self-commit
 
 # 用户范围
 python3 ~/.drsg-memory/tools/permission-guard.py apply --user --reviews-dir /path/to/workspace/reviews
 python3 ~/.drsg-memory/tools/permission-guard.py check --user --reviews-dir /path/to/workspace/reviews
 python3 ~/.drsg-memory/tools/permission-guard.py remove --user
+python3 ~/.drsg-memory/tools/permission-guard.py apply --user --reviews-dir /path/to/workspace/reviews --self-commit
 
 # event.py 不在 ~/.drsg-memory/tools 时
 python3 ~/.drsg-memory/tools/permission-guard.py apply --project /path/to/project --tools-dir /opt/drsg/tools
 ```
+
+只有你的全局 `CLAUDE.md` 允许「没经过审核的改动不问就提交」时才用 `--self-commit`：这些规则只是不再弹框，模型照样按你的指令办事。要切换所有已安装的项目，对每个项目目录各跑一次项目范围的 `apply --self-commit`。
 
 规则对之后新开的会话生效。`claude auto-mode config` 会显示分类器将读取的用户范围条目。
 

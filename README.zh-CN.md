@@ -52,12 +52,14 @@ tar xzf dist/drsg-harness-kit-*.tar.gz -C /tmp
 
 ## 权限护栏（可选）
 
-不要求就不装。`--permission-guard DIR` 往 `DIR/.claude/settings.local.json` 加入 `git commit` / `git push` / `gh pr create` 的 ask 规则和只读的窄 allow 规则；`--reviews-dir DIR` 在 `~/.claude/settings.json` 里告诉 auto 模式分类器：DIR 下的脚本在 Write 里原样展示过之后可以运行；`--prune-broad` 同时从项目文件里删掉 `Bash(python3 *)` 这类规则。三者都不需要 `--project`、drsg 二进制或正在运行的 daemon。详见 [tools/README.zh-CN.md](tools/README.zh-CN.md#权限护栏permission-guardpy)。
+不要求就不装。`--permission-guard DIR` 往 `DIR/.claude/settings.local.json` 加入 `git commit` / `git push` / `gh pr create` 的 ask 规则和只读的窄 allow 规则；`--reviews-dir DIR` 在 `~/.claude/settings.json` 里告诉 auto 模式分类器：DIR 下的脚本在 Write 里原样展示过之后可以运行；`--prune-broad` 同时从项目文件里删掉 `Bash(python3 *)` 这类规则；`--self-commit` 不写 `git commit` 的 ask 规则（之前写过的会删掉），并加一条 auto 模式规则，允许本会话把自己的改动提交到本地，push、PR、tag 和发版照旧要问，只有你的全局 `CLAUDE.md` 允许未经审核的本地提交时才用它。这几个选项都不需要 `--project`、drsg 二进制或正在运行的 daemon。详见 [tools/README.zh-CN.md](tools/README.zh-CN.md#权限护栏permission-guardpy)。
 
 ```bash
 /tmp/drsg-harness-kit-*/setup.sh --permission-guard /path/to/project
 /tmp/drsg-harness-kit-*/setup.sh --permission-guard /path/to/project --prune-broad \
   --reviews-dir /path/to/workspace/reviews
+/tmp/drsg-harness-kit-*/setup.sh --permission-guard /path/to/project \
+  --reviews-dir /path/to/workspace/reviews --self-commit
 ```
 
 ## 启动前选模型（可选）

@@ -124,6 +124,35 @@ python3 "$PG" check --user --reviews-dir "$R" >/dev/null; check "user check clea
 python3 "$PG" remove --user >/dev/null
 check "user remove drops marked entries"          "$(count "$U" allow '~(drsg-harness-kit permission-guard)' autoMode)" 0
 check "user remove keeps foreign entries"         "$(count "$U" environment '**Organization**: None configured' autoMode)" 1
+# --self-commit: no commit ask rules, push / PR asks stay, user-written asks untouched
+P2="$T/proj2"; L2="$P2/.claude/settings.local.json"
+mkdir -p "$P2/.claude"
+echo '{"permissions": {"ask": ["Bash(make deploy *)"]}}' > "$L2"
+python3 "$PG" apply --project "$P2" >/dev/null
+python3 "$PG" apply --project "$P2" --self-commit >/dev/null
+check "--self-commit removes our commit asks"     "$(count "$L2" ask '~ commit ')" 0
+check "--self-commit keeps the push ask"          "$(count "$L2" ask 'Bash(git push *)')" 1
+check "--self-commit keeps the gh pr create ask"  "$(count "$L2" ask 'Bash(gh pr create *)')" 1
+check "--self-commit keeps user-written asks"     "$(count "$L2" ask 'Bash(make deploy *)')" 1
+check "--self-commit leaves 11 ask rules"         "$(python3 -c "import json;print(len(json.load(open('$L2'))['permissions']['ask']))")" 11
+python3 "$PG" check --project "$P2" --self-commit >/dev/null; check "check --self-commit is clean" "$?" 0
+python3 "$PG" check --project "$P2" >/dev/null;               check "check without --self-commit wants commit asks" "$?" 1
+OUT="$(python3 "$PG" apply --project "$P2" --self-commit)"
+check "second --self-commit apply adds nothing"   "$(echo "$OUT" | grep -c 'already current')" 1
+python3 "$PG" apply --project "$P2" >/dev/null
+check "apply without --self-commit restores commit asks" "$(count "$L2" ask 'Bash(git commit *)')" 1
+python3 "$PG" check --project "$P2" --self-commit >/dev/null; check "check --self-commit reports leftover commit asks" "$?" 1
+
+python3 "$PG" apply --user --reviews-dir "$R" --self-commit >/dev/null
+check "user --self-commit adds a third marked entry" "$(count "$U" allow '~(drsg-harness-kit permission-guard)' autoMode)" 3
+check "user --self-commit entry covers local commit" "$(count "$U" allow '~A local `git commit`' autoMode)" 1
+python3 "$PG" check --user --reviews-dir "$R" --self-commit >/dev/null; check "user check --self-commit clean" "$?" 0
+python3 "$PG" check --user --reviews-dir "$R" >/dev/null;               check "user check without --self-commit reports the extra entry" "$?" 1
+python3 "$PG" apply --user --reviews-dir "$R" >/dev/null
+check "user apply without --self-commit drops it" "$(count "$U" allow '~A local `git commit`' autoMode)" 0
+check "user apply without --self-commit keeps two" "$(count "$U" allow '~(drsg-harness-kit permission-guard)' autoMode)" 2
+python3 "$PG" remove --user >/dev/null
+
 python3 "$PG" apply --user >/dev/null 2>&1;                       check "--user needs --reviews-dir" "$?" 2
 python3 "$PG" apply --user --reviews-dir "$T/nope" >/dev/null 2>&1; check "--reviews-dir must exist" "$?" 2
 python3 "$PG" apply >/dev/null 2>&1;                               check "needs --project or --user" "$?" 2
@@ -137,6 +166,14 @@ check "setup --reviews-dir writes autoMode rules"     "$(count "$U" allow '~(drs
 check 'fresh autoMode allow starts from $defaults' "$(python3 -c "import json;print(json.load(open('$U'))['autoMode']['allow'][0])")" '$defaults'
 bash "$HERE/../setup.sh" --no-skills --no-event-poller --no-streak-hint --prune-broad >/dev/null 2>&1
 check "setup rejects --prune-broad alone"             "$?" 1
+rm -f "$L" "$U"
+bash "$HERE/../setup.sh" --no-skills --no-event-poller --no-streak-hint \
+  --permission-guard "$P" --reviews-dir "$R" --self-commit >/dev/null 2>&1
+check "setup --self-commit writes no commit asks"     "$(count "$L" ask '~ commit ')" 0
+check "setup --self-commit still writes the push ask"  "$(count "$L" ask 'Bash(git push *)')" 1
+check "setup --self-commit writes the autoMode entry" "$(count "$U" allow '~A local `git commit`' autoMode)" 1
+bash "$HERE/../setup.sh" --no-skills --no-event-poller --no-streak-hint --self-commit >/dev/null 2>&1
+check "setup rejects --self-commit alone"             "$?" 1
 
 printf '\nPASS %d/%d\n' "$OK" "$RAN"
-[ "$RAN" -eq 46 ] && [ "$OK" -eq "$RAN" ]
+[ "$RAN" -eq 66 ] && [ "$OK" -eq "$RAN" ]

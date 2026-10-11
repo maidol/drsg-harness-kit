@@ -533,7 +533,7 @@ DRSG_SINGLE_TOOL_STREAK_DISABLED=1 claude
 ## Permission guard (`permission-guard.py`)
 
 Opt-in. Nothing is written until you ask for it, either through `setup.sh`
-(`--permission-guard DIR`, `--reviews-dir DIR`, `--prune-broad`) or by running
+(`--permission-guard DIR`, `--reviews-dir DIR`, `--prune-broad`, `--self-commit`) or by running
 the tool directly. It has two scopes:
 
 - **Project** (`--project DIR`): writes `DIR/.claude/settings.local.json` only —
@@ -546,7 +546,11 @@ the tool directly. It has two scopes:
   list|done` and the modern-go guideline script: auto mode keeps narrow rules
   and settles them without a classifier call. Broad interpreter rules such as
   `Bash(python3 *)` — dropped by auto mode, allow-everything outside it — are
-  reported; `--prune-broad` removes them. Nothing else is ever removed.
+  reported; `--prune-broad` removes them. With `--self-commit` the `git commit`
+  ask rules are left out and any this tool wrote before are removed (rules you
+  wrote yourself are kept); `git push` and `gh pr create` still ask, and
+  `check --self-commit` reports a leftover commit ask rule as drift. Nothing
+  else is ever removed.
 - **User** (`--user --reviews-dir DIR`): writes the `autoMode` block of
   `~/.claude/settings.json` (or `$CLAUDE_CONFIG_DIR/settings.json`), the only
   place Claude Code reads it from. Three prose rules tell the auto-mode
@@ -555,6 +559,10 @@ the tool directly. It has two scopes:
   not tool output, so a `cat` does not count — and that receipt files may be
   written there. Each entry starts with `(drsg-harness-kit permission-guard)`;
   hand-written copies of the same rules are replaced, everything else is kept.
+  `--self-commit` adds a fourth rule: a local `git commit` of the files the
+  session changed, on the checked-out branch, without amending pushed history
+  or `--no-verify`, is allowed without asking; push, tags, releases and PRs are
+  never covered. Re-running `apply --user` without the flag removes it.
 
 ```bash
 # project scope; re-running adds nothing
@@ -562,15 +570,23 @@ python3 ~/.drsg-memory/tools/permission-guard.py apply --project /path/to/projec
 python3 ~/.drsg-memory/tools/permission-guard.py apply --project /path/to/project --prune-broad
 python3 ~/.drsg-memory/tools/permission-guard.py check --project /path/to/project   # exit 1 on drift
 python3 ~/.drsg-memory/tools/permission-guard.py remove --project /path/to/project
+python3 ~/.drsg-memory/tools/permission-guard.py apply --project /path/to/project --self-commit
+python3 ~/.drsg-memory/tools/permission-guard.py check --project /path/to/project --self-commit
 
 # user scope
 python3 ~/.drsg-memory/tools/permission-guard.py apply --user --reviews-dir /path/to/workspace/reviews
 python3 ~/.drsg-memory/tools/permission-guard.py check --user --reviews-dir /path/to/workspace/reviews
 python3 ~/.drsg-memory/tools/permission-guard.py remove --user
+python3 ~/.drsg-memory/tools/permission-guard.py apply --user --reviews-dir /path/to/workspace/reviews --self-commit
 
 # event.py somewhere else than ~/.drsg-memory/tools
 python3 ~/.drsg-memory/tools/permission-guard.py apply --project /path/to/project --tools-dir /opt/drsg/tools
 ```
+
+Use `--self-commit` only when your global `CLAUDE.md` lets changes that no
+review covers be committed without asking; the rules only stop the prompt,
+the model still follows your instructions. To switch every installed project,
+run the project-scope `apply --self-commit` once per project directory.
 
 Rules take effect in sessions started afterwards. `claude auto-mode config`
 shows the user-scope entries the classifier will read.

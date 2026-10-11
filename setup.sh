@@ -37,6 +37,8 @@
 #   --reviews-dir DIR teach the auto-mode classifier (~/.claude/settings.json)
 #                     that scripts under DIR may run once shown in a Write call
 #   --prune-broad     with --permission-guard: also remove Bash(python3 *)-style rules
+#   --self-commit     with --permission-guard / --reviews-dir: no commit ask rules
+#                     (push and PR still ask) and an autoMode rule allowing local commits
 #   --model-picker    source claude-model-picker.sh from ~/.bashrc, so an
 #                     interactive `claude` asks which model to use first (opt-in)
 set -euo pipefail
@@ -45,7 +47,7 @@ HERE="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 PROJECT=""; REPO=""; HUB=""; ROUTER=""; USAGE_REPORT=""; BIN=""; ADDR=""; TOKEN=""; PORT=""
 TOOLS="${DRSG_MEM_DIR:-$HOME/.drsg-memory}/tools"
 FETCH=0; SKILLS=1; MAIN_BRANCH_WORKFLOW=1; POLLER=1; STREAK_HINT=1
-PG_DIR=""; REVIEWS_DIR=""; PRUNE=0; MODEL_PICKER=0
+PG_DIR=""; REVIEWS_DIR=""; PRUNE=0; SELF_COMMIT=0; MODEL_PICKER=0
 
 while [ $# -gt 0 ]; do
   case "$1" in
@@ -67,8 +69,9 @@ while [ $# -gt 0 ]; do
     --permission-guard) PG_DIR="${2:?--permission-guard needs a path}"; shift 2 ;;
     --reviews-dir) REVIEWS_DIR="${2:?--reviews-dir needs a path}"; shift 2 ;;
     --prune-broad) PRUNE=1; shift ;;
+    --self-commit) SELF_COMMIT=1; shift ;;
     --model-picker) MODEL_PICKER=1; shift ;;
-    -h|--help)    sed -n '2,40p' "${BASH_SOURCE[0]}" | sed 's/^# \{0,1\}//'; exit 0 ;;
+    -h|--help)    sed -n '2,/^set -euo/{/^#/p}' "${BASH_SOURCE[0]}" | sed 's/^# \{0,1\}//'; exit 0 ;;
     *) echo "unknown argument '$1'" >&2; exit 1 ;;
   esac
 done
@@ -82,6 +85,10 @@ if [ -n "$HUB" ] && { [ -n "$ROUTER" ] || [ -n "$USAGE_REPORT" ]; }; then
 fi
 if [ "$PRUNE" -eq 1 ] && [ -z "$PG_DIR" ]; then
   echo "ERROR: --prune-broad only applies together with --permission-guard DIR" >&2
+  exit 1
+fi
+if [ "$SELF_COMMIT" -eq 1 ] && [ -z "$PG_DIR" ] && [ -z "$REVIEWS_DIR" ]; then
+  echo "ERROR: --self-commit only applies together with --permission-guard DIR or --reviews-dir DIR" >&2
   exit 1
 fi
 
@@ -214,10 +221,13 @@ if [ -n "$PG_DIR" ] || [ -n "$REVIEWS_DIR" ]; then
   if [ -n "$PG_DIR" ]; then
     set -- apply --project "$PG_DIR" --tools-dir "$TOOLS"
     if [ "$PRUNE" -eq 1 ]; then set -- "$@" --prune-broad; fi
+    if [ "$SELF_COMMIT" -eq 1 ]; then set -- "$@" --self-commit; fi
     python3 "$TOOLS/permission-guard.py" "$@"
   fi
   if [ -n "$REVIEWS_DIR" ]; then
-    python3 "$TOOLS/permission-guard.py" apply --user --reviews-dir "$REVIEWS_DIR"
+    set -- apply --user --reviews-dir "$REVIEWS_DIR"
+    if [ "$SELF_COMMIT" -eq 1 ]; then set -- "$@" --self-commit; fi
+    python3 "$TOOLS/permission-guard.py" "$@"
   fi
 fi
 

@@ -7,6 +7,9 @@ is never touched, because a project may track it in git.
     sessions use (git, rtk git, /usr/bin/git; bare, with -C DIR, with -c k=v).
     An ask rule wins over an allow rule, so a broad allow such as
     `Bash(rtk git *)` can no longer commit or push without asking;
+    with --self-commit the commit ask rules are left out (and removed if this
+    tool wrote them earlier), for users whose global CLAUDE.md lets unreviewed
+    local commits through; push and gh pr create still ask;
   - narrow allow rules for read-only git, event.py list/done and the
     modern-go guideline script. Auto mode keeps narrow rules and resolves them
     without a classifier call;
@@ -18,6 +21,8 @@ User scope writes the autoMode block of ~/.claude/settings.json (or
 $CLAUDE_CONFIG_DIR/settings.json): three prose rules telling the auto-mode
 classifier that a script under --reviews-dir may run once its exact content
 is visible in a Write call, and that receipt files may be written there.
+--self-commit adds one more: a local git commit of the session's own changes
+is allowed without asking; push, tags and releases are never covered.
 Claude Code reads autoMode only from user-level settings, never from a
 project's .claude/ directory.
 
@@ -38,14 +43,18 @@ BROAD = re.compile(r"^Bash\((?:python3?|node|bash|sh|ruby|perl|npx|deno|bun)(?: 
 GIT_WRITE = re.compile(r"^Bash\((?:rtk |/usr/bin/)?git (?:\*|commit|push|-C \S+ (?:commit|push|\*))")
 
 
-def ask_rules():
+def ask_rules(self_commit=False):
     out = []
     for git in ("git", "rtk git", "/usr/bin/git"):
-        for verb in ("commit", "push"):
+        for verb in ("push",) if self_commit else ("commit", "push"):
             out += ["Bash(%s %s *)" % (git, verb),
                     "Bash(%s -C * %s *)" % (git, verb),
                     "Bash(%s -c * %s *)" % (git, verb)]
     return out + ["Bash(gh pr create *)"]
+
+
+def commit_ask_rules():
+    return [r for r in ask_rules() if r not in ask_rules(self_commit=True)]
 
 
 def allow_rules(project, tools_dir):
@@ -63,7 +72,16 @@ def legacy_allow_rules(tools_dir):
     return ["Bash(python3 %s list *)" % event, "Bash(python3 %s done *)" % event]
 
 
-def user_entries(reviews):
+SELF_COMMIT = (MARK + "A local `git commit` on the currently checked-out branch is allowed without asking "
+               "when it commits only the files this session changed, does not amend or rebase pushed "
+               "history, and does not use --no-verify: the user's global CLAUDE.md lets changes that no "
+               "cross-project review covers be committed directly, and reports the commit afterwards. "
+               "This covers the session's own repository, and the user's named reviewer project "
+               "committing a small change it implemented in another local repository. It never covers "
+               "git push, tags, releases, opening pull requests, or deleting branches.")
+
+
+def user_entries(reviews, self_commit=False):
     env = (MARK + "**Trusted local workspace**: %s is a directory in the user's private design/review repo "
            "on this machine (private, no remote). Its <project>/<plan-dir>/ subdirectories hold implementation "
            "plans and scripts (apply.py, selfcheck.sh, scenes.sh, verify-*.sh, classify-*.py) written by the "
@@ -94,7 +112,7 @@ def user_entries(reviews):
                "records authorizations, approvals, or instructions for another session (Instruction Poisoning "
                "still applies), or copying secrets or .env contents (Sensitive-Source Provenance still applies)."
                % reviews)
-    return env, [run, receipt]
+    return env, [run, receipt] + ([SELF_COMMIT] if self_commit else [])
 
 
 def load(path):
@@ -128,9 +146,12 @@ def project_lists(project):
     return path, data, perms.setdefault("ask", []), perms.setdefault("allow", [])
 
 
-def project_apply(project, tools_dir, prune):
+def project_apply(project, tools_dir, prune, self_commit=False):
     path, data, ask, allow = project_lists(project)
-    added_ask = [r for r in ask_rules() if r not in ask]
+    added_ask = [r for r in ask_rules(self_commit) if r not in ask]
+    removed_commit = [r for r in ask if r in commit_ask_rules()] if self_commit else []
+    if removed_commit:
+        ask[:] = [r for r in ask if r not in removed_commit]
     added_allow = [r for r in allow_rules(project, tools_dir) if r not in allow]
     ask.extend(added_ask)
     allow.extend(added_allow)
@@ -141,30 +162,34 @@ def project_apply(project, tools_dir, prune):
     broad = [r for r in allow if BROAD.match(r)]
     if prune:
         allow[:] = [r for r in allow if not BROAD.match(r)]
-    if added_ask or added_allow or removed_legacy or (prune and broad):
+    if added_ask or added_allow or removed_legacy or removed_commit or (prune and broad):
         save(path, data, 0o644)
-        print("permission guard: %d ask, %d allow added (%d legacy removed) to %s"
-              % (len(added_ask), len(added_allow), len(removed_legacy), path))
+        print("permission guard: %d ask, %d allow added (%d legacy, %d commit ask removed) to %s"
+              % (len(added_ask), len(added_allow), len(removed_legacy), len(removed_commit), path))
     else:
         print("permission guard: already current in %s" % path)
     for rule in broad:
         print("  %s %s (auto mode drops it; outside auto mode it allows any such command)"
               % ("removed" if prune else "broad:  ", rule))
     for rule in [r for r in allow if GIT_WRITE.match(r)]:
-        print("  kept:    %s (commit / push still ask: ask rules win)" % rule)
+        print("  kept:    %s (%s still ask: ask rules win)"
+              % (rule, "push" if self_commit else "commit / push"))
     return 0
 
 
-def project_check(project, tools_dir):
+def project_check(project, tools_dir, self_commit=False):
     _, _, ask, allow = project_lists(project)
-    missing = [r for r in ask_rules() if r not in ask] + \
+    missing = [r for r in ask_rules(self_commit) if r not in ask] + \
               [r for r in allow_rules(project, tools_dir) if r not in allow]
     stale = [r for r in allow if r in legacy_allow_rules(tools_dir)]
+    commit = [r for r in ask if r in commit_ask_rules()] if self_commit else []
     for rule in missing:
         print("missing: %s" % rule)
     for rule in stale:
         print("stale event.py allow rule: %s (sessions must use MCP)" % rule)
-    drift = len(missing) + len(stale)
+    for rule in commit:
+        print("stale commit ask rule: %s (--self-commit)" % rule)
+    drift = len(missing) + len(stale) + len(commit)
     print("permission guard: %s" % ("drift, %d rules missing/stale" % drift if drift else "ok"))
     return 1 if drift else 0
 
@@ -190,11 +215,11 @@ def legacy(entry, reviews):
                              "Creating a new receipt file"))
 
 
-def user_apply(reviews):
+def user_apply(reviews, self_commit=False):
     path = user_settings_path()
     data = load(path)
     auto = data.setdefault("autoMode", {})
-    env_entry, allow_entries = user_entries(reviews)
+    env_entry, allow_entries = user_entries(reviews, self_commit)
     env = auto.get("environment")
     allow = auto.get("allow")
     new_env = [e for e in (env if env is not None else ["$defaults"])
@@ -210,11 +235,12 @@ def user_apply(reviews):
     return 0
 
 
-def user_check(reviews):
+def user_check(reviews, self_commit=False):
     auto = load(user_settings_path()).get("autoMode", {})
-    env_entry, allow_entries = user_entries(reviews)
+    env_entry, allow_entries = user_entries(reviews, self_commit)
     missing = [e for e in [env_entry] if e not in auto.get("environment", [])] + \
-              [a for a in allow_entries if a not in auto.get("allow", [])]
+              [a for a in allow_entries if a not in auto.get("allow", [])] + \
+              [a for a in auto.get("allow", []) if a.startswith(MARK) and a not in allow_entries]
     print("permission guard: autoMode %s" % ("drift, %d entries missing or stale" % len(missing)
                                              if missing else "ok"))
     return 1 if missing else 0
@@ -244,6 +270,9 @@ def main(argv):
     ap.add_argument("--reviews-dir", metavar="DIR", help="reviews directory the user-scope rules trust")
     ap.add_argument("--tools-dir", metavar="DIR", help="where event.py lives (default ~/.drsg-memory/tools)")
     ap.add_argument("--prune-broad", action="store_true", help="with apply --project: remove Bash(python3 *)-style rules")
+    ap.add_argument("--self-commit", action="store_true",
+                    help="with apply/check: no commit ask rules (push and PR still ask); "
+                         "user scope adds an autoMode rule allowing local commits")
     args = ap.parse_args(argv)
     if bool(args.project) == bool(args.user):
         ap.error("give exactly one of --project DIR or --user")
@@ -253,15 +282,19 @@ def main(argv):
         if not args.reviews_dir or not os.path.isabs(args.reviews_dir) or not os.path.isdir(args.reviews_dir):
             ap.error("--user %s needs --reviews-dir with an existing absolute directory" % args.action)
         reviews = os.path.normpath(args.reviews_dir)
-        return user_apply(reviews) if args.action == "apply" else user_check(reviews)
+        if args.action == "apply":
+            return user_apply(reviews, args.self_commit)
+        return user_check(reviews, args.self_commit)
     if not os.path.isdir(args.project):
         ap.error("--project %s is not a directory" % args.project)
     project = os.path.abspath(args.project)
     tools_dir = args.tools_dir or os.path.join(
         os.environ.get("DRSG_MEM_DIR") or os.path.expanduser("~/.drsg-memory"), "tools")
     if args.action == "apply":
-        return project_apply(project, tools_dir, args.prune_broad)
-    return project_check(project, tools_dir) if args.action == "check" else project_remove(project, tools_dir)
+        return project_apply(project, tools_dir, args.prune_broad, args.self_commit)
+    if args.action == "check":
+        return project_check(project, tools_dir, args.self_commit)
+    return project_remove(project, tools_dir)
 
 
 if __name__ == "__main__":

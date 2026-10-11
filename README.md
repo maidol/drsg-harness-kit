@@ -89,13 +89,19 @@ Not installed unless asked for. `--permission-guard DIR` adds ask rules for
 `DIR/.claude/settings.local.json`; `--reviews-dir DIR` teaches the auto-mode
 classifier, in `~/.claude/settings.json`, that scripts under DIR may run once
 shown in a Write call; `--prune-broad` also removes `Bash(python3 *)`-style
-rules from the project file. Neither needs `--project`, the drsg binary or a
+rules from the project file. `--self-commit` leaves the `git commit` ask rules
+out (removing ones written earlier) and adds an auto-mode rule that allows a
+local commit of the session's own changes; push, PRs, tags and releases still
+ask. Use it only if your global `CLAUDE.md` lets unreviewed local commits
+through. Neither needs `--project`, the drsg binary or a
 running daemon. Details: [tools/README.md](tools/README.md#permission-guard-permission-guardpy).
 
 ```bash
 /tmp/drsg-harness-kit-*/setup.sh --permission-guard /path/to/project
 /tmp/drsg-harness-kit-*/setup.sh --permission-guard /path/to/project --prune-broad \
   --reviews-dir /path/to/workspace/reviews
+/tmp/drsg-harness-kit-*/setup.sh --permission-guard /path/to/project \
+  --reviews-dir /path/to/workspace/reviews --self-commit
 ```
 
 ## Model picker at startup (opt-in)
