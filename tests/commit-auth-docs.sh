@@ -26,6 +26,10 @@ check claude/AGENT-EFFICIENCY.md '能否授权看这次有没有真的验收，�
 check claude/AGENT-EFFICIENCY.md 'commit_auth_apply'
 check claude/AGENT-EFFICIENCY.md '审核方直接实现时'
 check claude/AGENT-EFFICIENCY.md 'old_string` 和 `new_string` 完全相同的 Edit 不要发'
+check claude/AGENT-EFFICIENCY.md '`old_string` 取能唯一定位的最短片段，一般一两行、80 个字符以内'
+check claude/AGENT-EFFICIENCY.md '变异自检：每个变异要配一个只有那一道门拦得住的用例。'
+check claude/AGENT-EFFICIENCY.md '变异自检只跑对应的用例'
+check claude/AGENT-EFFICIENCY.md '算出候选 tree 之后就不再改文件'
 check claude/AGENT-EFFICIENCY.md '挨得近的几处合成一个覆盖整段的 Edit'
 if grep -q '^- 由来' "$REPO/claude/AGENT-EFFICIENCY.md"; then
   printf 'FAIL claude/AGENT-EFFICIENCY.md still has 由来 bullets; keep origins out of the distributed rules\n' >&2
