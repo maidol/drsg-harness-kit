@@ -488,7 +488,8 @@ def _reply_to_source(reply_to, target, sender_path, token):
 
 
 def post(target, pid, summary, kind, ref, from_project, token,
-         symbols=None, verb=None, plane=None, from_path=None, reply_to=None):
+         symbols=None, verb=None, plane=None, from_path=None, reply_to=None,
+         commit_authorization=None):
     """Create the Event and its NOTIFY edge.
 
     Returns `{key, symbols, plane, hint, unverified, advice}` — the outcome, not just
@@ -527,6 +528,14 @@ def post(target, pid, summary, kind, ref, from_project, token,
              "from_project": from_project, "from_path": sender_path,
              "from_session": os.environ.get("CLAUDE_SESSION_ID", ""),
              "created_at": ts}
+    if commit_authorization is not None:
+        required = {"tree", "parent", "target_branch", "files", "force_paths", "message"}
+        if kind != "handoff":
+            raise ValueError("commit authorization must be a handoff")
+        if (not isinstance(commit_authorization, dict)
+                or set(commit_authorization) != required):
+            raise ValueError("commit authorization fields are incomplete or unexpected")
+        props.update(commit_authorization)
     if ref:
         props["ref"] = ref
     if reply_to is not None:

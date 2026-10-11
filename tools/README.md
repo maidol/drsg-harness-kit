@@ -345,6 +345,64 @@ advice: this reads like a change to a judgment ('判断') — verb=impact lists 
 Re-post with `--verb impact` when the change has to reach every path that makes
 the same decision.
 
+### Commit authorization tools (`commit_auth_post` / `commit_auth_apply`)
+
+The candidate `commit_auth_post` MCP tool takes `recipient`, 40-character
+`tree` and `parent`, explicit `target_branch`, exact `files`, `force_paths`
+(always present; `[]` when empty), and verbatim `message`. The target branch may
+be any valid name, but its ref must point at the authorized parent. It recomputes
+the tree from the parent with a temporary index; those temporary-index Git
+commands disable hooks with `-c core.hooksPath=/dev/null` to avoid executing
+recipient hooks during review. `git add` still writes blob objects to the
+recipient repository, so auto mode may classify this as a cross-project write. Only paths
+listed in `force_paths` use `git add -f`; it must be a subset of `files`.
+
+Authorization fields are stored as structured Event properties. The tool and
+the Event do not authenticate the user: the sole authority remains the
+user-global `CLAUDE.md` exception. The `commit_auth_apply` tool accepts only
+`{"event_key":"<key>"}`; it reads the Event itself, verifies the open
+handoff, matching tree prefix, and `NOTIFY` recipient path, then checks the
+parent and authorization tree. A temporary-index preflight must match before it
+touches the executor's formal index; the formal index must initially match the
+parent. Before formal staging, it inspects only Git's effective hooks directory
+(`core.hooksPath`, otherwise `git rev-parse --git-path hooks`), follows symlinks,
+and hashes the active commit hooks. Only the pinned kit pre-commit hooks are
+accepted; all other executable commit hooks are refused with their names and
+resolved paths. Normal `git commit` runs accepted hooks; `--no-verify` and
+plumbing commands are never used. A hook failure stops without retry and
+surfaces its output (recognizable secret values are redacted). After commit, the
+tool verifies `HEAD^`, `HEAD^{tree}`, and the exact commit message. If a hook or
+race made them differ, the commit remains local and the tool reports the
+mismatch; it never automatically resets or amends. It never pushes, creates a
+PR/tag/release, or closes the Event; after successful verification, the
+executor's Event owner closes it with `event_done`.
+
+If auto mode blocks either authorization action, stop. Do not switch to Bash or
+another MCP tool to retry the same tree; the reverse switch is also prohibited.
+Both tools are off until you name the reviewer project yourself in
+`~/.drsg-memory/commit-auth.json`; setup never writes that file. With it,
+`commit_auth_post` runs only in that project, and `commit_auth_apply` accepts
+only Events whose `from_path` is that project. This stops a mistaken
+authorization coming from any other session; it is not authentication against a
+hostile local process.
+
+Turn the tools on (replace the path with your reviewer project):
+
+```bash
+! printf '{"reviewer": "%s"}\n' /path/to/reviewer-project > ~/.drsg-memory/commit-auth.json
+```
+
+To let an authorized commit go through without a permission prompt, allow only
+the apply tool in `~/.claude/settings.json`. Bash `git commit` keeps its `ask`
+rule and still prompts:
+
+```bash
+! python3 -c 'import json,pathlib; p=pathlib.Path.home()/".claude/settings.json"; d=json.loads(p.read_text()); a=d.setdefault("permissions",{}).setdefault("allow",[]); assert isinstance(a,list), "permissions.allow is not a list; edit manually"; t="mcp__drsg-events__commit_auth_apply"; a.append(t) if t not in a else None; p.write_text(json.dumps(d,ensure_ascii=False,indent=2)+"\n")'
+```
+
+Turn them off by deleting `~/.drsg-memory/commit-auth.json` and removing
+`mcp__drsg-events__commit_auth_apply` from `permissions.allow`.
+
 ## To-do poller (`event-poller.py`)
 
 `setup.sh` registers it as four **global** hooks in `~/.claude/settings.json`

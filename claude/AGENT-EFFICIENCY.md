@@ -136,6 +136,12 @@
 - 分类器拦截授权动作后立即停止，不换工具重试、不在 Event 中转述授权；请用户在**审核方会话**针对具体 tree 亲自授权，再用 Write 新建授权文件。
 - 同一 tree 的 Bash `git commit` 被拦截后，不得改用任何授权 MCP 工具重试；授权工具调用被拦截后，也不得改用 Bash `git commit`。两种入口互不作为绕过另一种入口的后备方案。
 
+### 用授权工具提交
+
+- 用户在 `~/.drsg-memory/commit-auth.json` 里写明了审核方项目时，审核方可以用 `commit_auth_post` 发授权：授权字段存进 Event 的结构化属性，`ref` 里写着 `Commit details are stored in structured Event properties.`。
+- 收到这种授权，执行方只调用一次 `commit_auth_apply`，参数只有 `event_key`。工具会做完下面手动流程的全部核对再提交，并核对发件方是配置里的审核方。工具报错就停下，把报错原文告诉用户，不改用 Bash 手动提交。
+- 授权写在 `ref` 文档里、没有结构化字段时，照下面的手动流程做。
+
 ### 获得授权后的唯一提交核对流程
 
 请求实现验收时，候选 tree 必须从当时的 HEAD 和指定文件清单独立计算；不要复制 `.git/index`。`force_paths` 必须明确列出被忽略但获准的路径；没有此类路径时写 `force_paths: []`：

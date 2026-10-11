@@ -230,6 +230,50 @@ advice: this reads like a change to a judgment ('判断') — verb=impact lists 
 
 改动要落到所有做同一个判断的路径上时，用 `--verb impact` 重发。
 
+### 提交授权工具（`commit_auth_post` / `commit_auth_apply`）
+
+候选 MCP 工具 `commit_auth_post` 接收 `recipient`、40 位 `tree` 和
+`parent`、显式的 `target_branch`、精确的 `files`、始终存在的 `force_paths`（为空时写 `[]`），以及
+逐字 `message`。分支名只需合法，不限于 main/master；但对应分支 ref 必须指向授权的 parent。它会从 parent 用临时 index 重算 tree；临时索引的 Git 命令会加
+`-c core.hooksPath=/dev/null`，避免审核时执行收件仓库的钩子。`git add` 仍会向收件仓库写 blob 对象，因此 auto 模式可能把它判为跨项目写入。
+只有列在 `force_paths` 中的路径才使用 `git add -f`；该列表必须是 `files` 的子集。
+
+授权字段存于 Event 的结构化属性。工具和 Event 都不认证用户身份：唯一授权依据仍是
+用户全局 `CLAUDE.md` 例外。`commit_auth_apply` 只接收
+`{"event_key":"<key>"}`；它自行读取 Event，校验 open handoff、tree 前缀和
+`NOTIFY` 收件 Project path，然后核对 parent 和授权 tree。只有临时 index 预检匹配后
+才会触碰执行方正式 index；正式 index 起始 tree 必须等于 parent。正式暂存前，工具只检查
+Git 实际生效的钩子目录（`core.hooksPath`；未设置时用
+`git rev-parse --git-path hooks`），解析符号链接并计算活动提交钩子的 SHA-256。只有
+列入固定白名单的 kit pre-commit 钩子放行；其他可执行提交钩子会在正式暂存前被拒，并列出
+钩子名和解析后的路径。之后照常执行 `git commit` 并运行获准钩子；禁止使用
+`--no-verify` 或 plumbing 命令。钩子失败就停止、不重试，并报告钩子输出（可识别的密钥值会先打码）。
+提交后核对 `HEAD^`、`HEAD^{tree}` 和逐字提交信息；若钩子或竞态导致不符，提交会留在本地并报告，
+工具不会自动 reset 或 amend。工具不会 push、开 PR、打 tag/release，也不会关 Event；校验成功后，
+由执行方 Event owner 再调用 `event_done`。
+
+auto 模式若拦截任一授权动作，立即停止。不得切换到 Bash 或另一个 MCP 工具重试同一
+tree；反向切换也禁止。
+
+两个工具默认关闭，要你自己在 `~/.drsg-memory/commit-auth.json` 里写明审核方项目才会开启；setup 不会写这个文件。
+开启后，`commit_auth_post` 只能在这个项目里运行，`commit_auth_apply` 只接受 `from_path` 等于这个项目的 Event。
+它挡的是别的会话误发的授权，不防本机上有意伪造的进程。
+
+开启（把路径换成你的审核方项目）：
+
+```bash
+! printf '{"reviewer": "%s"}\n' /path/to/reviewer-project > ~/.drsg-memory/commit-auth.json
+```
+
+想让授权过的提交不再弹权限确认，只在 `~/.claude/settings.json` 里放行 apply 这一个工具。
+Bash 的 `git commit` 仍保留 `ask` 规则，照样会问你：
+
+```bash
+! python3 -c 'import json,pathlib; p=pathlib.Path.home()/".claude/settings.json"; d=json.loads(p.read_text()); a=d.setdefault("permissions",{}).setdefault("allow",[]); assert isinstance(a,list), "permissions.allow is not a list; edit manually"; t="mcp__drsg-events__commit_auth_apply"; a.append(t) if t not in a else None; p.write_text(json.dumps(d,ensure_ascii=False,indent=2)+"\n")'
+```
+
+关闭：删掉 `~/.drsg-memory/commit-auth.json`，再从 `permissions.allow` 里去掉 `mcp__drsg-events__commit_auth_apply`。
+
 ## 待办轮询（`event-poller.py`）
 
 `setup.sh` 会把它注册成 `~/.claude/settings.json` 里的四个**全局** hook（`--no-event-poller` 可跳过）。之后每个会话每 15 分钟查一次本项目的待办 Event，**轮询本身不调用模型**；只有出现本会话还没通知过的待办时，才唤醒模型。
