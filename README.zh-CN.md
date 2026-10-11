@@ -20,9 +20,19 @@ DrSG 的智能体侧工具集，集中在一个仓库中：为 Claude Code 提�
 | `docs/{en,zh}/src/` | 使用指南，包含五张图。 |
 | `setup.sh` | 在新机器上安装；从解包后的 bundle 中运行。 |
 | `pack.sh` | 构建 bundle。 |
+| `release.sh` | 检查、打包并发布版本。 |
 | `install-drsg.sh` | 机器没有 `drsg` 时下载其二进制。 |
 | `tools/codegraph-router-setup.sh` | hub 项目的可选 router MCP 配置。 |
 | `tools/codegraph-usage-setup.sh` | 可选的 native/routed usage-report Stop hook。 |
+
+## 发布（维护者）
+
+先运行 `check`，再编写发布说明。`publish` 会 push 并公开发布 GitHub Release；只有在用户明确授权后才能运行。
+
+```bash
+./release.sh check v1.7.1 --tested-tree <tree>
+./release.sh publish v1.7.1 --notes <notes 文件>
+```
 
 ## 安装
 

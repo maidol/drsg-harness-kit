@@ -27,9 +27,19 @@ read it before running it.
 | `docs/{en,zh}/src/` | the guide, with five diagrams |
 | `setup.sh` | install on a fresh machine — runs from an unpacked bundle |
 | `pack.sh` | build that bundle |
+| `release.sh` | check, package, and publish a versioned release |
 | `install-drsg.sh` | download a `drsg` binary when the machine has none |
 | `tools/codegraph-router-setup.sh` | opt-in router MCP setup for hub projects |
 | `tools/codegraph-usage-setup.sh` | opt-in native/routed usage-report Stop hook |
+
+## Release (maintainers)
+
+Run `check` first, then write the release notes. `publish` pushes and publicly publishes a GitHub Release; run it only after explicit user authorization.
+
+```bash
+./release.sh check v1.7.1 --tested-tree <tree>
+./release.sh publish v1.7.1 --notes <notes file>
+```
 
 ## Install
 

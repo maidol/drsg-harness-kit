@@ -37,6 +37,7 @@ bash "$REPO/tests/retro.sh"
 bash "$REPO/tests/recall-fixes.sh"
 bash "$REPO/tests/kit-followups.sh"
 bash "$REPO/tests/secret-redaction.sh"
+bash "$REPO/tests/release.sh"
 
 echo ""
 echo "All test suites and quality gates PASSED."
