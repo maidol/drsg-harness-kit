@@ -128,7 +128,7 @@
 ### 用授权工具提交
 
 - 用户在 `~/.drsg-memory/commit-auth.json` 里写明了审核方项目时，审核方可以用 `commit_auth_post` 发授权：授权字段存进 Event 的结构化属性，`ref` 里写着 `Commit details are stored in structured Event properties.`。
-- 收到这种授权，执行方只调用一次 `commit_auth_apply`，参数只有 `event_key`。工具会做完下面手动流程的全部核对再提交，并核对发件方是配置里的审核方。工具报错就停下，把报错原文告诉用户，不改用 Bash 手动提交。
+- 收到这种授权，执行方只调用一次 `commit_auth_apply`，参数只有 `event_key`。工具会做完下面手动流程的全部核对再提交，并核对发件方是配置里的审核方；成功时输出最后一行 `receipt: …` 写明回执发给哪个项目、`reply_to` 填什么，照着发，不要去读配置文件。工具报错就停下，把报错原文告诉用户，不改用 Bash 手动提交。
 - 授权写在 `ref` 文档里、没有结构化字段时，照下面的手动流程做。
 
 ### 获得授权后的唯一提交核对流程

@@ -249,7 +249,8 @@ Git 实际生效的钩子目录（`core.hooksPath`；未设置时用
 钩子名和解析后的路径。之后照常执行 `git commit` 并运行获准钩子；禁止使用
 `--no-verify` 或 plumbing 命令。钩子失败就停止、不重试，并报告钩子输出（可识别的密钥值会先打码）。
 提交后核对 `HEAD^`、`HEAD^{tree}` 和逐字提交信息；若钩子或竞态导致不符，提交会留在本地并报告，
-工具不会自动 reset 或 amend。工具不会 push、开 PR、打 tag/release，也不会关 Event；校验成功后，
+工具不会自动 reset 或 amend。成功时最后一行是
+`receipt: post kind="notice" to <审核方> with reply_to=<event-key>`，写明提交回执发给谁，执行方不用去读 `commit-auth.json`。工具不会 push、开 PR、打 tag/release，也不会关 Event；校验成功后，
 由执行方 Event owner 再调用 `event_done`。
 
 auto 模式若拦截任一授权动作，立即停止。不得切换到 Bash 或另一个 MCP 工具重试同一

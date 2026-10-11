@@ -824,6 +824,9 @@ class CommitAuthTests(unittest.TestCase):
                 result = self.mcp.call_tool("commit_auth_apply", {
                     "event_key": "evt-test"}, "fake-token")
                 self.assertIn("HEAD^{tree}", result)
+                # The executor learns where the receipt goes without reading the config.
+                self.assertIn('receipt: post kind="notice" to %s with reply_to=evt-test'
+                              % os.path.realpath(repo), result)
                 with self.assertRaisesRegex(ValueError, "target branch ref does not match authorized parent"):
                     self.mcp.call_tool("commit_auth_apply", {
                         "event_key": "evt-test"}, "fake-token")

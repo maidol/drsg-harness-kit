@@ -373,7 +373,9 @@ plumbing commands are never used. A hook failure stops without retry and
 surfaces its output (recognizable secret values are redacted). After commit, the
 tool verifies `HEAD^`, `HEAD^{tree}`, and the exact commit message. If a hook or
 race made them differ, the commit remains local and the tool reports the
-mismatch; it never automatically resets or amends. It never pushes, creates a
+mismatch; it never automatically resets or amends. On success its last line,
+`receipt: post kind="notice" to <reviewer> with reply_to=<event-key>`, names
+where the commit receipt goes, so the executor never reads `commit-auth.json`. It never pushes, creates a
 PR/tag/release, or closes the Event; after successful verification, the
 executor's Event owner closes it with `event_done`.
 

@@ -634,6 +634,10 @@ def _commit_auth_apply(args, proj, token):
         raise RuntimeError("commit %s remains local; verification failed (%s); "
                            "no reset/amend was attempted"
                            % (commit, "; ".join(mismatches)))
+    # _load_commit_auth proved the sender is the reviewer, so name it here: the
+    # executor must not have to read commit-auth.json to address its receipt.
+    steps.append('receipt: post kind="notice" to %s with reply_to=%s'
+                 % (reviewer, args["event_key"]))
     return "commit_auth_apply completed\n" + "\n".join(steps)
 
 
