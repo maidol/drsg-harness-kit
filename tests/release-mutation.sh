@@ -10,6 +10,7 @@ KILLED=0
 SURVIVED=0
 NO_RUN=0
 RAN=0
+PENDING=()
 
 mutate_and_check() {
   local name="$1" expected="$2" output="$TMP/$1.out" mutant="$TMP/release-$1.sh" rc=0
@@ -48,7 +49,18 @@ PY
     return
   fi
   RAN=$((RAN + 1))
-  if RELEASE_TEST_SCRIPT="$mutant" bash "$HERE/release.sh" >"$output" 2>&1; then
+  # Mutants are independent (each test run makes its own temp dir), so run them in parallel and judge after `wait`.
+  (
+    rc=0
+    RELEASE_TEST_SCRIPT="$mutant" bash "$HERE/release.sh" >"$output" 2>&1 || rc=$?
+    printf '%s\n' "$rc" >"$output.rc"
+  ) &
+  PENDING+=("$name|$expected")
+}
+
+judge() {
+  local name="$1" expected="$2" output="$TMP/$1.out"
+  if [ "$(cat "$output.rc")" = 0 ]; then
     SURVIVED=$((SURVIVED + 1))
     printf 'SURVIVED %s\n' "$name"
     printf '%s\n' '--- survivor output ---'
@@ -75,6 +87,11 @@ mutate_and_check gh_query 'gh query error exits nonzero'
 mutate_and_check local_tag 'local tag target mismatch is detected'
 mutate_and_check remote_tag 'remote tag points elsewhere stops at tag'
 mutate_and_check release_create 'publish completes end to end'
+
+wait
+for entry in "${PENDING[@]}"; do
+  judge "${entry%%|*}" "${entry#*|}"
+done
 
 printf 'mutants: %d killed, %d survived, %d no-run\n' "$KILLED" "$SURVIVED" "$NO_RUN"
 [ "$RAN" -eq 12 ] && [ "$SURVIVED" -eq 0 ] && [ "$NO_RUN" -eq 0 ]

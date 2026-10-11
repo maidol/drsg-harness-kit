@@ -41,6 +41,7 @@ if [ "$ACTION" = check ]; then
 else
   if [ "$#" -eq 4 ] && [ "$3" = --notes ] && [ -n "$4" ]; then
     NOTES="$4"
+    case "$NOTES" in /*) ;; *) NOTES="$PWD/$NOTES" ;; esac
   else
     usage
     stop arguments 'publish requires --notes <file>'
@@ -105,7 +106,7 @@ remote_tag_lines() {
 
 query_release() {
   local json_file="$1" err_file="$2"
-  if gh release view "$VERSION" --json tagName,isDraft,isPrerelease,assets >"$json_file" 2>"$err_file"; then
+  if (cd "$ROOT" && gh release view "$VERSION" --json tagName,isDraft,isPrerelease,assets) >"$json_file" 2>"$err_file"; then
     printf 'present'
   elif [ "$(<"$err_file")" = 'release not found' ]; then
     printf 'absent'
@@ -262,7 +263,7 @@ MANIFEST=$(tar -xOf "$TARBALL" "drsg-harness-kit-$VERSION/MANIFEST" 2>"$TMP_ERR"
 printf '%s\n' "$MANIFEST" | grep -Fxq "version: $VERSION" || stop package 'manifest version does not match'
 printf '%s\n' "$MANIFEST" | grep -Fxq "source:  $HEAD_SHA" || stop package 'manifest source does not match HEAD'
 for required in setup.sh install-drsg.sh tools/install.sh tools/mcp_events.py tools/permission-guard.py tools/audit_deployment.py skills/codegraph/SKILL.md claude/AGENT-EFFICIENCY.md; do
-  tar -tzf "$TARBALL" | grep -F "drsg-harness-kit-$VERSION/$required" >/dev/null || stop package "bundle is missing $required"
+  tar -tzf "$TARBALL" | grep -Fx "drsg-harness-kit-$VERSION/$required" >/dev/null || stop package "bundle is missing $required"
 done
 printf 'package verification: checksum, manifest and required files passed\n'
 
@@ -285,7 +286,7 @@ printf 'push: main and %s pushed without force\n' "$VERSION"
 
 RELEASE_STATE=$(query_release "$TMP_JSON" "$TMP_ERR") || stop release 'gh query failed'
 if [ "$RELEASE_STATE" = absent ]; then
-  if ! gh release create "$VERSION" --verify-tag --title "drsg-harness-kit $VERSION" --notes-file "$NOTES" "$TARBALL" "$CHECKSUM" >"$LOG.release" 2>&1; then
+  if ! (cd "$ROOT" && gh release create "$VERSION" --verify-tag --title "drsg-harness-kit $VERSION" --notes-file "$NOTES" "$TARBALL" "$CHECKSUM") >"$LOG.release" 2>&1; then
     show_failures "$LOG.release"
     stop release 'gh release create failed'
   fi
@@ -293,7 +294,7 @@ if [ "$RELEASE_STATE" = absent ]; then
 else
   printf 'release: found existing %s; create skipped\n' "$VERSION"
 fi
-if ! gh release view "$VERSION" --json tagName,isDraft,isPrerelease,assets >"$TMP_JSON" 2>"$TMP_ERR"; then
+if ! (cd "$ROOT" && gh release view "$VERSION" --json tagName,isDraft,isPrerelease,assets) >"$TMP_JSON" 2>"$TMP_ERR"; then
   stop postflight 'gh query failed'
 fi
 if ! verify_release_json "$TMP_JSON"; then stop postflight 'Release metadata or assets do not match'; fi

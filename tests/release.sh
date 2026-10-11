@@ -50,6 +50,7 @@ cat > "$GH" <<'GHSTUB'
 #!/usr/bin/env bash
 set -eu
 printf '%s\n' "$*" >> "${RELEASE_TEST_GH_LOG:?}"
+git rev-parse --show-toplevel >/dev/null 2>&1 || { printf 'fatal: not a git repository\n' >&2; exit 4; }
 case "${1:-} ${2:-}" in
   'release view')
     case "$(cat "${RELEASE_TEST_GH_STATE:?}")" in
@@ -388,6 +389,10 @@ run_check v1.7.1 > "$TMP/missing-file-check.out"
 notes_file
 expect_stop 'required bundle file missing' package run_publish v1.7.1 "$NOTES"
 check 'missing required file creates no GitHub Release' "$(grep -c '^release create ' "$GH_LOG" || true)" 0
+
+new_case check-from-another-directory
+(cd "$TMP" && "$CASE/release.sh" check v1.7.1) > "$TMP/elsewhere.out" 2>&1 || { cat "$TMP/elsewhere.out" >&2; fail 'check run from another directory passes'; }
+check 'check from another directory reaches the end' "$(grep -c 'release v1.7.1: check passed' "$TMP/elsewhere.out")" 1
 
 ELAPSED=$(( $(date +%s) - STARTED ))
 check 'release test suite duration is reported' "$ELAPSED" "$ELAPSED"
