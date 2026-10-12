@@ -273,6 +273,32 @@ To verify its registration:
 python3 -c 'import json, os; d=json.load(open(os.path.expanduser("~/.claude/settings.json"))); print([h.get("command") for g in d.get("hooks",{}).get("Stop",[]) for h in g.get("hooks",[]) if "textual-tool-call-guard" in h.get("command","")])'
 ```
 
+## Forbidden literals guard (`forbidden-literals-guard.py`)
+
+A pre-commit and commit-msg security check to prevent hardcoding sensitive identifiers (e.g. real client domains, emails, private endpoints) into repository commits and history.
+
+- **List location**: Stored locally in `<project>/.drsg/forbidden-literals`.
+- **Git protection**: The list file must be git-ignored and never tracked by git; otherwise the check refuses to run and exits 3.
+- **Syntax**: Plain text substring match (case-insensitive); prefix lines with `re:` for regex patterns; `#` denotes comments.
+- **No echo**: When a violation is blocked, only `file:line matches #index` is printed. The literal value itself is never echoed to terminal output or transcripts. Binary files are skipped.
+- **Opt-out**: Disabled per repository via `git config --local drsg.forbiddenLiterals false`.
+
+Check staged additions and commit messages manually:
+
+```bash
+cd /path/to/project
+mkdir -p .drsg && echo 'example.test' >> .drsg/forbidden-literals
+git check-ignore -q .drsg/forbidden-literals && echo ignored   # must print: ignored
+python3 ~/.drsg-memory/tools/forbidden-literals-guard.py --staged
+python3 ~/.drsg-memory/tools/forbidden-literals-guard.py --commit-msg /path/to/COMMIT_EDITMSG
+```
+
+Audit full repository history across all branches and backup references (`refs/original/`):
+
+```bash
+python3 ~/.drsg-memory/tools/forbidden-literals-guard.py --history
+```
+
 ## Check it is healthy
 
 ```bash

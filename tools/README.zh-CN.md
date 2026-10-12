@@ -406,3 +406,19 @@ python3 completeness-guard.py --json                  # 结构化输出
 
 它看哪些文件：名字只从 `.sh`、`.bash`、`.yml`、`.yaml`、`.py`、`.go` 和没有扩展名的脚本里抽，测试文件（`tests/`、`*_test.go`、`test_*.py` 等）一律不看；shell 的选项只认 `case` 分支标签。没写 `docs` 列表时，搜 `README*`、`*/README*.md` 和 `docs/**/*.md`。
 
+## 敏感字面量提交守卫（`forbidden-literals-guard.py`）
+
+检查暂存区、提交信息或全部 git 历史中的敏感标识。违规时仅报告 `文件:行号 matches #序号`，绝不回显字面量本身。二进制文件自动跳过。
+
+```bash
+python3 forbidden-literals-guard.py --staged
+python3 forbidden-literals-guard.py --commit-msg /path/to/COMMIT_EDITMSG
+python3 forbidden-literals-guard.py --history
+python3 forbidden-literals-guard.py --repo /path/to/project --list /path/to/list
+```
+
+- 名单默认位于 `<项目>/.drsg/forbidden-literals`；
+- 名单必须被 git 忽略且未被跟踪，否则退出码 3 拒绝运行；
+- 退出码：0 通过或已禁用，1 检出违规字面量，3 配置或安全错误；
+- 项目级关闭：`git config --local drsg.forbiddenLiterals false`。
+

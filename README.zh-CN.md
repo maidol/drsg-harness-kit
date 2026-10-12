@@ -192,6 +192,32 @@ DRSG_STOP_TEXTUAL_TOOL_CALL_GUARD_DISABLED=1 claude
 python3 -c 'import json, os; d=json.load(open(os.path.expanduser("~/.claude/settings.json"))); print([h.get("command") for g in d.get("hooks",{}).get("Stop",[]) for h in g.get("hooks",[]) if "textual-tool-call-guard" in h.get("command","")])'
 ```
 
+## 敏感字面量提交守卫（`forbidden-literals-guard.py`）
+
+提交前与提交信息安全检查，防止将敏感标识（真实客户域名、客户邮箱、私有账号等）硬编码进仓库提交与 git 历史。
+
+- **名单存放位置**：存放在各项目本地未跟踪路径 `<项目>/.drsg/forbidden-literals`；
+- **防泄露保护**：名单文件必须被 `.gitignore` 忽略且不得被 git 跟踪，否则守卫直接报错拒绝运行（退出码 3）；
+- **名单格式**：普通字串按大小写不敏感子串匹配；以 `re:` 开头的行按正则匹配；`#` 开头为注释；
+- **无回显阻断**：违规时仅报告 `文件:行号 matches #序号`，绝不回显敏感字面量本身；二进制文件自动跳过；
+- **关闭开关**：各项目可通过 `git config --local drsg.forbiddenLiterals false` 关闭该守卫。
+
+手动检查暂存区与提交信息：
+
+```bash
+cd /path/to/project
+mkdir -p .drsg && echo 'example.test' >> .drsg/forbidden-literals
+git check-ignore -q .drsg/forbidden-literals && echo ignored   # 必须打印 ignored
+python3 ~/.drsg-memory/tools/forbidden-literals-guard.py --staged
+python3 ~/.drsg-memory/tools/forbidden-literals-guard.py --commit-msg /path/to/COMMIT_EDITMSG
+```
+
+核对包含备份分支与 `refs/original/` 在内的全部分支历史：
+
+```bash
+python3 ~/.drsg-memory/tools/forbidden-literals-guard.py --history
+```
+
 ## 检查运行状态
 
 ```bash

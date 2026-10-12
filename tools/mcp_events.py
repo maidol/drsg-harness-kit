@@ -43,6 +43,10 @@ ALLOWED_COMMIT_HOOK_SHA256 = {
     "pre-commit": frozenset({
         "5538848d332cf420f7d745ba7b2f4429e9f0dde9604e9ad4df11c3335a5bb3a9",
         "65990fe9d7a89cc7d9681b8e47eecb23efd364860bdce0523f67027e8cd2a66e",
+        "3171dd53cf1f216c13436e7da9a44fdbb29111127eb5cf18c684ed2e1ba9ac2d",
+    }),
+    "commit-msg": frozenset({
+        "f4c2c9893aab37c81201cac595bd2c25f3795e3ab5215468e41a98b719b7637c",
     }),
 }
 # The one project whose commit authorizations this machine accepts. Written by
@@ -50,7 +54,11 @@ ALLOWED_COMMIT_HOOK_SHA256 = {
 COMMIT_AUTH_CONFIG = os.path.join(os.path.expanduser("~"), ".drsg-memory",
                                   "commit-auth.json")
 GUARD_BIN_LINE_RE = re.compile(
+    rb'^GUARD_BIN="([^"\r\n]+/completeness-guard\.py)"$', re.M)
+GUARD_BIN_FALLBACK_RE = re.compile(
     rb'^if \[ ! -f "([^"\r\n]+/completeness-guard\.py)" \]; then$', re.M)
+FORBIDDEN_BIN_LINE_RE = re.compile(
+    rb'^FORBIDDEN_BIN="([^"\r\n]+/forbidden-literals-guard\.py)"$', re.M)
 
 
 def _load_event_module():
@@ -359,12 +367,38 @@ def _normalized_guard_hook_sha(hook_path):
     except OSError:
         return None
     matches = list(GUARD_BIN_LINE_RE.finditer(content))
-    if len(matches) != 1:
+    matches_forbidden = list(FORBIDDEN_BIN_LINE_RE.finditer(content))
+    if len(matches) == 1 and len(matches_forbidden) == 1:
+        guard_path = matches[0].group(1)
+        forbidden_path = matches_forbidden[0].group(1)
+        if not os.path.isabs(os.fsdecode(guard_path)) or not os.path.isabs(os.fsdecode(forbidden_path)):
+            return None
+        normalized = content.replace(guard_path, b"@GUARD_BIN@").replace(forbidden_path, b"@FORBIDDEN_BIN@")
+        return hashlib.sha256(normalized).hexdigest()
+    # Legacy template fallback
+    matches_fallback = list(GUARD_BIN_FALLBACK_RE.finditer(content))
+    if len(matches_fallback) == 1 and not matches_forbidden:
+        guard_path = matches_fallback[0].group(1)
+        if not os.path.isabs(os.fsdecode(guard_path)):
+            return None
+        normalized = content.replace(guard_path, b"@GUARD_BIN@")
+        return hashlib.sha256(normalized).hexdigest()
+    return None
+
+
+def _normalized_commit_msg_hook_sha(hook_path):
+    try:
+        with open(hook_path, "rb") as stream:
+            content = stream.read()
+    except OSError:
         return None
-    guard_path = matches[0].group(1)
-    if not os.path.isabs(os.fsdecode(guard_path)):
+    matches_forbidden = list(FORBIDDEN_BIN_LINE_RE.finditer(content))
+    if len(matches_forbidden) != 1:
         return None
-    normalized = content.replace(guard_path, b"@GUARD_BIN@")
+    forbidden_path = matches_forbidden[0].group(1)
+    if not os.path.isabs(os.fsdecode(forbidden_path)):
+        return None
+    normalized = content.replace(forbidden_path, b"@FORBIDDEN_BIN@")
     return hashlib.sha256(normalized).hexdigest()
 
 
@@ -387,6 +421,8 @@ def _check_commit_hooks(repo):
         try:
             if name == "pre-commit":
                 digest = _normalized_guard_hook_sha(resolved)
+            elif name == "commit-msg":
+                digest = _normalized_commit_msg_hook_sha(resolved)
             else:
                 digest = None
             if digest is None:

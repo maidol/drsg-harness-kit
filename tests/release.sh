@@ -38,6 +38,13 @@ git -C "$REPO" archive HEAD | tar -x -C "$BASE"
 if [ -f "$REPO/tools/textual-tool-call-guard.py" ]; then
   cp "$REPO/tools/textual-tool-call-guard.py" "$BASE/tools/textual-tool-call-guard.py"
 fi
+if [ -f "$REPO/tools/forbidden-literals-guard.py" ]; then
+  cp "$REPO/tools/forbidden-literals-guard.py" "$BASE/tools/forbidden-literals-guard.py"
+fi
+cp "$REPO/README.md" "$BASE/README.md"
+cp "$REPO/README.zh-CN.md" "$BASE/README.zh-CN.md"
+cp "$REPO/tools/README.md" "$BASE/tools/README.md"
+cp "$REPO/tools/README.zh-CN.md" "$BASE/tools/README.zh-CN.md"
 cp "$RELEASE_SCRIPT" "$BASE/release.sh"
 cp "$HERE/release.sh" "$BASE/tests/release.sh"
 cat > "$BASE/tests/test-all.sh" <<'STUB'

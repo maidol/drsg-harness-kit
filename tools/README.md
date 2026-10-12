@@ -646,3 +646,21 @@ What it reads: names are taken from `.sh`, `.bash`, `.yml`, `.yaml`, `.py`,
 Without a `docs` list it searches `README*`, `*/README*.md` and
 `docs/**/*.md`.
 
+## Forbidden literals guard (`forbidden-literals-guard.py`)
+
+Checks staged changes, commit messages, or git history for forbidden sensitive identifiers.
+Does not echo matching literals in output (reports `file:line matches #index` only).
+Binary files are skipped.
+
+```bash
+python3 forbidden-literals-guard.py --staged
+python3 forbidden-literals-guard.py --commit-msg /path/to/COMMIT_EDITMSG
+python3 forbidden-literals-guard.py --history
+python3 forbidden-literals-guard.py --repo /path/to/project --list /path/to/list
+```
+
+- Target list defaults to `<project>/.drsg/forbidden-literals`.
+- List file must be git-ignored and never tracked (exits 3 on violation).
+- Exit codes: 0 clean or disabled, 1 forbidden literal found, 3 configuration error.
+- Project opt-out: `git config --local drsg.forbiddenLiterals false`.
+

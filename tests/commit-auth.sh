@@ -200,7 +200,7 @@ class CommitAuthTests(unittest.TestCase):
                 self.mcp._check_commit_hooks(target)
                 hook = os.path.join(target, ".git", "hooks", "pre-commit")
                 self.assertEqual(self.mcp._normalized_guard_hook_sha(hook),
-                                 "65990fe9d7a89cc7d9681b8e47eecb23efd364860bdce0523f67027e8cd2a66e")
+                                 "3171dd53cf1f216c13436e7da9a44fdbb29111127eb5cf18c684ed2e1ba9ac2d")
                 with open(hook, "ab") as stream:
                     stream.write(b"# one byte mutation\\n")
                 with self.assertRaisesRegex(ValueError, "pre-commit"):
@@ -282,12 +282,30 @@ class CommitAuthTests(unittest.TestCase):
                 digest = self.mcp._normalized_guard_hook_sha(hook)
                 normalized.append(digest)
                 self.assertEqual(digest,
-                    "65990fe9d7a89cc7d9681b8e47eecb23efd364860bdce0523f67027e8cd2a66e")
+                    "3171dd53cf1f216c13436e7da9a44fdbb29111127eb5cf18c684ed2e1ba9ac2d")
                 self.mcp._check_commit_hooks(target)
                 pathlib.Path(hook).write_bytes(pathlib.Path(hook).read_bytes() + b"# changed\\n")
                 with self.assertRaisesRegex(ValueError, "pre-commit"):
                     self.mcp._check_commit_hooks(target)
         self.assertEqual(normalized[0], normalized[1])
+
+    def test_forbidden_literals_hook_installed_and_allowlisted(self):
+        installer = os.path.join(tools, "install-precommit-guard.sh")
+        with tempfile.TemporaryDirectory() as temp:
+            target = self.make_git_repo(os.path.join(temp, "repo-f8"))
+            tool_dir = os.path.join(temp, "custom-random-runtime", "tools")
+            result = subprocess.run(["bash", installer, target, tool_dir],
+                                    capture_output=True, text=True)
+            self.assertEqual(result.returncode, 0, result.stderr)
+            accepted = self.mcp._check_commit_hooks(target)
+            hook_names = {item[0] for item in accepted}
+            self.assertIn("pre-commit", hook_names)
+            self.assertIn("commit-msg", hook_names)
+
+            msg_hook = os.path.join(target, ".git", "hooks", "commit-msg")
+            pathlib.Path(msg_hook).write_bytes(pathlib.Path(msg_hook).read_bytes() + b"# mutation\\n")
+            with self.assertRaisesRegex(ValueError, "commit-msg"):
+                self.mcp._check_commit_hooks(target)
 
     def git(self, repo_path, *args, env=None):
         return subprocess.run(["git", "-C", repo_path, *args], env=env,

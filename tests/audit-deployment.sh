@@ -280,6 +280,10 @@ case "$(find_layer_details "$T/out_hookspath.json" "L4")" in
   *"completeness-guard pre-commit hook active"*) check "l4_precommit_follows_core_hookspath" yes yes ;;
   *) check "l4_precommit_follows_core_hookspath" no yes ;;
 esac
+case "$(find_layer_details "$T/out_hookspath.json" "L4")" in
+  *"forbidden-literals guard not installed"*) check "l4_forbidden_literals_hookspath_reported" yes yes ;;
+  *) check "l4_forbidden_literals_hookspath_reported" no yes ;;
+esac
 rm -rf "$R2_PROJ/.git" "$R2_PROJ/.githooks"
 
 # Now add exact legacy rule

@@ -21,6 +21,7 @@ bash "$REPO/tests/audit-deployment.sh"
 
 echo "== 5/6: Generic completeness guard contract tests =="
 bash "$REPO/tests/completeness-guard.sh"
+bash "$REPO/tests/forbidden-literals.sh"
 
 echo "== 6/6: Event poller & streak reminder contract tests =="
 bash "$REPO/tests/single-tool-streak.sh"

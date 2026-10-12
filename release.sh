@@ -262,7 +262,7 @@ fi
 MANIFEST=$(tar -xOf "$TARBALL" "drsg-harness-kit-$VERSION/MANIFEST" 2>"$TMP_ERR") || stop package 'cannot read bundle manifest'
 printf '%s\n' "$MANIFEST" | grep -Fxq "version: $VERSION" || stop package 'manifest version does not match'
 printf '%s\n' "$MANIFEST" | grep -Fxq "source:  $HEAD_SHA" || stop package 'manifest source does not match HEAD'
-for required in setup.sh install-drsg.sh tools/install.sh tools/mcp_events.py tools/permission-guard.py tools/audit_deployment.py tools/textual-tool-call-guard.py skills/codegraph/SKILL.md claude/AGENT-EFFICIENCY.md; do
+for required in setup.sh install-drsg.sh tools/install.sh tools/mcp_events.py tools/permission-guard.py tools/forbidden-literals-guard.py tools/audit_deployment.py tools/textual-tool-call-guard.py skills/codegraph/SKILL.md claude/AGENT-EFFICIENCY.md; do
   tar -tzf "$TARBALL" | grep -Fx "drsg-harness-kit-$VERSION/$required" >/dev/null || stop package "bundle is missing $required"
 done
 printf 'package verification: checksum, manifest and required files passed\n'

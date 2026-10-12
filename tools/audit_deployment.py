@@ -472,7 +472,7 @@ def check_layer4(project_dir, claude_json=None, tools_dir=None):
     elif hooks_installed:
         issues.append("Missing CLAUDE.md while hooks are installed")
 
-    # 4. pre-commit completeness-guard status. Ask git where its hooks live:
+    # 4. pre-commit completeness-guard & forbidden-literals status. Ask git where its hooks live:
     # a project that sets core.hooksPath keeps pre-commit there, not in .git/hooks.
     git_dir = os.path.join(project_dir, ".git")
     if os.path.isdir(git_dir):
@@ -484,6 +484,7 @@ def check_layer4(project_dir, claude_json=None, tools_dir=None):
         except Exception:
             hooks_dir = os.path.join(git_dir, "hooks")
         pre_commit = os.path.join(hooks_dir, "pre-commit")
+        commit_msg = os.path.join(hooks_dir, "commit-msg")
         if os.path.exists(pre_commit):
             try:
                 with open(pre_commit, encoding="utf-8") as f:
@@ -496,6 +497,35 @@ def check_layer4(project_dir, claude_json=None, tools_dir=None):
                 pass
         else:
             res["details"].append("no pre-commit hook present")
+
+        # P4: forbidden-literals hook audit (4 states)
+        has_fl_hooks = False
+        if os.path.exists(pre_commit) and os.path.exists(commit_msg):
+            try:
+                with open(pre_commit, encoding="utf-8") as f1, open(commit_msg, encoding="utf-8") as f2:
+                    if "forbidden-literals-guard" in f1.read() and "forbidden-literals-guard" in f2.read():
+                        has_fl_hooks = True
+            except Exception:
+                pass
+
+        if has_fl_hooks:
+            # Check git config disabled
+            try:
+                cfg_val = subprocess.run(
+                    ["git", "-C", project_dir, "config", "--bool", "drsg.forbiddenLiterals"],
+                    capture_output=True, text=True, timeout=5
+                ).stdout.strip()
+            except Exception:
+                cfg_val = ""
+            list_file = os.path.join(project_dir, ".drsg", "forbidden-literals")
+            if cfg_val == "false":
+                res["details"].append("forbidden-literals guard disabled via git config")
+            elif os.path.exists(list_file):
+                res["details"].append("forbidden-literals guard active")
+            else:
+                res["details"].append("forbidden-literals guard dormant (no list)")
+        else:
+            res["details"].append("forbidden-literals guard not installed")
 
     # 5. MCP servers the project's sessions load
     if claude_json:
