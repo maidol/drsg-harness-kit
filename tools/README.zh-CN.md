@@ -288,7 +288,7 @@ Bash 的 `git commit` 仍保留 `ask` 规则，照样会问你：
 - **由 `Stop` 重新拉起。** 唤醒后轮询进程就退出了，下一次 `Stop` 会再把它启动起来；如果它已经在运行，这次 `Stop` 拉起的进程会立刻退出。
 - **发件方会踢一下。** `event.py post()`（`drsg-events` 的 MCP 工具也走它）写完 Event 后，如果收件项目的状态目录存在，就 touch 其中的 `kick` 文件。等待中的轮询进程每秒 stat 一次这个文件（`EVENT_POLL_KICK_STEP`），一变就立刻查 daemon，所以空闲会话一两秒内就能看到新 Event，不用等下一次 15 分钟的定时查询。只在同一台机器上有效；没踢到时仍由 15 分钟的定时查询兜底。
 - **出错时不出声。** 没有 `.drsg/env`、daemon 没起来、返回结果不对，都只记日志，下一轮再试，不会唤醒模型。
-- 状态和日志在 `~/.drsg-memory/poller/<项目哈希>/`（`lease.json`、`<会话>.<pid>.seen.json`、`<会话>.<pid>.pid`、`poller.log`；`<pid>` 是 Claude Code 进程）。测试时可以用 `EVENT_POLL_INTERVAL`、`EVENT_POLL_TICK`（单位：秒）调短间隔；`EVENT_POLL_OWNER_PID` 在轮询脚本和 hook 的 owner 行里代替 Claude Code 进程。
+- 状态和日志在 `~/.drsg-memory/poller/<项目哈希>/`（`lease.json`，用了车道时还有 `lease.<车道>.json` 和 `claims.json`；`<会话>.<pid>.seen.json`、`<会话>.<pid>.pid`、`poller.log`；`<pid>` 是 Claude Code 进程）。测试时可以用 `EVENT_POLL_INTERVAL`、`EVENT_POLL_TICK`（单位：秒）调短间隔；`EVENT_POLL_OWNER_PID` 在轮询脚本和 hook 的 owner 行里代替 Claude Code 进程。
 - 接管后，上一个会话被唤醒但还没关掉的 Event 会重新通知一次；把租约拿回来的会话也一样。轮询脚本分不清「做了一半」和「做完了、在等用户确认」，所以唤醒提示里要求先看工作区。
 - **一个 owner，所有会话都看得见。** 持有租约的会话就是这个项目的 Event owner，只有它会被唤醒去处理。两个终端 `--resume` 同一个会话 ID 是两个进程，只有其中一个持有租约；它退出时不会停掉另一个进程的轮询，另一个一分钟内接管，并把所有未关的 Event 重新通知一次。每个会话照样会列出未关的 Event（启动时和提问前），最上面多一行说明本会话的身份：
 
@@ -298,7 +298,30 @@ Bash 的 `git commit` 仍保留 `ask` 规则，照样会问你：
   现在没有 Event owner。本会话的待办轮询拿到租约后会唤醒你；在那之前本会话只读，不要执行这些 Event。
   ```
 
-关 Event 是硬拦，不只是提示：项目（`CLAUDE_PROJECT_DIR`，没有就是当前目录）有活着的 owner、而调用方是另一个 Claude Code 进程时，`event_done`（MCP）和 `event.py done` 都会拒绝，什么都不写。没有活着的 owner，或者从普通 shell 里运行（上面没有 Claude Code），照旧能关。在 agent 会话内，关闭待办必须使用 MCP 工具 `event_done`（接管时带 `force: true`）；在会话内通过 Bash 跑 `event.py done` 会被 PreToolUse 钩子拦截拒绝。人类在终端独立操作时，可以带 force 关：
+- **车道：按发件项目分给几个 owner。** 很多项目都往这里发 Event 时（比如审核方），可以给每个发件项目开一个会话。启动时用 `DRSG_EVENT_LANES` 写上发件项目的名字（发件方的目录名，即 `event_list` 里的 `from_project`），这个会话就只会因为这些项目的 Event 被唤醒，也只能关这些 Event。没设这个变量的会话是默认车道，处理其余所有发件项目：
+
+  ```bash
+  DRSG_EVENT_LANES=any-auto-register claude
+  DRSG_EVENT_LANES=drsg-harness-kit,sub2api claude
+  claude
+  ```
+
+  每条车道一份租约（`lease.<车道>.json`，规则和 `lease.json` 相同）。某个发件项目的车道没有活着的 owner 时，它的 Event 回落到默认车道，所以车道会话退出后，它的 Event 会被接管并重新通知。一条 Event 第一次唤醒了哪条车道，就留在哪条车道（记在 `claims.json`），直到那条车道没有活着的 owner：后启动的车道会话拿不走默认会话已经在做的 Event，只接这个发件项目之后发来的。谁都不声明车道时只有 `lease.json`，行为不变。用了车道时，身份说明是这几种：
+
+  ```text
+  本会话是车道 any-auto-register 的 Event owner：只执行待办轮询唤醒你处理的 Event；列表里其他 Event 只读，不要执行，也不要 event_done。
+  本会话是这个项目的 Event owner：按 Event 流程处理。车道 any-auto-register 的 Event 归各自的车道会话，本会话对它们只读：不要执行，也不要 event_done。
+  本会话声明的车道 any-auto-register（会话 f8e05069）由别的会话持有，本会话只读：不要执行这些 Event。owner 退出后，本会话的待办轮询会接管并唤醒你。
+  本会话声明的车道 sub2api 现在没有 Event owner。本会话的待办轮询拿到租约后会唤醒你；在那之前本会话只读，不要执行这些 Event。
+  ```
+
+  车道名只能用字母、数字、`.`、`_`、`-`，其他写法会被忽略。名字写错不会报错：那条车道永远等不到 Event，发件项目的 Event 都落到默认车道，所以名字要从 `from_project` 照抄。手动把某条车道的租约挪到你的会话（只能由用户本人运行，PreToolUse 钩子会拦住 agent）：
+
+  ```bash
+  python3 ~/.drsg-memory/tools/event-poller.py --take --lane any-auto-register
+  ```
+
+关 Event 是硬拦，不只是提示：项目（`CLAUDE_PROJECT_DIR`，没有就是当前目录）有活着的 owner、而调用方是另一个 Claude Code 进程时，`event_done`（MCP）和 `event.py done` 都会拒绝，什么都不写。没有活着的 owner，或者从普通 shell 里运行（上面没有 Claude Code），照旧能关。用了车道时，核对的是这条 Event 所属车道的 owner，拒绝信息里会写出车道（`Event owner of <项目> lane <车道>`）。在 agent 会话内，关闭待办必须使用 MCP 工具 `event_done`（接管时带 `force: true`）；在会话内通过 Bash 跑 `event.py done` 会被 PreToolUse 钩子拦截拒绝。人类在终端独立操作时，可以带 force 关：
 
 ```bash
 python3 ~/.drsg-memory/tools/event.py done <event-key> --force

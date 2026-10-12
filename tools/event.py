@@ -688,33 +688,128 @@ def _claude_process():
     return None, None
 
 
-def owner_refusal(project):
-    """Why this process may not close `project`'s Events, or "" when it may.
+# Event lanes: one project's Events split between sessions by sender. A session
+# started with DRSG_EVENT_LANES=a,b executes only Events whose from_project is
+# a or b; every other Event belongs to the default lane, which is what a session
+# without the variable holds. The default lane's lease keeps its old file name,
+# so a project nobody declares lanes for behaves exactly as before.
+LANES_ENV = "DRSG_EVENT_LANES"
+DEFAULT_LANE = "*"
+LANE_RE = re.compile(r"^[A-Za-z0-9._-]+$")
+GONE = ("T", "t", "Z", "X")
 
-    One session — a session id together with its Claude Code process — owns a
-    project's Events: the event-poller's lease holder. Read from that lease, so
-    the poller, the hooks' owner line and this refusal cannot disagree. Never
-    refuses when there is no live owner (a to-do must stay closable) or when
-    the caller is not a Claude Code session at all (a person in a shell)."""
-    state = os.path.join(os.environ.get("DRSG_MEM_DIR") or os.path.expanduser("~/.drsg-memory"),
-                         "poller", hashlib.sha1(os.path.realpath(project).encode()).hexdigest()[:12])
+
+def poller_state(project):
+    """The event-poller's state directory for `project`."""
+    return os.path.join(os.environ.get("DRSG_MEM_DIR") or os.path.expanduser("~/.drsg-memory"),
+                        "poller", hashlib.sha1(os.path.realpath(project).encode()).hexdigest()[:12])
+
+
+def process_lanes(pid):
+    """Lanes the Claude Code process `pid` was started for, read from ITS
+    environment in /proc — not from this process's — so the poller, the hooks
+    and event_done all answer for the same process. [DEFAULT_LANE] when it
+    names none or none of the names is usable."""
     try:
-        with open(os.path.join(state, "lease.json"), encoding="utf-8") as f:
+        with open("/proc/%d/environ" % pid, "rb") as f:
+            items = f.read().split(b"\0")
+    except (OSError, TypeError):
+        return [DEFAULT_LANE]
+    prefix = (LANES_ENV + "=").encode()
+    for item in items:
+        if item.startswith(prefix):
+            names = item[len(prefix):].decode("utf-8", "replace").split(",")
+            lanes = sorted({n.strip() for n in names if LANE_RE.match(n.strip())})
+            return lanes or [DEFAULT_LANE]
+    return [DEFAULT_LANE]
+
+
+def lease_name(lane):
+    return "lease.json" if lane == DEFAULT_LANE else "lease.%s.json" % lane
+
+
+def lane_leases(state):
+    """Names of the non-default lanes that have a lease file in `state`."""
+    try:
+        names = os.listdir(state)
+    except OSError:
+        return []
+    return sorted(n[len("lease."):-len(".json")] for n in names
+                  if n.startswith("lease.") and n.endswith(".json")
+                  and LANE_RE.match(n[len("lease."):-len(".json")]))
+
+
+def live_lease(state, lane):
+    """`lane`'s lease while its holder can still act on a wake-up, else None."""
+    try:
+        with open(os.path.join(state, lease_name(lane)), encoding="utf-8") as f:
             lease = json.load(f)
     except (OSError, ValueError):
+        return None
+    holder = lease.get("pid") if isinstance(lease, dict) else None
+    st = _proc(holder) if isinstance(holder, int) else None
+    if not st or st[0] != lease.get("start") or st[1] in GONE:
+        return None
+    return lease
+
+
+def event_lane(state, key, from_project):
+    """The lane that executes one Event. The lane that was woken for it keeps
+    it while that lane still has a live owner, so a lane session starting up
+    does not take an Event the default lane is already working on; otherwise
+    the sender's own lane while it has a live owner; otherwise the default."""
+    try:
+        with open(os.path.join(state, "claims.json"), encoding="utf-8") as f:
+            claimed = json.load(f).get(key)
+    except (OSError, ValueError, AttributeError):
+        claimed = None
+    if isinstance(claimed, str) and (claimed == DEFAULT_LANE or LANE_RE.match(claimed)) \
+            and live_lease(state, claimed):
+        return claimed
+    if isinstance(from_project, str) and LANE_RE.match(from_project) \
+            and live_lease(state, from_project):
+        return from_project
+    return DEFAULT_LANE
+
+
+def owner_refusal(project, key=None, from_project=None):
+    """Why this process may not close `project`'s Events, or "" when it may.
+
+    One session — a session id together with its Claude Code process — owns
+    each lane of a project's Events: the event-poller's lease holder for that
+    lane. Read from that lease, so the poller, the hooks' owner line and this
+    refusal cannot disagree. Never refuses when there is no live owner (a to-do
+    must stay closable) or when the caller is not a Claude Code session at all
+    (a person in a shell)."""
+    state = poller_state(project)
+    lane = event_lane(state, key, from_project) if key else DEFAULT_LANE
+    lease = live_lease(state, lane)
+    if not lease:
         return ""
     holder = lease.get("pid")
-    st = _proc(holder) if isinstance(holder, int) else None
-    if not st or st[0] != lease.get("start") or st[1] in ("T", "t", "Z", "X"):
-        return ""
     pid, start = _claude_process()
     if pid is None or (pid == holder and start == lease.get("start")):
         return ""
-    return ("refused: this session is not the Event owner of %s (owner: session %s, "
+    where = "" if lane == DEFAULT_LANE else " lane %s" % lane
+    return ("refused: this session is not the Event owner of %s%s (owner: session %s, "
             "pid %s). Only the owner closes this project's Events. If the user "
             "explicitly asked this session to take the Event over, retry with "
             "force (event_done force=true)."
-            % (project, str(lease.get("session_id"))[:8], holder))
+            % (project, where, str(lease.get("session_id"))[:8], holder))
+
+
+def event_sender(key, token):
+    """`from_project` of the Event `key`, or "" when it cannot be read."""
+    try:
+        res = rpc("plane.cypher", {"plane": PLANE,
+            "query": "MATCH (e:Event) WHERE key(e) = $key RETURN e",
+            "params": {"key": key}}, token) or {}
+        nodes = res.get("nodes") or []
+        if len(nodes) == 1:
+            return str((nodes[0].get("properties") or {}).get("from_project") or "")
+    except Exception:
+        pass
+    return ""
 
 
 def close(key, token, project=None, force=False):
@@ -741,7 +836,10 @@ def close(key, token, project=None, force=False):
     just has to be read.
     """
     if project and not force:
-        why = owner_refusal(project)
+        # Who sent it only matters once some lane has a lease; until then the
+        # answer is the default lane's and costs no extra round trip.
+        sender = event_sender(key, token) if lane_leases(poller_state(project)) else ""
+        why = owner_refusal(project, key, sender)
         if why:
             raise RuntimeError(why)
     node = rpc("node.update", {"plane": PLANE, "key": key,

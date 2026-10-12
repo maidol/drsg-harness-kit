@@ -23,6 +23,7 @@ Design (see tools/README.md):
 import hashlib
 import json
 import os
+import re
 import socket
 import sys
 import time
@@ -371,6 +372,66 @@ def _claude_pid():
     return None
 
 
+def _hook_lanes(pid):
+    """DRSG_EVENT_LANES of the Claude Code process `pid`, read from /proc like
+    event.py process_lanes does; ["*"] (the default lane) when unset."""
+    try:
+        with open("/proc/%d/environ" % pid, "rb") as f:
+            items = f.read().split(b"\0")
+    except (OSError, TypeError):
+        return ["*"]
+    for item in items:
+        if item.startswith(b"DRSG_EVENT_LANES="):
+            names = item[len(b"DRSG_EVENT_LANES="):].decode("utf-8", "replace").split(",")
+            lanes = sorted({n.strip() for n in names if re.match(r"^[A-Za-z0-9._-]+$", n.strip())})
+            return lanes or ["*"]
+    return ["*"]
+
+
+def _hook_lease(state, lane):
+    """`lane`'s lease while its holder can still act, else None."""
+    name = "lease.json" if lane == "*" else "lease.%s.json" % lane
+    try:
+        with open(os.path.join(state, name), encoding="utf-8") as f:
+            lease = json.load(f)
+    except (OSError, ValueError):
+        return None
+    holder = lease.get("pid") if isinstance(lease, dict) else None
+    st = _proc(holder) if holder else None
+    if not st or st[0] != lease.get("start") or st[1] in ("T", "t", "Z", "X"):
+        return None
+    return lease
+
+
+def _hook_lane_names(state):
+    try:
+        names = os.listdir(state)
+    except OSError:
+        return []
+    return sorted(n[6:-5] for n in names if n.startswith("lease.") and n.endswith(".json")
+                  and re.match(r"^[A-Za-z0-9._-]+$", n[6:-5]))
+
+
+def _lane_owner_line(state, sid, me, lanes):
+    """The owner line for a session started with DRSG_EVENT_LANES."""
+    mine, taken = [], []
+    for lane in lanes:
+        lease = _hook_lease(state, lane)
+        if lease and lease.get("session_id") == sid and lease.get("pid") == me:
+            mine.append(lane)
+        elif lease:
+            taken.append("%s（会话 %s）" % (lane, str(lease.get("session_id"))[:8]))
+    if mine:
+        line = ("本会话是车道 %s 的 Event owner：只执行待办轮询唤醒你处理的 Event；"
+                "列表里其他 Event 只读，不要执行，也不要 event_done。" % "、".join(mine))
+        return line + ("声明的车道 %s 由别的会话持有。" % "、".join(taken) if taken else "")
+    if taken:
+        return ("本会话声明的车道 %s 由别的会话持有，本会话只读：不要执行这些 Event。"
+                "owner 退出后，本会话的待办轮询会接管并唤醒你。" % "、".join(taken))
+    return ("本会话声明的车道 %s 现在没有 Event owner。本会话的待办轮询拿到租约后会唤醒你；"
+            "在那之前本会话只读，不要执行这些 Event。" % "、".join(lanes))
+
+
 def event_owner(proj_dir, sid):
     """One line saying whether THIS session executes the project's Events.
 
@@ -383,16 +444,19 @@ def event_owner(proj_dir, sid):
     try:
         state = os.path.join(os.environ.get("DRSG_MEM_DIR") or os.path.expanduser("~/.drsg-memory"),
                              "poller", hashlib.sha1(os.path.realpath(proj_dir).encode()).hexdigest()[:12])
-        try:
-            with open(os.path.join(state, "lease.json"), encoding="utf-8") as f:
-                lease = json.load(f)
-        except (OSError, ValueError):
-            lease = {}
+        me = _claude_pid()
+        lanes = _hook_lanes(me)
+        if lanes != ["*"]:
+            return _lane_owner_line(state, sid, me, lanes)
+        lease = _hook_lease(state, "*")
+        live = lease is not None
+        lease = lease or {}
         holder = lease.get("pid")
-        st = _proc(holder) if holder else None
-        live = bool(st) and st[0] == lease.get("start") and st[1] not in ("T", "t", "Z", "X")
-        if live and lease.get("session_id") == sid and holder == _claude_pid():
-            return "本会话是这个项目的 Event owner：按 Event 流程处理。"
+        if live and lease.get("session_id") == sid and holder == me:
+            others = [lane for lane in _hook_lane_names(state) if _hook_lease(state, lane)]
+            return "本会话是这个项目的 Event owner：按 Event 流程处理。" + (
+                "车道 %s 的 Event 归各自的车道会话，本会话对它们只读：不要执行，也不要 event_done。"
+                % "、".join(others) if others else "")
         if live:
             return ("Event owner 是会话 %s（pid %s），本会话只读：可以看、可以回答用户的问题，"
                     "不要执行这些 Event；本会话调 event_done 会被拒绝，用户明确要求本会话接手时才带 force。"

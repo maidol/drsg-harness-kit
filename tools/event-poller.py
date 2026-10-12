@@ -222,12 +222,13 @@ def live_poller(state, sid, pid):
             and any(MARK in arg for arg in cmdline(poller_pid)))
 
 
-def take_lease(state, sid, pid, start, bg):
+def take_lease(state, sid, pid, start, bg, lane="*"):
     """(held, fresh): whether this process holds the lease after the call, and
     whether it has only just taken it (from another process, or from nobody).
     Existing owner/dead-owner/background priorities precede the monotonic
-    same-session process takeover, which requires the old poller to be alive."""
-    path = os.path.join(state, "lease.json")
+    same-session process takeover, which requires the old poller to be alive.
+    Each lane has its own lease (event.py lease_name); the rules are the same."""
+    path = os.path.join(state, event_module().lease_name(lane))
     with Locked(state):
         lease = read_json(path, {})
         old_sid, old_pid = lease.get("session_id"), lease.get("pid")
@@ -241,12 +242,12 @@ def take_lease(state, sid, pid, start, bg):
         if mine or gone or background_take or newer_same_session:
             if not mine:
                 if newer_same_session and not gone and not background_take:
-                    log(state, "lease -> %s (was %s, same session newer process)" %
-                        (tag(sid, pid), tag(old_sid, old_pid)))
+                    log(state, "lease -> %s%s (was %s, same session newer process)" %
+                        (tag(sid, pid), lane_tag(lane), tag(old_sid, old_pid)))
                 else:
-                    log(state, "lease -> %s (was %s%s)" % (tag(sid, pid),
-                                                           tag(old_sid, old_pid),
-                                                           "" if gone else ", background"))
+                    log(state, "lease -> %s%s (was %s%s)" % (tag(sid, pid), lane_tag(lane),
+                                                             tag(old_sid, old_pid),
+                                                             "" if gone else ", background"))
             write_json(path, {"session_id": sid, "pid": pid, "start": start, "bg": bg,
                               "updated": int(time.time())})
             return True, not mine
@@ -254,11 +255,13 @@ def take_lease(state, sid, pid, start, bg):
 
 
 def release(state, sid, pid, start):
-    path = os.path.join(state, "lease.json")
+    ev = event_module()
     with Locked(state):
-        if holds(read_json(path, {}), sid, pid, start):
-            os.remove(path)
-            log(state, "lease released by %s" % tag(sid, pid))
+        for lane in [ev.DEFAULT_LANE] + ev.lane_leases(state):
+            path = os.path.join(state, ev.lease_name(lane))
+            if holds(read_json(path, {}), sid, pid, start):
+                os.remove(path)
+                log(state, "lease released by %s%s" % (tag(sid, pid), lane_tag(lane)))
         for ext in (".pid", ".seen.json"):
             try:
                 os.remove(os.path.join(state, tag(sid, pid) + ext))
@@ -283,6 +286,54 @@ def sweep_seen(state, own):
             pass
 
 
+_EVENT = []
+
+
+def event_module():
+    """tools/event.py, loaded once. The lane rules live there, so the poller,
+    event_done and the CLI read one definition of who owns which Event."""
+    if not _EVENT:
+        spec = importlib.util.spec_from_file_location("drsg_event", os.path.join(HERE, "event.py"))
+        ev = importlib.util.module_from_spec(spec)
+        spec.loader.exec_module(ev)
+        _EVENT.append(ev)
+    return _EVENT[0]
+
+
+def lane_tag(lane):
+    return "" if lane == event_module().DEFAULT_LANE else " (lane %s)" % lane
+
+
+def lane_of(state, e):
+    return event_module().event_lane(state, e.get("key"), e.get("from_project"))
+
+
+def prune_claims(state, events):
+    """Forget claims on Events that are no longer open."""
+    path = os.path.join(state, "claims.json")
+    keys = {e.get("key") for e in events}
+    with Locked(state):
+        claims = read_json(path, {})
+        if not isinstance(claims, dict):
+            claims = {}
+        kept = {k: v for k, v in claims.items() if k in keys}
+        if kept != claims:
+            write_json(path, kept)
+
+
+def claim(state, events):
+    """Record which lane is being woken for each Event; called under Locked.
+    Until it is closed, an Event stays with that lane while the lane has a
+    live owner (event.py event_lane)."""
+    path = os.path.join(state, "claims.json")
+    claims = read_json(path, {})
+    if not isinstance(claims, dict):
+        claims = {}
+    for e in events:
+        claims[e["key"]] = lane_of(state, e)
+    write_json(path, claims)
+
+
 def open_events(project):
     """Open Events addressed to `project`, through the same module the
     drsg-events MCP server and the CLI use."""
@@ -290,9 +341,7 @@ def open_events(project):
     if fake:
         return [e for e in read_json(fake, []) if e.get("status") == "open"]
     os.environ.setdefault("no_proxy", "127.0.0.1,localhost")   # urllib would proxy localhost
-    spec = importlib.util.spec_from_file_location("drsg_event", os.path.join(HERE, "event.py"))
-    ev = importlib.util.module_from_spec(spec)
-    spec.loader.exec_module(ev)
+    ev = event_module()
     ev.load_env(project)
     ev.API = os.environ.get("DRSG_API", ev.API)
     ev.PLANE = os.environ.get("DRSG_PLANE", ev.PLANE)
@@ -304,7 +353,7 @@ def open_events(project):
         if pr.get("status") == "open":
             row = {"key": n.get("external_key"), "kind": pr.get("kind", ""),
                    "summary": pr.get("summary", ""), "ref": pr.get("ref", ""),
-                   "status": "open"}
+                   "from_project": pr.get("from_project", ""), "status": "open"}
             if pr.get("reply_to"):
                 row["reply_line"] = ev.reply_line(pr["reply_to"], events, token)
             out.append(row)
@@ -342,6 +391,7 @@ def poll(project, state, sid):
         diagnostic(state, "poll_no_owner", sid, pid)
         return 0
     bg = background(pid)
+    lanes = event_module().process_lanes(pid)
     pidfile = os.path.join(state, tag(sid, pid) + ".pid")
     with Locked(state):
         running = read_json(pidfile, {})
@@ -366,7 +416,12 @@ def poll(project, state, sid):
         k = mtime(kick)
         if k != kicked:                                  # a sender just posted here
             kicked, next_check = k, 0
-        held, fresh = take_lease(state, sid, pid, start, bg)
+        held, fresh = set(), False
+        for lane in lanes:
+            got, taken = take_lease(state, sid, pid, start, bg, lane)
+            if got:
+                held.add(lane)
+            fresh = fresh or taken
         if fresh:
             # A new owner is told about every open Event again, including the
             # ones a previous owner (or this process, before it lost the lease)
@@ -377,7 +432,9 @@ def poll(project, state, sid):
         if held and time.time() >= next_check:
             next_check = time.time() + INTERVAL
             try:
-                new = [e for e in open_events(project) if e["key"] not in seen]
+                events = open_events(project)
+                prune_claims(state, events)
+                new = [e for e in events if e["key"] not in seen and lane_of(state, e) in held]
             except Exception as exc:                     # daemon down, bad answer: retry later
                 log(state, "check failed: %r" % (exc,))
                 new = []
@@ -386,8 +443,13 @@ def poll(project, state, sid):
                 if remaining > 0:
                     time.sleep(remaining)
                 with Locked(state):
-                    lease = read_json(os.path.join(state, "lease.json"), {})
-                    if not holds(lease, sid, pid, start):
+                    still = {lane for lane in held if holds(read_json(os.path.join(
+                        state, event_module().lease_name(lane)), {}), sid, pid, start)}
+                    new = [e for e in new if lane_of(state, e) in still]
+                    if still and not new:
+                        # Still an owner, but another lane claimed these first.
+                        continue
+                    if not new:
                         log(state, "wake cancelled: lease lost by %s" % tag(sid, pid))
                         try:
                             os.remove(pidfile)
@@ -395,6 +457,7 @@ def poll(project, state, sid):
                             pass
                         diagnostic(state, "poll_lease_lost_before_wake", sid, pid)
                         return 0
+                    claim(state, new)
                     seen.update(e["key"] for e in new)
                     write_json(seen_path, sorted(seen))
                     log(state, "wake %s: %s" % (sid, ",".join(e["key"] for e in new)))
@@ -444,8 +507,18 @@ def resolve_session_id(state, pid):
     return sid
 
 
-def manual_take():
-    """Move the current project's lease on explicit user request; never poll."""
+def manual_take(args=()):
+    """Move the current project's lease on explicit user request; never poll.
+    `--lane NAME` moves that lane's lease instead of the default one."""
+    ev = event_module()
+    args = list(args)
+    if not args:
+        lane = ev.DEFAULT_LANE
+    elif len(args) == 2 and args[0] == "--lane" and ev.LANE_RE.match(args[1]):
+        lane = args[1]
+    else:
+        print("usage: event-poller.py --take [--lane NAME]", file=sys.stderr)
+        return 2
     project = os.path.realpath(os.environ.get("CLAUDE_PROJECT_DIR") or os.getcwd())
     drsg_dir = os.path.join(project, ".drsg")
     if not os.path.isdir(drsg_dir) or not os.path.isfile(os.path.join(drsg_dir, "env")):
@@ -462,11 +535,11 @@ def manual_take():
         print(str(exc), file=sys.stderr)
         return 1
     bg = background(pid)
-    path = os.path.join(state, "lease.json")
+    path = os.path.join(state, ev.lease_name(lane))
     with Locked(state):
         write_json(path, {"session_id": sid, "pid": pid, "start": start, "bg": bg,
                           "updated": int(time.time())})
-        log(state, "lease -> %s (manual user takeover)" % tag(sid, pid))
+        log(state, "lease -> %s%s (manual user takeover)" % (tag(sid, pid), lane_tag(lane)))
         seen_path = os.path.join(state, tag(sid, pid) + ".seen.json")
         try:
             os.remove(seen_path)
@@ -481,8 +554,8 @@ def manual_take():
 
 
 def main():
-    if sys.argv[1:] == ["--take"]:
-        return manual_take()
+    if sys.argv[1:2] == ["--take"]:
+        return manual_take(sys.argv[2:])
     try:
         hook = json.load(sys.stdin)
     except ValueError:

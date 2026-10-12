@@ -450,6 +450,7 @@ there is one this session has not been told about yet.
 - **Silent on failure.** No `.drsg/env`, daemon down, bad answer: logged and
   retried next round, never a wake-up.
 - State and log: `~/.drsg-memory/poller/<project-hash>/` (`lease.json`,
+  `lease.<lane>.json` and `claims.json` when lanes are used,
   `<session>.<pid>.seen.json`, `<session>.<pid>.pid`, `poller.log`; `<pid>` is
   the Claude Code process). Tuning for tests: `EVENT_POLL_INTERVAL`,
   `EVENT_POLL_TICK` (seconds); `EVENT_POLL_OWNER_PID` stands in for the Claude
@@ -471,11 +472,52 @@ there is one this session has not been told about yet.
   现在没有 Event owner。本会话的待办轮询拿到租约后会唤醒你；在那之前本会话只读，不要执行这些 Event。
   ```
 
+- **Lanes: one owner per sender.** A project that many projects send to (a
+  reviewer) can run one session per sender. Start a session with
+  `DRSG_EVENT_LANES` set to sender names — the sender's directory name, as
+  `from_project` shows it in `event_list` — and it is woken only for Events from
+  those senders, and closes only those. A session without the variable is the
+  default lane and gets every other sender:
+
+  ```bash
+  DRSG_EVENT_LANES=any-auto-register claude
+  DRSG_EVENT_LANES=drsg-harness-kit,sub2api claude
+  claude
+  ```
+
+  Each lane has its own lease (`lease.<lane>.json`, same rules as `lease.json`).
+  A sender whose lane has no live owner falls back to the default lane, so when
+  a lane session exits its Events are taken over and announced again. An Event
+  stays with the lane first woken for it (`claims.json`) while that lane has a
+  live owner: a lane session started later does not get an Event the default
+  session is already working on, only the sender's new ones. Nobody declaring a
+  lane means only `lease.json` exists and nothing changes. With lanes, the
+  owner line reads, for example:
+
+  ```text
+  本会话是车道 any-auto-register 的 Event owner：只执行待办轮询唤醒你处理的 Event；列表里其他 Event 只读，不要执行，也不要 event_done。
+  本会话是这个项目的 Event owner：按 Event 流程处理。车道 any-auto-register 的 Event 归各自的车道会话，本会话对它们只读：不要执行，也不要 event_done。
+  本会话声明的车道 any-auto-register（会话 f8e05069）由别的会话持有，本会话只读：不要执行这些 Event。owner 退出后，本会话的待办轮询会接管并唤醒你。
+  本会话声明的车道 sub2api 现在没有 Event owner。本会话的待办轮询拿到租约后会唤醒你；在那之前本会话只读，不要执行这些 Event。
+  ```
+
+  A lane name is letters, digits, `.`, `_` and `-`; other names are ignored. A
+  misspelt name is not reported: that lane never gets an Event and its sender's
+  Events go to the default lane, so copy the name from `from_project`. To move
+  one lane's lease to your session by hand (user only; the PreToolUse hook
+  blocks the agent from running it):
+
+  ```bash
+  python3 ~/.drsg-memory/tools/event-poller.py --take --lane any-auto-register
+  ```
+
 Closing is enforced, not just advised: `event_done` (MCP) and `event.py done`
 refuse when the project (`CLAUDE_PROJECT_DIR`, else the current directory) has
 a live owner and the caller is a different Claude Code process, and write
 nothing. With no live owner, or from a plain shell (no Claude Code above it),
-closing works as before. Inside an agent session, closing an event must use the
+closing works as before. With lanes, the owner checked is the owner of the
+Event's lane, and the refusal names it (`Event owner of <project> lane <lane>`).
+Inside an agent session, closing an event must use the
 MCP tool `event_done` (or `event_done force=true` when taking over). Running
 `event.py done` via Bash inside sessions is blocked by the PreToolUse hook. Outside
 sessions, humans can close an event from a shell:
