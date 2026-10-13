@@ -472,6 +472,13 @@ there is one this session has not been told about yet.
   现在没有 Event owner。本会话的待办轮询拿到租约后会唤醒你；在那之前本会话只读，不要执行这些 Event。
   ```
 
+  When the owner's transcript (`~/.claude/projects/<project>/<session>.jsonl`)
+  has not changed for an hour or more, the line says so — `Event owner 是会话
+  f8e05069（pid 3651，已空闲 5 小时）…`, and for a lane `any-auto-register（会话
+  f8e05069，已空闲 5 小时）`. A terminal lost with a closed VS Code window keeps its
+  process, and so the lease, alive: find it with `Terminal: Attach to Session`
+  and `/exit` there, or end that pid, and this session's poller takes over.
+
 - **Lanes: one owner per sender.** A project that many projects send to (a
   reviewer) can run one session per sender. Start a session with
   `DRSG_EVENT_LANES` set to sender names — the sender's directory name, as

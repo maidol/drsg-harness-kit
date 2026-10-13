@@ -133,6 +133,13 @@ for h in session_start.py user_prompt.py; do
   check "L6 $h: second aar session is read-only" "$(EVENT_POLL_OWNER_PID=$C owner_line $h C | grep -c '由别的会话持有，本会话只读')" 1
   check "L6 $h: lane without an owner yet"   "$(EVENT_POLL_OWNER_PID=$K owner_line $h K | grep -c '车道 drsg-harness-kit 现在没有 Event owner')" 1
 done
+export CLAUDE_CONFIG_DIR="$T/claude"
+TR="$CLAUDE_CONFIG_DIR/projects/$(printf %s "$(realpath "$T/proj")" | tr -c 'A-Za-z0-9' '-')"
+mkdir -p "$TR"; touch -d '-5 hours -5 minutes' "$TR/B.jsonl"
+for h in session_start.py user_prompt.py; do
+  check "L6 $h: idle lane owner, hours shown" "$(EVENT_POLL_OWNER_PID=$C owner_line $h C | grep -c 'aar（会话 B，已空闲 5 小时）')" 1
+done
+rm -rf "$CLAUDE_CONFIG_DIR"; unset CLAUDE_CONFIG_DIR
 fi
 
 # L7. --take --lane: names are checked; the agent is still blocked from running it
@@ -144,4 +151,4 @@ check "L7 pre_tool_use denies --take --lane" "$(printf '%s' '{"tool_name":"Bash"
 fi
 
 echo "PASS $OK/$RAN"
-[ "$OK" -eq "$RAN" ] && { [ -n "${ONLY:-}" ] || [ "$RAN" -eq 35 ]; }
+[ "$OK" -eq "$RAN" ] && { [ -n "${ONLY:-}" ] || [ "$RAN" -eq 37 ]; }

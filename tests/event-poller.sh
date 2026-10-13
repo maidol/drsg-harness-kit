@@ -219,6 +219,22 @@ for h in session_start.py user_prompt.py; do
   check "$h: same sid, other process, read-only" "$(EVENT_POLL_OWNER_PID=$B owner_line $h A | grep -c '本会话只读')" 1
   check "$h: another session, read-only"         "$(EVENT_POLL_OWNER_PID=$B owner_line $h B | grep -c '本会话只读')" 1
 done
+# an owner whose transcript has not changed for hours is named as idle: its terminal may be lost
+export CLAUDE_CONFIG_DIR="$T/claude-idle"
+TR="$CLAUDE_CONFIG_DIR/projects/$(printf %s "$(realpath "$T/proj")" | tr -c 'A-Za-z0-9' '-')"
+mkdir -p "$TR"; touch -d '-3 hours -5 minutes' "$TR/A.jsonl"
+for h in session_start.py user_prompt.py; do
+  check "$h: idle owner, hours shown"   "$(EVENT_POLL_OWNER_PID=$B owner_line $h B | grep -c '已空闲 3 小时')" 1
+done
+touch "$TR/A.jsonl"
+for h in session_start.py user_prompt.py; do
+  check "$h: active owner, no idle note" "$(EVENT_POLL_OWNER_PID=$B owner_line $h B | grep -c '已空闲')" 0
+done
+rm "$TR/A.jsonl"
+for h in session_start.py user_prompt.py; do
+  check "$h: no transcript, no idle note" "$(EVENT_POLL_OWNER_PID=$B owner_line $h B | grep -c '已空闲')" 0
+done
+unset CLAUDE_CONFIG_DIR
 check "session_start puts the owner line in the model's context" "$(EVENT_POLL_OWNER_PID=$B hook_main session_start.py additionalContext | grep -c '本会话只读')" 1
 check "session_start puts the owner line on the terminal"        "$(EVENT_POLL_OWNER_PID=$B hook_main session_start.py systemMessage | grep -c '本会话只读')" 1
 check "user_prompt puts the owner line on the terminal"          "$(EVENT_POLL_OWNER_PID=$B hook_main user_prompt.py systemMessage | grep -c '本会话只读')" 1
@@ -305,4 +321,4 @@ check "poll exception remains nonzero" "$(run_hook "{\"session_id\":\"$CRASH_SID
 check "poll exception type is logged without message" "$(diag_has "$STATE" poll_crash:IsADirectoryError "$CRASH_SID" -)" yes
 
 echo "PASS $OK/$RAN"
-[ "$RAN" -eq 73 ] && [ "$OK" -eq "$RAN" ]
+[ "$RAN" -eq 79 ] && [ "$OK" -eq "$RAN" ]

@@ -412,7 +412,24 @@ def _hook_lane_names(state):
                   and re.match(r"^[A-Za-z0-9._-]+$", n[6:-5]))
 
 
-def _lane_owner_line(state, sid, me, lanes):
+def _hook_idle(proj_dir, lease):
+    """"，已空闲 N 小时" when the lease holder's transcript has not changed for an
+    hour or more: a terminal lost in a detached pty (a closed VS Code window)
+    keeps its process, and so the lease, alive. "" when unknown or recent."""
+    sid = str(lease.get("session_id") or "")
+    if not re.match(r"^[A-Za-z0-9-]+$", sid):
+        return ""
+    root = os.environ.get("CLAUDE_CONFIG_DIR") or os.path.expanduser("~/.claude")
+    path = os.path.join(root, "projects", re.sub(r"[^A-Za-z0-9]", "-", os.path.realpath(proj_dir)),
+                        sid + ".jsonl")
+    try:
+        hours = int((time.time() - os.path.getmtime(path)) // 3600)
+    except OSError:
+        return ""
+    return "，已空闲 %d 小时" % hours if hours >= 1 else ""
+
+
+def _lane_owner_line(state, sid, me, lanes, proj_dir):
     """The owner line for a session started with DRSG_EVENT_LANES."""
     mine, taken = [], []
     for lane in lanes:
@@ -420,7 +437,8 @@ def _lane_owner_line(state, sid, me, lanes):
         if lease and lease.get("session_id") == sid and lease.get("pid") == me:
             mine.append(lane)
         elif lease:
-            taken.append("%s（会话 %s）" % (lane, str(lease.get("session_id"))[:8]))
+            taken.append("%s（会话 %s%s）" % (lane, str(lease.get("session_id"))[:8],
+                                           _hook_idle(proj_dir, lease)))
     if mine:
         line = ("本会话是车道 %s 的 Event owner：只执行待办轮询唤醒你处理的 Event；"
                 "列表里其他 Event 只读，不要执行，也不要 event_done。" % "、".join(mine))
@@ -447,7 +465,7 @@ def event_owner(proj_dir, sid):
         me = _claude_pid()
         lanes = _hook_lanes(me)
         if lanes != ["*"]:
-            return _lane_owner_line(state, sid, me, lanes)
+            return _lane_owner_line(state, sid, me, lanes, proj_dir)
         lease = _hook_lease(state, "*")
         live = lease is not None
         lease = lease or {}
@@ -458,10 +476,10 @@ def event_owner(proj_dir, sid):
                 "车道 %s 的 Event 归各自的车道会话，本会话对它们只读：不要执行，也不要 event_done。"
                 % "、".join(others) if others else "")
         if live:
-            return ("Event owner 是会话 %s（pid %s），本会话只读：可以看、可以回答用户的问题，"
+            return ("Event owner 是会话 %s（pid %s%s），本会话只读：可以看、可以回答用户的问题，"
                     "不要执行这些 Event；本会话调 event_done 会被拒绝，用户明确要求本会话接手时才带 force。"
                     "owner 退出后，本会话的待办轮询会接管并唤醒你，到时再处理。"
-                    % (str(lease.get("session_id"))[:8], holder))
+                    % (str(lease.get("session_id"))[:8], holder, _hook_idle(proj_dir, lease)))
         return ("现在没有 Event owner。本会话的待办轮询拿到租约后会唤醒你；"
                 "在那之前本会话只读，不要执行这些 Event。")
     except Exception:

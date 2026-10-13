@@ -298,6 +298,8 @@ Bash 的 `git commit` 仍保留 `ask` 规则，照样会问你：
   现在没有 Event owner。本会话的待办轮询拿到租约后会唤醒你；在那之前本会话只读，不要执行这些 Event。
   ```
 
+  owner 的会话记录（`~/.claude/projects/<项目>/<会话>.jsonl`）一小时以上没有更新时，这一行会写明空闲多久：`Event owner 是会话 f8e05069（pid 3651，已空闲 5 小时）…`，车道写成 `any-auto-register（会话 f8e05069，已空闲 5 小时）`。VS Code 窗口关掉后，丢掉的终端进程还活着，租约也就一直占着：用 `Terminal: Attach to Session` 找回那个终端执行 `/exit`，或者结束那个 pid，本会话的轮询就会接管。
+
 - **车道：按发件项目分给几个 owner。** 很多项目都往这里发 Event 时（比如审核方），可以给每个发件项目开一个会话。启动时用 `DRSG_EVENT_LANES` 写上发件项目的名字（发件方的目录名，即 `event_list` 里的 `from_project`），这个会话就只会因为这些项目的 Event 被唤醒，也只能关这些 Event。没设这个变量的会话是默认车道，处理其余所有发件项目：
 
   ```bash
