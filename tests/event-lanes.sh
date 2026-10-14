@@ -6,6 +6,8 @@
 # ONLY=L4 runs one section. The last line is "PASS n/n" only when every check
 # ran and passed.
 set -u
+# the fake owners inherit this shell's environment: a session started with lanes must not change which lane they hold
+unset DRSG_EVENT_LANES
 HERE="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 TOOLS="${TOOLS:-$HERE/../tools}"
 POLLER="$TOOLS/event-poller.py"

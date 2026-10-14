@@ -3,6 +3,8 @@
 # (EVENT_POLL_FAKE, EVENT_POLL_OWNER_PID): no daemon, no Claude Code needed.
 # The last line is "PASS n/n" only when every check ran and passed.
 set -u
+# the fake owners inherit this shell's environment: a session started with lanes must not change which lane they hold
+unset DRSG_EVENT_LANES
 HERE="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 POLLER="${POLLER:-$HERE/../tools/event-poller.py}"
 T="$(mktemp -d)"
