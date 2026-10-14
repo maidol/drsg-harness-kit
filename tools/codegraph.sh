@@ -145,17 +145,30 @@ read_config() {
     echo "ERROR: no $MCP_JSON — run \`$BIN init\` in $REPO first (it mints the token and writes the client configs)." >&2
     exit 1
   fi
-  eval "$(python3 - "$MCP_JSON" <<'PY'
-import json, sys, urllib.parse
+  # Read as data, never evaluated: .mcp.json sits in the repository being
+  # watched, and that may be someone else's code under review.
+  local cfg
+  cfg="$(python3 - "$MCP_JSON" <<'PY'
+import json, re, sys, urllib.parse
 try:
     entry = json.load(open(sys.argv[1]))["mcpServers"]["drsg-watch"]
     u = urllib.parse.urlparse(entry["url"])
-    print("CFG_ADDR=%s:%d" % (u.hostname, u.port))
-    print("TOKEN=%s" % entry["headers"]["Authorization"].split()[-1])
+    token = entry["headers"]["Authorization"].split()[-1]
+    if not re.fullmatch(r"[A-Za-z0-9.-]+", u.hostname or ""):
+        raise ValueError("host has unexpected characters")
+    if not re.fullmatch(r"[A-Za-z0-9._-]+", token):
+        raise ValueError("token has unexpected characters")
+    print("%s:%d" % (u.hostname, u.port))
+    print(token)
 except Exception as e:
-    print("CFG_ADDR=; TOKEN=; CFG_ERR=%r" % (str(e),))
+    print()
+    print()
+    print(" ".join(str(e).split()))
 PY
 )"
+  CFG_ADDR="$(sed -n 1p <<<"$cfg")"
+  TOKEN="$(sed -n 2p <<<"$cfg")"
+  CFG_ERR="$(sed -n 3p <<<"$cfg")"
   if [ -z "${CFG_ADDR:-}" ]; then
     echo "ERROR: $MCP_JSON has no usable 'drsg-watch' entry (${CFG_ERR:-}) — run \`$BIN init\` in $REPO." >&2
     exit 1
