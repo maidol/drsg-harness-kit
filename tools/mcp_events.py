@@ -76,6 +76,15 @@ def _load_event_module():
 
 ev = _load_event_module()
 
+
+def _load_poller_module():
+    """event-poller.py, for event_take: the same lease writer as `--take`."""
+    spec = importlib.util.spec_from_file_location(
+        "drsg_event_poller", os.path.join(HERE, "event-poller.py"))
+    mod = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(mod)
+    return mod
+
 TOOLS = [
     {
         "name": "event_post",
@@ -216,6 +225,24 @@ TOOLS = [
                           "take the Event over."},
             },
             "required": ["key"],
+        },
+    },
+    {
+        "name": "event_take",
+        "description": (
+            "Take this project's Event-owner lease for one of THIS session's "
+            "lanes (DRSG_EVENT_LANES; the default lane when it declared none), "
+            "away from whichever session holds it. Call it only when the user "
+            "explicitly asked this session to take the lane over. Refused for "
+            "a lane this session did not declare. The previous owner turns "
+            "read-only; Events it was already woken for may be handled twice."),
+        "inputSchema": {
+            "type": "object",
+            "properties": {
+                "lane": {"type": "string", "description":
+                         "Lane name, or * for the default lane. Omit when the "
+                         "session declared exactly one lane (or none)."},
+            },
         },
     },
 ]
@@ -737,6 +764,18 @@ def call_tool(name, args, token):
     if name == "event_done":
         return ev.close(args["key"], token, project=proj,
                         force=bool(args.get("force")))
+
+    if name == "event_take":
+        poller = _load_poller_module()
+        lane = args.get("lane")
+        if not lane:
+            lanes = ev.process_lanes(poller.owner_process()[0])
+            if len(lanes) != 1:
+                raise ValueError("this session declared lanes %s: name one with lane=<name>"
+                                 % ",".join(lanes))
+            lane = lanes[0]
+        return "\n".join(poller.transfer(os.path.realpath(proj), lane, declared_only=True,
+                                          how="event_take on user request"))
 
     raise ValueError("unknown tool %r" % name)
 

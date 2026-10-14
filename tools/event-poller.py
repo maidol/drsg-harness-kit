@@ -507,6 +507,46 @@ def resolve_session_id(state, pid):
     return sid
 
 
+def transfer(project, lane, declared_only=False, how="manual user takeover"):
+    """Move `project`'s lease for `lane` to the calling Claude Code process and
+    return the lines to tell the user; never poll. ValueError when it may not.
+    `declared_only` (the event_take MCP tool) limits the move to a lane the
+    caller was started for: the default lane only when it declared none."""
+    ev = event_module()
+    if lane != ev.DEFAULT_LANE and not ev.LANE_RE.match(lane):
+        raise ValueError("invalid lane name %r" % lane)
+    drsg_dir = os.path.join(project, ".drsg")
+    if not os.path.isdir(drsg_dir) or not os.path.isfile(os.path.join(drsg_dir, "env")):
+        raise ValueError("manual takeover requires .drsg/env in the current project")
+    state = os.path.join(STATE_ROOT, hashlib.sha1(project.encode()).hexdigest()[:12])
+    os.makedirs(state, exist_ok=True)
+    pid, start = owner_process()
+    sid = resolve_session_id(state, pid)
+    if not start:
+        raise ValueError("cannot identify the current Claude process start time")
+    if declared_only:
+        lanes = ev.process_lanes(pid)
+        if lane not in lanes:
+            raise ValueError("lane %s is not declared by this session (its lanes: %s); "
+                             "it may take only its own" % (lane, ",".join(lanes)))
+    bg = background(pid)
+    path = os.path.join(state, ev.lease_name(lane))
+    with Locked(state):
+        write_json(path, {"session_id": sid, "pid": pid, "start": start, "bg": bg,
+                          "updated": int(time.time())})
+        log(state, "lease -> %s%s (%s)" % (tag(sid, pid), lane_tag(lane), how))
+        seen_path = os.path.join(state, tag(sid, pid) + ".seen.json")
+        try:
+            os.remove(seen_path)
+        except OSError:
+            pass
+    if live_poller(state, sid, pid):
+        first = "Event-owner lease transferred to this process; its poller will observe it on the next TICK."
+    else:
+        first = "Event-owner lease transferred to this process; no live poller is recorded, so wait for a later Stop hook."
+    return [first, "Open Events may be announced and handled twice if the previous model had already woken."]
+
+
 def manual_take(args=()):
     """Move the current project's lease on explicit user request; never poll.
     `--lane NAME` moves that lane's lease instead of the default one."""
@@ -520,36 +560,13 @@ def manual_take(args=()):
         print("usage: event-poller.py --take [--lane NAME]", file=sys.stderr)
         return 2
     project = os.path.realpath(os.environ.get("CLAUDE_PROJECT_DIR") or os.getcwd())
-    drsg_dir = os.path.join(project, ".drsg")
-    if not os.path.isdir(drsg_dir) or not os.path.isfile(os.path.join(drsg_dir, "env")):
-        print("manual takeover requires .drsg/env in the current project", file=sys.stderr)
-        return 1
-    state = os.path.join(STATE_ROOT, hashlib.sha1(project.encode()).hexdigest()[:12])
-    os.makedirs(state, exist_ok=True)
     try:
-        pid, start = owner_process()
-        sid = resolve_session_id(state, pid)
-        if not start:
-            raise ValueError("cannot identify the current Claude process start time")
+        lines = transfer(project, lane)
     except (OSError, ValueError, TypeError) as exc:
         print(str(exc), file=sys.stderr)
         return 1
-    bg = background(pid)
-    path = os.path.join(state, ev.lease_name(lane))
-    with Locked(state):
-        write_json(path, {"session_id": sid, "pid": pid, "start": start, "bg": bg,
-                          "updated": int(time.time())})
-        log(state, "lease -> %s%s (manual user takeover)" % (tag(sid, pid), lane_tag(lane)))
-        seen_path = os.path.join(state, tag(sid, pid) + ".seen.json")
-        try:
-            os.remove(seen_path)
-        except OSError:
-            pass
-    if live_poller(state, sid, pid):
-        print("Event-owner lease transferred to this process; its poller will observe it on the next TICK.")
-    else:
-        print("Event-owner lease transferred to this process; no live poller is recorded, so wait for a later Stop hook.")
-    print("Open Events may be announced and handled twice if the previous model had already woken.")
+    for line in lines:
+        print(line)
     return 0
 
 

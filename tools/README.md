@@ -189,7 +189,7 @@ running under the old environment will keep sending an empty key and
    `<project>/.claude/settings.local.json`, keeping whatever is already there.
 5. Registers two MCP servers (project scope): `drsg` against the daemon's
    `/mcp`, and `drsg-events` — a stdio server in this directory exposing
-   `event_post` / `event_list` / `event_done`. The second one is separate on
+   `event_post` / `event_list` / `event_done` / `event_take`. The second one is separate on
    purpose: `Event` and `NOTIFY` are conventions this layer keeps on top of a
    soft-schema graph, and the engine that does not know what a Fact is has no
    business learning what an Event is.
@@ -517,6 +517,13 @@ there is one this session has not been told about yet.
   ```bash
   python3 ~/.drsg-memory/tools/event-poller.py --take --lane any-auto-register
   ```
+
+  Inside a session, ask the agent instead — "take the any-auto-register lane"
+  — and it calls the MCP tool `event_take` (`lane` optional when the session
+  declared one lane, or none for the default lane). It takes only a lane this
+  session was started for; any other lane, or the default lane from a lane
+  session, is refused and nothing is written. The previous owner turns
+  read-only, and Events it was already woken for may be handled twice.
 
 Closing is enforced, not just advised: `event_done` (MCP) and `event.py done`
 refuse when the project (`CLAUDE_PROJECT_DIR`, else the current directory) has

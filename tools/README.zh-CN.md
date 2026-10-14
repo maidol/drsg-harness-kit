@@ -121,7 +121,7 @@ python3 migrate.py load --api http://127.0.0.1:7700/rpc --token <new token> \
 2. 把四个 hook 复制到 `<project>/.claude/hooks/`。
 3. 写入 `<project>/.drsg/env`（`chmod 600`）——daemon 地址、token 和 L3 设置只包含 key 的**名称**。
 4. 把 SessionStart / UserPromptSubmit / SessionEnd 条目合并到 `<project>/.claude/settings.local.json`，保留已有内容。
-5. 注册两个 MCP server（项目级）：`drsg` 指向 daemon 的 `/mcp`，以及 `drsg-events`——本目录中的 stdio server，提供 `event_post` / `event_list` / `event_done`。第二个 server 有意独立：`Event` 和 `NOTIFY` 是本层建立在软 schema 图之上的约定，而不了解 Fact 的 engine 不应学习 Event 是什么。
+5. 注册两个 MCP server（项目级）：`drsg` 指向 daemon 的 `/mcp`，以及 `drsg-events`——本目录中的 stdio server，提供 `event_post` / `event_list` / `event_done` / `event_take`。第二个 server 有意独立：`Event` 和 `NOTIFY` 是本层建立在软 schema 图之上的约定，而不了解 Fact 的 engine 不应学习 Event 是什么。
 6. **自检**：daemon 可访问、plane 存在、项目 key 能解析为 `Project` 节点，并且能通过 hook 自己的 recall query 读到临时 Fact。任何一步失败都会以非零状态退出并说明原因，而不是报告一个实际上什么都不会做的“成功安装”。
 
 将 `.drsg/` 加入目标项目的 `.gitignore`。
@@ -322,6 +322,8 @@ Bash 的 `git commit` 仍保留 `ask` 规则，照样会问你：
   ```bash
   python3 ~/.drsg-memory/tools/event-poller.py --take --lane any-auto-register
   ```
+
+  在会话里也可以直接对 agent 说「接管 any-auto-register 车道」，它会调 MCP 工具 `event_take`（会话只声明了一条车道、或没声明车道取默认车道时，`lane` 可省）。它只能抢本会话启动时声明过的车道；别的车道、或车道会话去抢默认车道，都会被拒绝，什么都不写。原 owner 变成只读，它已经被唤醒处理的 Event 可能会被处理两次。
 
 关 Event 是硬拦，不只是提示：项目（`CLAUDE_PROJECT_DIR`，没有就是当前目录）有活着的 owner、而调用方是另一个 Claude Code 进程时，`event_done`（MCP）和 `event.py done` 都会拒绝，什么都不写。没有活着的 owner，或者从普通 shell 里运行（上面没有 Claude Code），照旧能关。用了车道时，核对的是这条 Event 所属车道的 owner，拒绝信息里会写出车道（`Event owner of <项目> lane <车道>`）。在 agent 会话内，关闭待办必须使用 MCP 工具 `event_done`（接管时带 `force: true`）；在会话内通过 Bash 跑 `event.py done` 会被 PreToolUse 钩子拦截拒绝。人类在终端独立操作时，可以带 force 关：
 

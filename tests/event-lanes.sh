@@ -152,5 +152,39 @@ check "L7 unknown option is a usage error"   "$(EVENT_POLL_OWNER_PID=1 python3 "
 check "L7 pre_tool_use denies --take --lane" "$(printf '%s' '{"tool_name":"Bash","tool_input":{"command":"python3 ~/.drsg-memory/tools/event-poller.py --take --lane aar"}}' | python3 "$TPL/pre_tool_use.py" 2>/dev/null | grep -c '"deny"')" 1
 fi
 
+# L8. the event_take MCP tool takes a lease, but only for a lane this session declared
+take_as() {   # $1 = lane ("" = omitted); EVENT_POLL_OWNER_PID is the caller
+  python3 - "$TOOLS" "$T/proj" "$1" <<'PY' 2>/dev/null
+import importlib.util, os, sys
+tools, proj, lane = sys.argv[1:4]
+sys.argv = [os.path.join(tools, "mcp_events.py"), proj]
+spec = importlib.util.spec_from_file_location("mcp_events", sys.argv[0])
+m = importlib.util.module_from_spec(spec)
+spec.loader.exec_module(m)
+try:
+    m.call_tool("event_take", {"lane": lane} if lane else {}, "t")
+    print("taken")
+except ValueError as e:
+    print("refused: %s" % e)
+PY
+}
+lease_pid() { python3 -c 'import json,sys; print(json.load(open(sys.argv[1])).get("pid",""))' "$STATE/$1" 2>/dev/null; }
+if want L8; then
+reset; owner aar; B=$OWNER; owner ""; A=$OWNER; owner aar; C=$OWNER; owner ""; D=$OWNER
+owner aar,drsg-harness-kit; M=$OWNER
+run B $B >/dev/null; run A $A >/dev/null
+run C $C 2 >/dev/null; run D $D 2 >/dev/null; run M $M 2 >/dev/null
+check "L8 second aar session takes the aar lane"     "$(EVENT_POLL_OWNER_PID=$C take_as aar)" taken
+check "L8 aar lease now names it"                    "$(lease_pid lease.aar.json)" "$C"
+check "L8 it may not take a lane it did not declare" "$(EVENT_POLL_OWNER_PID=$C take_as drsg-harness-kit | grep -c 'not declared')" 1
+check "L8 a lane session may not take the default lane" "$(EVENT_POLL_OWNER_PID=$C take_as '*' | grep -c 'not declared')" 1
+check "L8 kit lease untouched by the refusal"        "$(lease_pid lease.drsg-harness-kit.json)" "$M"
+check "L8 default session, lane omitted, takes the default lane" "$(EVENT_POLL_OWNER_PID=$D take_as '')" taken
+check "L8 default lease now names it"                "$(lease_pid lease.json)" "$D"
+check "L8 default session may not take a lane"       "$(EVENT_POLL_OWNER_PID=$D take_as aar | grep -c 'not declared')" 1
+check "L8 two lanes declared, lane omitted: must name one" "$(EVENT_POLL_OWNER_PID=$M take_as '' | grep -c 'name one')" 1
+check "L8 bad lane name is refused"                  "$(EVENT_POLL_OWNER_PID=$C take_as 'a/b' | grep -c 'invalid lane')" 1
+fi
+
 echo "PASS $OK/$RAN"
-[ "$OK" -eq "$RAN" ] && { [ -n "${ONLY:-}" ] || [ "$RAN" -eq 37 ]; }
+[ "$OK" -eq "$RAN" ] && { [ -n "${ONLY:-}" ] || [ "$RAN" -eq 47 ]; }
