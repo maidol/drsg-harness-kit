@@ -305,17 +305,23 @@ def main():
             ["git", "diff", "--name-status", "--diff-filter=A", base_rev, "--", "tools/"],
             text=True
         )
-        for line in diff_out.splitlines():
-            parts = line.strip().split(maxsplit=1)
-            if len(parts) == 2:
-                added_file = parts[1]
-                fname = os.path.basename(added_file)
-                if os.path.dirname(added_file) == "tools" and (
-                    added_file.endswith((".sh", ".py")) or fname == "drsg-usage-report"
-                ):
-                    for d in ("tools/README.md", "tools/README.zh-CN.md"):
-                        if fname not in body.get(d, ""):
-                            cov2_violations.append(f"new tool {fname} not mentioned in {d}")
+        added_files = [parts[1] for parts in
+                       (line.strip().split(maxsplit=1) for line in diff_out.splitlines())
+                       if len(parts) == 2]
+        # `git diff` never lists untracked files, so a new tool not yet added
+        # passed here and failed only in pre-commit, after it was staged.
+        added_files += subprocess.check_output(
+            ["git", "ls-files", "--others", "--exclude-standard", "--", "tools/"],
+            text=True
+        ).splitlines()
+        for added_file in added_files:
+            fname = os.path.basename(added_file)
+            if os.path.dirname(added_file) == "tools" and (
+                added_file.endswith((".sh", ".py")) or fname == "drsg-usage-report"
+            ):
+                for d in ("tools/README.md", "tools/README.zh-CN.md"):
+                    if fname not in body.get(d, ""):
+                        cov2_violations.append(f"new tool {fname} not mentioned in {d}")
     except Exception:
         pass
 

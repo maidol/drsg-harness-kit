@@ -199,5 +199,19 @@ SH
 run_check && s6_code=0 || s6_code=$?
 check "scene6_fully_covered_passes_all" "$s6_code" "0"
 
+# 场景 7: tools/ 下新增工具还没 git add（未跟踪），文档没提 -> 应该在 COV2 失败
+# （pre-commit 会在暂存后拦下它，提交前跑的 test-all 必须给出同样的结论）
+printf '#!/usr/bin/env python3\n' > "$REPO/tools/new-tool.py"
+run_check && s7_res=0 || s7_res=$?
+cov2_untracked=$(grep -q "COV2.*new-tool.py" "$T/out.txt" && echo "yes" || echo "no")
+check "scene7_untracked_new_tool_fails_cov2" "$cov2_untracked" "yes"
+
+# 场景 8: 同一个文件暂存之后 -> 照样在 COV2 失败
+git -C "$REPO" add tools/new-tool.py
+run_check && s8_res=0 || s8_res=$?
+cov2_staged=$(grep -q "COV2.*new-tool.py" "$T/out.txt" && echo "yes" || echo "no")
+check "scene8_staged_new_tool_fails_cov2" "$cov2_staged" "yes"
+git -C "$REPO" rm -q -f tools/new-tool.py
+
 printf '\nPASS %d/%d\n' "$OK" "$RAN"
 [ "$OK" -eq "$RAN" ]
