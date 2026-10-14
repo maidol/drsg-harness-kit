@@ -412,21 +412,26 @@ def _hook_lane_names(state):
                   and re.match(r"^[A-Za-z0-9._-]+$", n[6:-5]))
 
 
-def _hook_idle(proj_dir, lease):
-    """"，已空闲 N 小时" when the lease holder's transcript has not changed for an
-    hour or more: a terminal lost in a detached pty (a closed VS Code window)
-    keeps its process, and so the lease, alive. "" when unknown or recent."""
+def _hook_idle_hours(proj_dir, lease):
+    """Whole hours since the lease holder's transcript changed, or None if unknown."""
     sid = str(lease.get("session_id") or "")
     if not re.match(r"^[A-Za-z0-9-]+$", sid):
-        return ""
+        return None
     root = os.environ.get("CLAUDE_CONFIG_DIR") or os.path.expanduser("~/.claude")
     path = os.path.join(root, "projects", re.sub(r"[^A-Za-z0-9]", "-", os.path.realpath(proj_dir)),
                         sid + ".jsonl")
     try:
-        hours = int((time.time() - os.path.getmtime(path)) // 3600)
+        return int((time.time() - os.path.getmtime(path)) // 3600)
     except OSError:
-        return ""
-    return "，已空闲 %d 小时" % hours if hours >= 1 else ""
+        return None
+
+
+def _hook_idle(proj_dir, lease):
+    """"，已空闲 N 小时" when the lease holder's transcript has not changed for an
+    hour or more: a terminal lost in a detached pty (a closed VS Code window)
+    keeps its process, and so the lease, alive. "" when unknown or recent."""
+    hours = _hook_idle_hours(proj_dir, lease)
+    return "，已空闲 %d 小时" % hours if hours is not None and hours >= 1 else ""
 
 
 def _lane_owner_line(state, sid, me, lanes, proj_dir):

@@ -28,6 +28,11 @@ same command and `disable`. Ordinary setup/update runs preserve the current
 choice. Full instructions are in the root README's “Model picker at startup”
 section.
 
+The same function can also show an Event-lane menu, served by
+`tools/claude-lane-picker.py`, in projects that opt in with `.drsg/lanes`. It
+runs only where the model picker is enabled; set `CLAUDE_PICK_MODEL=0` to keep
+just the lane menu. See the same root README section.
+
 The main-worktree/current-branch rule is installed by `setup.sh` by default,
 independently of `--no-skills`. Manage its user-level import and persistent opt-out
 with `~/.drsg-memory/tools/main-branch-workflow-config.sh enable|disable|status`;

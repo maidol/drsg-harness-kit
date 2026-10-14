@@ -78,19 +78,29 @@ picker 程序文件会随 runtime tools 一起部署，但全新安装默认不�
 
 辅助程序按顺序读取进程环境、`~/.claude/settings.json`、当前工作目录下的 `.claude/settings.json`、当前工作目录下的 `.claude/settings.local.json` 中的 `env` 值，后者覆盖前者。项目设置只从当前工作目录读取，不向父目录查找；要使用项目设置，请从项目目录启动 `claude`。选单不支持 `apiKeyHelper` 或 Claude Code OAuth 认证，遇到时使用静态选项。`ANTHROPIC_API_KEY` 会作为 `x-api-key` 发送；若没有非空 API key，则使用 `ANTHROPIC_AUTH_TOKEN` Bearer token。
 
+同一个函数也可以在模型菜单后显示项目专属的 Event 车道菜单，运行时辅助程序为 `claude-lane-picker.py`。默认关闭；从项目根目录启动时，在当前工作目录创建 `.drsg/lanes` 即启用（不会向父目录查找），每行一个车道名，名称必须符合 `[A-Za-z0-9._-]+`。现有的 `lease.<车道>.json` 车道也会列出。空文件也会启用菜单，此时直接回车仍选择默认车道。菜单显示仍存活的 owner；选择被占用的车道前会询问是否继续。该信息只是提示，菜单显示后租约仍可能变化。它只读本地租约文件，不接管租约，也不查询 daemon。
+
+```text
+Event lane for this session (Enter = default lane, Ctrl+C = cancel):
+  1) alpha（空闲可用）
+> 1
+```
+
+设置 `CLAUDE_PICK_LANES=0` 可单次关闭车道菜单。它与 `CLAUDE_PICK_MODEL=0` 相互独立：后者只跳过模型菜单。父 shell 已设置 `DRSG_EVENT_LANES`（包括空值）时不显示车道菜单，并原样传给子进程。菜单中直接回车不会给子进程设置该变量；选中的名字只传给这一次 Claude 进程。也可不弹菜单而手动指定，例如 `DRSG_EVENT_LANES=alpha,beta claude --resume`。
+
 ```bash
 /tmp/drsg-harness-kit-*/setup.sh --model-picker  # 安装/更新时显式启用
 ~/.drsg-memory/tools/claude-model-picker-config.sh enable  # 单独开启
 ~/.drsg-memory/tools/claude-model-picker-config.sh disable # 单独关闭
 cd /path/to/project      # 从含有 .claude/settings.local.json 的项目目录启动
 claude --resume           # 先发现网关模型，再进会话选择列表
-CLAUDE_PICK_MODEL=0 claude # 这一次不弹菜单
+CLAUDE_PICK_MODEL=0 claude # 这一次跳过模型菜单
 CLAUDE_PICK_MODELS="opus fable" claude   # 手动指定选单
 ```
 
 不带 `--model-picker` 的普通安装/更新不会改变已有开关状态。开启或关闭会修改 `~/.bashrc`，需在新 shell 中生效。
 
-以下情况不弹菜单：stdin 或 stdout 不是终端；参数里已经有 `--model`、`-p`/`--print`、`--help` 或 `--version`；子命令（`claude mcp …`、`claude attach …`）。它是一个 shell 函数，不是包装进程，所以待办轮询仍能找到它要绑定租约的那个 Claude Code 进程。只支持 bash。`CLAUDE_PICK_FORCE_TTY=1` 只给测试用：把 stdin 和 stdout 当成终端。
+以下情况两个菜单都不弹：stdin 或 stdout 不是终端；参数含 `-p`/`--print`、`--help` 或 `--version`；子命令（`claude mcp …`、`claude attach …`）。显式 `--model` 只跳过模型菜单；已配置项目车道菜单时仍会显示。它是一个 shell 函数，不是包装进程，所以待办轮询仍能找到它要绑定租约的那个 Claude Code 进程。只支持 bash。`CLAUDE_PICK_FORCE_TTY=1` 只给测试用：把 stdin 和 stdout 当成终端。
 
 ## 重新连接后恢复待办轮询
 

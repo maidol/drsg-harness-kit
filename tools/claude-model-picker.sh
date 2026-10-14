@@ -22,10 +22,14 @@
 # bash only.
 
 claude() {
-  local a
-  if [ "${CLAUDE_PICK_MODEL:-1}" = 0 ]; then
-    command claude "$@"; return
-  fi
+  local a picker_dir project_dir model_choice="" lane_selection="" lane_rc
+  local show_model=1 show_lanes=1
+  local -a models=() labels=() rows=()
+
+  [ "${CLAUDE_PICK_MODEL:-1}" = 0 ] && show_model=0
+  [ "${CLAUDE_PICK_LANES:-1}" = 0 ] && show_lanes=0
+  [ "${DRSG_EVENT_LANES+x}" = x ] && show_lanes=0
+
   if [ "${CLAUDE_PICK_FORCE_TTY:-0}" != 1 ] && { [ ! -t 0 ] || [ ! -t 1 ]; }; then
     command claude "$@"; return
   fi
@@ -36,51 +40,79 @@ claude() {
   esac
   for a in "$@"; do
     case "$a" in
-      --model|--model=*|-p|--print|-h|--help|-v|--version)
+      -p|--print|-h|--help|-v|--version)
         command claude "$@"; return ;;
+      --model|--model=*) show_model=0 ;;
     esac
   done
 
-  local picker_dir
   picker_dir="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd)"
-  local -a models=() labels=() rows=()
-  if [ -n "${CLAUDE_PICK_MODELS:-}" ]; then
-    read -r -a models <<< "$CLAUDE_PICK_MODELS"
-    labels=("${models[@]}")
-  fi
-  if [ "${#models[@]}" -eq 0 ]; then
-    mapfile -t rows < <(python3 "$picker_dir/claude-model-discovery.py" 2>/dev/null)
-    local row model label
-    for row in "${rows[@]}"; do
-      if [[ "$row" == *$'\t'* ]]; then
-        model="${row%%$'\t'*}"
-        label="${row#*$'\t'}"
-      else
-        model="$row"
-        label="$row"
-      fi
-      models+=("$model")
-      labels+=("$label")
+  if [ "$show_model" -eq 1 ]; then
+    if [ -n "${CLAUDE_PICK_MODELS:-}" ]; then
+      read -r -a models <<< "$CLAUDE_PICK_MODELS"
+      labels=("${models[@]}")
+    fi
+    if [ "${#models[@]}" -eq 0 ]; then
+      mapfile -t rows < <(python3 "$picker_dir/claude-model-discovery.py" 2>/dev/null)
+      local row model label
+      for row in "${rows[@]}"; do
+        if [[ "$row" == *$'\t'* ]]; then
+          model="${row%%$'\t'*}"
+          label="${row#*$'\t'}"
+        else
+          model="$row"
+          label="$row"
+        fi
+        models+=("$model")
+        labels+=("$label")
+      done
+    fi
+    if [ "${#models[@]}" -eq 0 ]; then
+      read -r -a models <<< "opus sonnet haiku fable"
+      labels=("${models[@]}")
+    fi
+    local i choice
+    echo "Model for this session (Enter = default from settings, Ctrl+C = cancel):" >&2
+    for i in "${!models[@]}"; do
+      printf '  %d) %s\n' "$((i + 1))" "${labels[i]}" >&2
     done
+    if ! read -r -p "> " choice; then
+      echo >&2
+      return 130
+    fi
+    if [[ "$choice" =~ ^[0-9]+$ ]] && [ "$choice" -ge 1 ] && [ "$choice" -le "${#models[@]}" ]; then
+      model_choice="${models[choice - 1]}"
+    elif [ -n "$choice" ]; then
+      model_choice="$choice"
+    fi
   fi
-  if [ "${#models[@]}" -eq 0 ]; then
-    read -r -a models <<< "opus sonnet haiku fable"
-    labels=("${models[@]}")
+
+  project_dir="$(pwd -P)"
+  if [ "$show_lanes" -eq 1 ] && [ -f "$project_dir/.drsg/lanes" ]; then
+    if lane_selection="$(python3 "$picker_dir/claude-lane-picker.py" "$project_dir")"; then
+      :
+    else
+      lane_rc=$?
+      if [ "$lane_rc" -eq 130 ]; then
+        return 130
+      fi
+      printf 'ERROR: lane picker failed (exit %s); Claude was not started. Set CLAUDE_PICK_LANES=0 to bypass.\n' \
+        "$lane_rc" >&2
+      return 1
+    fi
   fi
-  local i choice
-  echo "Model for this session (Enter = default from settings, Ctrl+C = cancel):" >&2
-  for i in "${!models[@]}"; do
-    printf '  %d) %s\n' "$((i + 1))" "${labels[i]}" >&2
-  done
-  if ! read -r -p "> " choice; then
-    echo >&2
-    return 130
-  fi
-  if [ -z "$choice" ]; then
-    command claude "$@"
-  elif [[ "$choice" =~ ^[0-9]+$ ]] && [ "$choice" -ge 1 ] && [ "$choice" -le "${#models[@]}" ]; then
-    command claude --model "${models[choice - 1]}" "$@"
+
+  if [ -n "$model_choice" ]; then
+    if [ -n "$lane_selection" ]; then
+      DRSG_EVENT_LANES="$lane_selection" command claude --model "$model_choice" "$@"
+    else
+      command claude --model "$model_choice" "$@"
+    fi
   else
-    command claude --model "$choice" "$@"
+    if [ -n "$lane_selection" ]; then
+      DRSG_EVENT_LANES="$lane_selection" command claude "$@"
+    else
+      command claude "$@"
+    fi
   fi
 }

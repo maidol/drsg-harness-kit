@@ -133,6 +133,31 @@ context sizes from names or defaults. If discovery fails, it uses the static
 menu `opus sonnet haiku fable`. Answer with a number, or type any model name or
 full id; Enter alone keeps the `model` from settings.json; Ctrl+C starts nothing.
 
+The same function can also offer a project-specific Event-lane menu after the
+model menu. Its local runtime helper is `claude-lane-picker.py`. The menu
+is off unless the current working directory has `.drsg/lanes` at its project
+root; create the file with one lane name per line to opt in. The picker does not
+search parent directories. Names are validated against
+`[A-Za-z0-9._-]+`; existing `lease.<lane>.json` files are also listed. An empty
+file enables the menu while keeping Enter mapped to the default lane. The menu
+shows live owners and asks before selecting a lane they hold. It is advisory:
+lease state may change between the prompt and Claude's startup. It reads local
+lease files only, does not take a lease, and does not query the daemon.
+
+```text
+Event lane for this session (Enter = default lane, Ctrl+C = cancel):
+  1) alpha（空闲可用）
+> 1
+```
+
+Set `CLAUDE_PICK_LANES=0` to skip this menu once. The lane menu is independent
+of `CLAUDE_PICK_MODEL=0`, which skips only the model menu. A parent shell that
+already defines `DRSG_EVENT_LANES` (including an empty value) suppresses the
+lane menu and passes that value through unchanged. Choosing Enter leaves
+`DRSG_EVENT_LANES` unset for the child; choosing names passes them only to that
+Claude process. To configure a lane without prompting, set it manually, for
+example `DRSG_EVENT_LANES=alpha,beta claude --resume`.
+
 Discovery resolves `ANTHROPIC_BASE_URL`, `ANTHROPIC_API_KEY`, and
 `ANTHROPIC_AUTH_TOKEN` from the process environment, then merges `env` values
 from `~/.claude/settings.json`, the current directory's `.claude/settings.json`,
@@ -149,16 +174,17 @@ non-empty `ANTHROPIC_AUTH_TOKEN` is sent as a Bearer token.
 ~/.drsg-memory/tools/claude-model-picker-config.sh disable # disable independently
 cd /path/to/project      # start in the directory containing .claude/settings.local.json
 claude --resume           # discover gateway models, then show the session picker
-CLAUDE_PICK_MODEL=0 claude # skip the menu once
+CLAUDE_PICK_MODEL=0 claude # skip the model menu once
 CLAUDE_PICK_MODELS="opus fable" claude   # use a manual list instead
 ```
 
 Running `setup.sh` without `--model-picker` does not change an existing choice.
 Enabling or disabling changes `~/.bashrc`; open a new shell for it to take effect.
 
-No menu when stdin or stdout is not a terminal, when the arguments already
-contain `--model`, `-p`/`--print`, `--help` or `--version`, or for a subcommand
-(`claude mcp …`, `claude attach …`). It is a shell function, not a wrapper
+Neither menu appears when stdin or stdout is not a terminal, for `-p`/`--print`,
+`--help` or `--version`, or for a subcommand (`claude mcp …`, `claude attach …`).
+An explicit `--model` skips only the model menu; a configured project lane menu
+can still appear. It is a shell function, not a wrapper
 process, so the poller still finds the Claude Code process it ties its lease
 to. bash only. `CLAUDE_PICK_FORCE_TTY=1` is for tests: it treats stdin and
 stdout as a terminal.

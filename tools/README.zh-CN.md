@@ -10,6 +10,8 @@
 
 `tools/claude-model-picker.sh` 是一个 Bash 函数，会在交互式 `claude` 启动前询问模型。未设置 `CLAUDE_PICK_MODELS` 时，它通过 `tools/claude-model-discovery.py` 查询配置的网关，失败时退回静态选单。程序文件随 tools 部署，但全新安装默认不启用。可在安装时用 `setup.sh --model-picker` 显式启用，也可之后运行 `~/.drsg-memory/tools/claude-model-picker-config.sh enable`；传 `disable` 可关闭。普通安装/更新会保留当前选择。详细说明见仓库根目录 README 的「启动前选模型」一节。
 
+同一个函数还可以在用 `.drsg/lanes` 启用的项目里显示 Event 车道菜单，由 `tools/claude-lane-picker.py` 提供。前提是已启用模型选择器；只想要车道菜单就设 `CLAUDE_PICK_MODEL=0`。详见根目录 README 的同一节。
+
 ## 代码图路由器与 usage report
 
 运行时 bundle 包含 router 和 usage-report 二进制，但项目配置默认是可选的。使用 `codegraph-router-setup.sh` 配置 router MCP 访问，使用 `codegraph-usage-setup.sh` 配置 Stop hook 报告，或者使用显式的组合封装脚本 `codegraph-hub-setup.sh`。usage report 同时统计本地原生代码图调用和经由 router 的 `codegraph` 调用；它不会由 `install.sh` 或默认的 `setup.sh` 安装。
