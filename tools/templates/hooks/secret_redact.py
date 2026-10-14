@@ -25,6 +25,13 @@ RULES = [
     ("anthropic-key", re.compile(r"\bsk-ant-[A-Za-z0-9_-]{16,}")),
     ("api-key", re.compile(r"\bsk-[A-Za-z0-9_-]{16,}")),
     ("github-token", re.compile(r"\bgh[pousr]_[A-Za-z0-9]{20,}")),
+    ("github-token", re.compile(r"\bgithub_pat_[A-Za-z0-9_]{82,}")),
+    ("gitlab-token", re.compile(r"\bglpat-[A-Za-z0-9_.-]{20,}")),
+    ("google-api-key", re.compile(r"\bAIza[0-9A-Za-z_-]{35,}")),
+    ("huggingface-token", re.compile(r"\bhf_[A-Za-z0-9]{34,}")),
+    ("stripe-secret-key", re.compile(r"\b(?:sk|rk)_live_[A-Za-z0-9]{20,}")),
+    ("npm-token", re.compile(r"\bnpm_[A-Za-z0-9]{36,}")),
+    ("pypi-token", re.compile(r"\bpypi-[A-Za-z0-9_-]{85,}")),
     ("aws-access-key", re.compile(r"\bAKIA[0-9A-Z]{16}\b")),
     ("slack-token", re.compile(r"\bxox[abprs]-[A-Za-z0-9-]{10,}")),
     ("jwt", re.compile(r"\beyJ[A-Za-z0-9_-]{8,}\.[A-Za-z0-9_-]{8,}\.[A-Za-z0-9_-]{8,}")),
@@ -34,7 +41,7 @@ RULES = [
     # `token = os.environ.get(...)` and examples such as `DRSG_TOKEN=change-me`
     # out, at the price of missing an all-letter password.
     ("assignment", re.compile(
-        r"(?i)\b[A-Za-z0-9_]*(?:password|passwd|secret|token|api[_-]?key)\s*[=:]\s*[\"']?"
+        r"(?i)\b[A-Za-z0-9_]*(?:password|passwd|secret|token|api[_-]?key)(?:_[A-Za-z0-9]+)*\s*[=:]\s*[\"']?"
         r"(?P<v>(?![<$*{%])(?=[^\s\"',;]*\d)(?=[^\s\"',;]*[A-Za-z])[^\s\"',;]{6,})")),
 ]
 
