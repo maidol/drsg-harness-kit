@@ -280,6 +280,19 @@ def _command_start(argv, shell_c_depth):
                     i += 1
                 elif arg in no_argument_options:
                     i += 1
+                elif (re.fullmatch(r"-[A-Za-z]{2,}", arg)
+                      and all("-" + flag in no_argument_options for flag in arg[1:-1])
+                      and ("-" + arg[-1] in no_argument_options
+                           or "-" + arg[-1] in short_value_options)):
+                    # Combined short flags (`-nE`, `-nu root`): every flag but
+                    # the last takes no value; a value-taking last flag eats
+                    # the next word, as getopt does.
+                    if "-" + arg[-1] in no_argument_options:
+                        i += 1
+                    elif i + 1 >= len(argv):
+                        return None, None
+                    else:
+                        i += 2
                 elif arg in ("-e", "--edit", "-l", "--list"):
                     return None, None
                 elif arg.startswith("-"):
@@ -363,8 +376,21 @@ def _analyze_segment(segment, depth, shell_c_depth):
         argv = shlex.split(segment, posix=True)
     except ValueError as exc:
         raise ParseError(str(exc))
-    while argv and argv[0] in ("then", "do", "else", "elif", "time"):
-        argv.pop(0)
+    # Words that only introduce the command after them. "!", "{" and "(" are
+    # skipped here only after such a keyword (`then { cmd`): at the start of a
+    # segment _analyze() has already taken them apart. A subshell opened
+    # without a space (`then (cmd`) leaves "(" glued to that command.
+    after_keyword = False
+    while argv:
+        if argv[0] in ("if", "while", "until", "then", "do", "else", "elif", "time"):
+            argv.pop(0)
+            after_keyword = True
+        elif after_keyword and argv[0] in ("!", "{", "("):
+            argv.pop(0)
+        elif after_keyword and argv[0].startswith("(") and len(argv[0]) > 1:
+            argv[0] = argv[0][1:]
+        else:
+            break
     if not argv:
         return False, False
     index, shell_script = _command_start(argv, shell_c_depth)

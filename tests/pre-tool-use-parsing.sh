@@ -74,6 +74,22 @@ for opt in ("-u", "-g", "-C", "-D", "-h", "-p", "-r", "-t", "-U", "-T"):
     check("sudo-opt" + opt, "sudo %s x python3 ~/.drsg-memory/tools/event.py post /x hi" % opt, "deny", mcp)
 check("sudo-long-user", "sudo --user=x python3 ~/.drsg-memory/tools/event.py post /x hi", "deny", mcp)
 check("output-process-substitution", "cat >(python3 ~/.drsg-memory/tools/event.py post /x hi)", "deny", mcp)
+
+# v1.13 GRD-1 leftovers: compound-command keywords and combined sudo flags.
+event_post = "python3 ~/.drsg-memory/tools/event.py post /x hi"
+check("then-brace-group", "if true; then { %s; }; fi" % event_post, "deny", mcp)
+check("then-subshell", "if true; then ( %s ); fi" % event_post, "deny", mcp)
+check("then-subshell-glued", "if true; then (%s); fi" % event_post, "deny", mcp)
+check("do-brace-group", "while true; do { %s; }; done" % event_post, "deny", mcp)
+check("if-condition", "if %s; then :; fi" % event_post, "deny", mcp)
+check("while-condition", "while %s; do :; done" % event_post, "deny", mcp)
+check("until-condition", "until %s; do :; done" % event_post, "deny", mcp)
+check("take-then-brace-group", "if true; then { python3 ~/.drsg-memory/tools/event-poller.py --take; }; fi", "deny", take_reason)
+check("sudo-combined-flags", "sudo -nE " + event_post, "deny", mcp)
+check("sudo-combined-flags-reversed", "sudo -En " + event_post, "deny", mcp)
+check("sudo-combined-value", "sudo -nu root " + event_post, "deny", mcp)
+check("if-grep-event", "if grep -q post tools/event.py; then :; fi")
+check("sudo-combined-grep-event", "sudo -nE grep -n post tools/event.py")
 check("python-c-allowed", "python3 -c 'print(1)'")
 check("python-module-allowed", "python3 -m http.server --help")
 

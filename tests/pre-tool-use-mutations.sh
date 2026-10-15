@@ -62,6 +62,18 @@ mutations = {
     "no-sudo-wrapper": (
         '        if name == "sudo":\n',
         '        if False:\n'),
+    "no-compound-keywords": (
+        '        if argv[0] in ("if", "while", "until", "then", "do", "else", "elif", "time"):\n',
+        '        if argv[0] in ("then", "do", "else", "elif", "time"):\n'),
+    "no-keyword-brace": (
+        '        elif after_keyword and argv[0] in ("!", "{", "("):\n',
+        '        elif after_keyword and argv[0] in ("!", "("):\n'),
+    "no-glued-subshell": (
+        '        elif after_keyword and argv[0].startswith("(") and len(argv[0]) > 1:\n',
+        '        elif False:\n'),
+    "no-sudo-combined": (
+        '                elif (re.fullmatch(r"-[A-Za-z]{2,}", arg)\n',
+        '                elif (False\n'),
     "no-op": (
         '"""PreToolUse guard for event CLI and user-only lease transfer commands."""',
         '"""PreToolUse guard for event CLI and user-only lease transfer commands. """'),
@@ -103,6 +115,10 @@ run_mutation no-bang-negation bang-negation no-bang-negation
 run_mutation no-process-substitution process-substitution no-process-substitution
 run_mutation no-python-optimize python-optimize no-python-optimize
 run_mutation no-sudo-wrapper sudo no-sudo-wrapper
+run_mutation no-compound-keywords if-condition no-compound-keywords
+run_mutation no-keyword-brace then-brace-group no-keyword-brace
+run_mutation no-glued-subshell then-subshell-glued no-glued-subshell
+run_mutation no-sudo-combined sudo-combined-flags no-sudo-combined
 if [ "${MUTATION_SELF_TEST:-0}" = 1 ]; then
   run_mutation self-test-noop help-in-summary no-op
 fi
