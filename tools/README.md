@@ -77,6 +77,14 @@ any Claude Code project                one shared daemon (~/.drsg-memory/)
 - **Two ways out.** SessionStart injects a compressed briefing for this
   project; UserPromptSubmit recalls Facts matching what you just typed, across
   *all* projects, labelled with where they came from.
+- **The briefing is capped at 2000 characters.** It grows about 21 characters
+  per Fact; past the cap the newest Facts are kept and a last line counts the
+  rest, e.g. `（另有 37 条较早的 Fact 未列出）`. Set another limit, or `0` for none,
+  in the project's `.drsg/env`; the next session start rebuilds the briefing:
+
+  ```bash
+  echo 'DRSG_BRIEFING_MAX_CHARS=3000' >> .drsg/env
+  ```
 - **A compaction re-injects.** SessionStart also runs on `compact`, because a
   compaction drops the briefing and the protocol out of context while the
   session keeps going. That path stamps the existing Session node instead of

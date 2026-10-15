@@ -96,6 +96,50 @@ got = ss.ensure_briefing("/p/a", 1, "t")
 check("ensure_briefing keeps stored briefing on read failure", got == ("KEEP", 3), got)
 check("ensure_briefing writes nothing on read failure", updates == [], updates)
 
+# 3b. BUG-07: the briefing keeps the newest Facts within DRSG_BRIEFING_MAX_CHARS
+# (default 2000; 0 = no limit) and counts the older ones it left out.
+ssb = load("ss_brief", os.path.join(hooks, "session_start.py"))
+facts = [{"external_key": "k%03d" % i,
+          "properties": {"kind": "gotcha" if i % 3 else "decision",
+                         "summary": "第%03d条结论用于测试简报上限的足够长摘要" % i}}
+         for i in range(120)]                      # newest first, as all_facts returns
+check("briefing default cap is 2000", ssb.BRIEFING_MAX_CHARS == 2000, ssb.BRIEFING_MAX_CHARS)
+capped = ssb.build_briefing(facts, 2000)
+check("capped briefing fits 2000 chars", len(capped) <= 2000, len(capped))
+last = capped.splitlines()[-1]
+check("capped briefing names how many older Facts were left out",
+      last.startswith("（另有 ") and last.endswith(" 条较早的 Fact 未列出）"), last)
+shown = sum(int(n) for n in __import__("re").findall(r"×(\d+):", capped))
+check("left-out count matches", ("另有 %d 条" % (120 - shown)) in last, (shown, last))
+check("capped briefing keeps the newest and drops the oldest",
+      "第000条" in capped and "第119条" not in capped)
+full = ssb.build_briefing(facts, 0)
+check("cap 0 means no limit", "第119条" in full and "未列出" not in full and len(full) > 2000, len(full))
+small = facts[:10]
+check("under the cap the briefing is unchanged",
+      ssb.build_briefing(small, 2000) == ssb.build_briefing(small, 0))
+
+stored_updates = []
+
+
+def cap_rpc(method, params, token):
+    if method == "node.get":
+        return {"properties": {"briefing": "OLD", "briefing_count": 10,
+                               "briefing_sig": ssb.fact_sig(small), "briefing_cap": 0}}
+    if method == "node.update":
+        stored_updates.append(params["set"])
+        return {}
+    raise AssertionError(method)
+
+
+ssb.rpc = cap_rpc
+ssb.all_facts = lambda proj, token: small
+ssb.BRIEFING_MAX_CHARS = 2000
+got = ssb.ensure_briefing("/p/a", 1, "t")
+check("a changed cap rebuilds a briefing whose Facts did not change",
+      len(stored_updates) == 1 and stored_updates[0].get("briefing_cap") == 2000 and got[0] != "OLD",
+      stored_updates)
+
 # 4. heal_text fetches only Facts lacking `text` (real daemon decides IS NULL).
 if not api:
     print("SKIP heal_text: no drsg binary (set DRSG_MEM_BIN)")

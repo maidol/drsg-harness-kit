@@ -36,6 +36,12 @@ PLANE = "memory"
 # How many Facts to consider when building the briefing. Far beyond current
 # usage; the briefing itself is compressed regardless of this cap.
 BRIEFING_FACT_CAP = 1000
+# Longest briefing, in characters (DRSG_BRIEFING_MAX_CHARS; 0 = no limit). It
+# grows ~21 chars per Fact. Over 757 injections (2026-08..10) no tag ranked
+# 40th or later in its kind was ever echoed back, and the echo rate did not
+# fall with age, so the newest Facts are kept and the rest only counted. 2000
+# cut 6% of past injections, all in the largest project.
+BRIEFING_MAX_CHARS = 2000
 
 # L2 write-memory protocol: injected with the briefing so the model
 # automatically persists valuable conclusions without any user action.
@@ -504,18 +510,44 @@ def short_tag(s, n=18):
     return s if len(s) <= n else s[:n - 1] + "…"
 
 
-def build_briefing(facts):
-    """Group Facts by kind, one line each: `• <kind> ×n: tag; tag; ...`."""
-    by_kind = {}
-    for n in facts:
-        pr = n.get("properties", {})
-        kind = pr.get("kind") or "general"
-        by_kind.setdefault(kind, []).append(short_tag(pr.get("summary", "")))
-    lines = []
-    for kind in sorted(by_kind):
-        tags = by_kind[kind]
-        lines.append("• %s ×%d: %s" % (kind, len(tags), "; ".join(t for t in tags if t)))
-    return "\n".join(lines)
+def build_briefing(facts, max_chars=None):
+    """Group Facts by kind, one line each: `• <kind> ×n: tag; tag; ...`.
+
+    `facts` arrive newest first. Past `max_chars` (BRIEFING_MAX_CHARS when
+    None; 0 = no limit) the oldest are left out and a last line counts them."""
+    if max_chars is None:
+        max_chars = BRIEFING_MAX_CHARS
+
+    def render(subset):
+        by_kind = {}
+        for n in subset:
+            pr = n.get("properties", {})
+            kind = pr.get("kind") or "general"
+            by_kind.setdefault(kind, []).append(short_tag(pr.get("summary", "")))
+        lines = []
+        for kind in sorted(by_kind):
+            tags = by_kind[kind]
+            lines.append("• %s ×%d: %s" % (kind, len(tags), "; ".join(t for t in tags if t)))
+        return "\n".join(lines)
+
+    def capped(keep):
+        note = "（另有 %d 条较早的 Fact 未列出）" % (len(facts) - keep)
+        text = render(facts[:keep])
+        return text + "\n" + note if text else note
+
+    text = render(facts)
+    if not max_chars or len(text) <= max_chars:
+        return text
+    # Binary search for the most Facts that fit: length grows with `keep`, and
+    # one render per step keeps a 1000-Fact plane well inside the hook budget.
+    lo, hi = 0, len(facts) - 1
+    while lo < hi:
+        mid = (lo + hi + 1) // 2
+        if len(capped(mid)) <= max_chars:
+            lo = mid
+        else:
+            hi = mid - 1
+    return capped(lo)
 
 
 def ensure_briefing(proj_dir, pid, token):
@@ -532,7 +564,8 @@ def ensure_briefing(proj_dir, pid, token):
         stale = True
         try:
             facts = all_facts(proj_dir, token)
-            if stored == len(facts) and props.get("briefing_sig") == fact_sig(facts):
+            if (stored == len(facts) and props.get("briefing_sig") == fact_sig(facts)
+                    and props.get("briefing_cap") == BRIEFING_MAX_CHARS):
                 stale = False
         except Exception:
             facts = None  # read failed — not the same as "no facts"
@@ -542,6 +575,7 @@ def ensure_briefing(proj_dir, pid, token):
             rpc("node.update", {"plane": PLANE, "id": pid, "set": {
                 "briefing": brief, "briefing_count": len(facts or []),
                 "briefing_sig": fact_sig(facts or []),
+                "briefing_cap": BRIEFING_MAX_CHARS,
                 "briefing_at": int(time.time())}}, token)
         else:
             brief = (proj.get("properties", {}).get("briefing", "") or "")
@@ -635,9 +669,13 @@ def main():
     proj_dir = os.environ.get("CLAUDE_PROJECT_DIR") or os.getcwd()
     load_env(proj_dir)
     # Re-read config after load_env populated os.environ (install.sh's .drsg/env).
-    global API, PLANE
+    global API, PLANE, BRIEFING_MAX_CHARS
     API = os.environ.get("DRSG_API", API)
     PLANE = os.environ.get("DRSG_PLANE", PLANE)
+    try:
+        BRIEFING_MAX_CHARS = max(0, int(os.environ.get("DRSG_BRIEFING_MAX_CHARS", BRIEFING_MAX_CHARS)))
+    except ValueError:
+        pass  # a malformed value keeps the default rather than failing the hook
     token = os.environ.get("DRSG_TOKEN", "")
     if not token:
         hook_out()
