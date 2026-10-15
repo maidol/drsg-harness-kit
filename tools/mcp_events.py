@@ -734,7 +734,7 @@ def call_tool(name, args, token):
         return _commit_auth_apply(args, proj, token)
 
     if name == "event_post":
-        target = os.path.abspath(os.path.normpath(args["recipient"]))
+        target = ev.canon_path(args["recipient"])
         # Both of these are refusals, so they travel as tool errors: a message
         # saying nothing was posted is worthless if the call still reads as a
         # success — the same confusion this whole channel keeps being bitten by.
@@ -762,7 +762,7 @@ def call_tool(name, args, token):
             target)
 
     if name == "event_list":
-        path = os.path.abspath(os.path.normpath(args.get("project") or proj))
+        path = ev.canon_path(args.get("project") or proj)
         want = args.get("status") or "open"
         rows = []
         # Open Events are filtered in the query (an old one must not hide

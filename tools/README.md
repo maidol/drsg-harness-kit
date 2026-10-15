@@ -328,7 +328,7 @@ majority even with no effect at all. Read `p`, not the raw count.
 
 For the execution-side review/acceptance stages and the one-time commit authorization boundary, see the [globally distributed workflow](../claude/AGENT-EFFICIENCY.md#跨项目审核与验收按阶段交接不跳闸); this README covers Event mechanics only.
 
-`event.py post` and the `event_post` MCP tool share one implementation. The MCP tool refuses the session's own project as recipient: an Event is for another agent, so write a Fact to remember something here, or tell the user directly. Give a
+`event.py post` and the `event_post` MCP tool share one implementation. Project paths passed to `event_post`, `event_list` and the CLI may use symlink aliases; they are resolved to their real paths. The MCP tool refuses the session's own project as recipient: an Event is for another agent, so write a Fact to remember something here, or tell the user directly. Give a
 to-do code-graph symbols and a verb, and the recipient gets an imperative
 `↳ graph first:` line under it. When a handoff's summary reads like a change to
 a judgment (a guard, a filter, a skip, a pause) and the verb is not `impact`,

@@ -507,10 +507,15 @@ def _reply_to_source(reply_to, target, sender_path, token):
     if "from_path" not in props:
         raise ValueError("reply_to 指向的 Event 是旧格式（没有 from_path），无法核对来源；请去掉 reply_to 重发，正文里写明在回复哪一条。")
     source_path = props.get("from_path")
-    if (props.get("from_project") != os.path.basename(target)
+    if (props.get("from_project") != os.path.basename(canon_path(target))
             or not isinstance(source_path, str)
-            or os.path.abspath(os.path.normpath(source_path)) != target):
+            or canon_path(source_path) != canon_path(target)):
         raise ValueError("reply_to 发件方与 recipient 不匹配；请核对 key，或去掉 reply_to 重发。")
+
+
+def canon_path(path):
+    """Resolve a project path, including symlink aliases, to its real path."""
+    return os.path.realpath(os.path.abspath(os.path.normpath(path)))
 
 
 def post(target, pid, summary, kind, ref, from_project, token,
@@ -524,8 +529,8 @@ def post(target, pid, summary, kind, ref, from_project, token,
     graph got to confirm them. Raises on any step that did not change the
     graph. Shared with mcp_events.py so the CLI and the MCP tool cannot drift
     on what a well-formed to-do is."""
-    target = os.path.abspath(os.path.normpath(target))
-    sender_path = os.path.abspath(os.path.normpath(from_path or os.getcwd()))
+    target = canon_path(target)
+    sender_path = canon_path(from_path or os.getcwd())
     check_secrets(summary, ref)
     symbols, verb = check_symbols(symbols, verb)
     unverified = None
@@ -577,22 +582,42 @@ def post(target, pid, summary, kind, ref, from_project, token,
         # gap in the graph.
         props["symbols_verified"] = not unverified
         props["graph_hint"] = graph_hint(symbols, verb, plane, not unverified)
-    node = rpc("node.create", {"plane": PLANE, "key": key,
-                               "labels": ["Event"], "properties": props}, token)
+    try:
+        node = rpc("node.create", {"plane": PLANE, "key": key,
+                                   "labels": ["Event"], "properties": props}, token)
+    except Exception as e:
+        if "conflict: external key" in str(e):
+            raise RuntimeError(
+                f"{key} 已经存在：同一秒内发了 summary 相同的 Event。如果是重试，"
+                f"先用 event_list 确认上一条有没有发出去；确实要再发，等一秒或者改一下 summary。") from e
+        raise
     if not (node or {}).get("id"):
         raise RuntimeError(f"node.create returned no record for {key} — "
                            f"nothing was posted")
     # By id, not key: a dangling key makes edge.create fail outright, and an
     # Event with no NOTIFY edge is invisible exactly like an unlinked Fact.
-    edge = rpc("edge.create", {"plane": PLANE, "src": key, "dst": pid,
-                               "type": "NOTIFY"}, token)
+    try:
+        edge = rpc("edge.create", {"plane": PLANE, "src": key, "dst": pid,
+                                   "type": "NOTIFY"}, token)
+        if edge:
+            edge_error = None
+        else:
+            edge_error = "daemon returned no edge"
+    except Exception as e:
+        edge = None
+        edge_error = str(e)
     if not edge:
-        # Say which node is now stranded. An Event without its edge is not a
-        # half-posted to-do, it is an invisible one: no read path walks it, so
-        # the sender would otherwise believe the message was delivered.
-        raise RuntimeError(f"{key} was created but its NOTIFY edge was not — "
-                           f"the Event is unreachable; link or delete it "
-                           f"before relying on it")
+        try:
+            deleted = rpc("node.delete", {"plane": PLANE, "key": key}, token)
+            if not isinstance(deleted, dict) or not deleted.get("deleted"):
+                raise RuntimeError("daemon returned no deletion record")
+        except Exception as delete_error:
+            raise RuntimeError(
+                f"{key} 没发出去：NOTIFY 边建立失败（{edge_error}），"
+                f"刚建的节点也没删掉（{delete_error}），这条 Event 读不到，删掉它之后再重发。")
+        raise RuntimeError(
+            f"{key} 没发出去：NOTIFY 边建立失败（{edge_error}），"
+            f"已删除刚建的节点，可以直接重发。")
     kick(target)
     return {"key": key, "symbols": symbols, "plane": plane,
             "hint": props.get("graph_hint", ""), "unverified": unverified,
@@ -631,7 +656,7 @@ def report(res, target):
 
 
 def cmd_post(args, token):
-    target = os.path.abspath(os.path.normpath(args.recipient))
+    target = canon_path(args.recipient)
     pid = project_id(target, token)
     if pid is None:
         sys.exit(f"no Project node with path {target} — has a session ever "
@@ -702,7 +727,7 @@ def stale_open_line(events):
 
 
 def cmd_list(args, token):
-    path = os.path.abspath(os.path.normpath(args.project or os.getcwd()))
+    path = canon_path(args.project or os.getcwd())
     # Every open Event, then recent history: an old open one must not hide
     # behind newer closed ones.
     events = fetch(path, token, status="open")

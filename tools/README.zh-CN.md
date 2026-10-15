@@ -213,7 +213,7 @@ utilization 是一个 proxy，脚本也会明确说明这一点：它会把仅�
 
 执行方的阶段评审/验收流程及一次性提交授权边界见[全局分发规范](../claude/AGENT-EFFICIENCY.md#跨项目审核与验收按阶段交接不跳闸)；本 README 只说明 Event 操作机制。
 
-`event.py post` 和 MCP 工具 `event_post` 共用同一份实现。MCP 工具不接受把本会话所在的项目当收件方：Event 是给别的 agent 的，要在本项目记住什么就写 Fact，要告诉用户就直接回复。待办带上代码图符号和动词，收方会在它下面看到一行 `↳ graph first:`。如果是 handoff，summary 读起来像在改一个判断（守卫、过滤、跳过、暂停这类），而动词不是 `impact`，回复末尾会多一行建议。Event 照常发出。
+`event.py post` 和 MCP 工具 `event_post` 共用同一份实现。传给 `event_post`、`event_list` 和 CLI 的项目路径可以使用 symlink 别名，程序会自动解析到真实路径。MCP 工具不接受把本会话所在的项目当收件方：Event 是给别的 agent 的，要在本项目记住什么就写 Fact，要告诉用户就直接回复。待办带上代码图符号和动词，收方会在它下面看到一行 `↳ graph first:`。如果是 handoff，summary 读起来像在改一个判断（守卫、过滤、跳过、暂停这类），而动词不是 `impact`，回复末尾会多一行建议。Event 照常发出。
 
 回复某条待办时，可在 MCP 参数中传 `reply_to`，或在 CLI 中用 `--reply-to <event-key>`：
 
