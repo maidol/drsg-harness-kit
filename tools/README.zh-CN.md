@@ -94,14 +94,31 @@ python3 migrate.py load --api http://127.0.0.1:7700/rpc --token <new token> \
 
 先备份两个数据库——停止 daemon，然后复制目录。`migrate.py` 会警告并跳过没有 external key 的节点；dump 输出会告诉你是否存在这类节点。
 
+### 安全加载迁移 dump
+
+`dump` 和 `load` 都接受 `--limit`（默认 `100000`），用于 `graph.seed`。源或目标 seed 被截断时退出码为 `3`；`dump` 不会创建或覆盖输出文件，`load` 会在写入节点前拒绝。`load` 只做加法：跳过目标上已有的节点 key，以及 src key、dst key、type 和规范化 properties 都相同的边，因此同一份 dump 可以安全重跑。正常 load 结束会用 `verify:` 汇总核对节点、边数量并给出 `PASS` / `FAIL`；任何写入失败或缺项都会退出 `1`。`load --dry-run` 会报告计划新增/跳过的数量，不写入数据。
+
+```bash
+python3 migrate.py dump --api <源端 RPC URL> --token <源端 token> \
+  --plane memory --limit 100000 --out project-memory.json
+python3 migrate.py load --api <目标端 RPC URL> --token <目标端 token> \
+  --plane memory --limit 100000 --in project-memory.json
+python3 migrate.py load --api <目标端 RPC URL> --token <目标端 token> \
+  --plane memory --limit 100000 --in project-memory.json --dry-run
+```
+
+退出码：`0` 表示完成（或 dry-run）；`1` 表示节点/边写入失败或验证发现缺项；`3` 表示 seed 被截断。空 dump 仍沿用现有的 `nothing to migrate` 退出码 `1`。
+
+`repair_dupe_key.py` 已删除：drsg 2.17 的 `digest.write` 会跳过已有 external key，`node.create` 会拒绝重复 key，因此不再需要这个修复工具。`setup.sh` 不会清理旧运行时文件；升级后可手动从 `~/.drsg-memory/tools/` 目录删除 `repair_dupe_key.py`。
+
 ## 修复 Project key 索引
 
-只有在 `WHERE key(p) = …` 查不到 Project、但 `WHERE p.path = …` 仍能查到时，才使用 `repair_project_key.py`。`DRSG_PROJECT_DIR` 用来选择提供 `DRSG_API` 和 `DRSG_TOKEN` 的项目 `.drsg/env`，工具会使用其中的 daemon 地址。先运行 dry run 并检查它记录的节点和全部关联边。执行修复前，先停止 daemon 并备份数据库目录；默认会在当前目录写入 JSON 快照，也可通过 `--snapshot` 指定路径。
+只有在 `WHERE key(p) = …` 查不到 Project、但 `WHERE p.path = …` 仍能查到时，才使用 `repair_project_key.py`。`DRSG_PROJECT_DIR` 用来选择提供 `DRSG_API` 和 `DRSG_TOKEN` 的项目 `.drsg/env`，工具会使用其中的 daemon 地址。先运行 dry run 并检查它记录的节点和全部关联边。执行修复前，先停止 daemon、复制数据库目录作为备份，然后重新启动 daemon；工具的 `--apply` 需要通过 RPC 连接正在运行的 daemon。默认会在当前目录写入 JSON 快照，也可通过 `--snapshot` 指定路径。
 
 ```bash
 DRSG_PROJECT_DIR=/path/to/project python3 ~/.drsg-memory/tools/repair_project_key.py \
   memory /path/to/project <project-key>
-# 执行前先停止 daemon，并备份数据库目录。
+# 停止 daemon、复制数据库目录备份，再重启 daemon 后执行 apply。
 DRSG_PROJECT_DIR=/path/to/project python3 ~/.drsg-memory/tools/repair_project_key.py \
   memory /path/to/project <project-key> --apply \
   --snapshot /tmp/repair-<project-key>.json

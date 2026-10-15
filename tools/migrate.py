@@ -51,9 +51,31 @@ def rpc(api, token, method, params):
     return resp.get("result")
 
 
+def edge_signature(src_key, dst_key, edge_type, properties):
+    props = json.dumps(properties or {}, sort_keys=True, ensure_ascii=False,
+                        separators=(",", ":"))
+    return src_key, dst_key, edge_type, props
+
+
+def keyed_edges(seed):
+    id2key = {n["id"]: n.get("external_key") for n in seed.get("nodes", [])}
+    found = set()
+    for edge in seed.get("edges", []):
+        src_key = id2key.get(edge.get("src"))
+        dst_key = id2key.get(edge.get("dst"))
+        if src_key is not None and dst_key is not None:
+            found.add(edge_signature(src_key, dst_key, edge.get("type"),
+                                     edge.get("properties", {})))
+    return found
+
+
 def cmd_dump(args):
     res = rpc(args.api, args.token, "graph.seed",
-              {"plane": args.plane, "limit": 100000})
+              {"plane": args.plane, "limit": args.limit})
+    if res.get("truncated"):
+        print("graph.seed truncated: source plane exceeds the limit; increase --limit",
+              file=sys.stderr)
+        return 3
     nodes, edges = res["nodes"], res["edges"]
 
     # Resolve edge endpoints (internal ids) to external keys.
@@ -85,8 +107,10 @@ def cmd_dump(args):
     print("dumped %d nodes (%d unkeyed skipped), %d edges (%d dropped) → %s"
           % (len(keyed), len(unkeyed), len(dump_edges), dropped, args.out))
     if not keyed:
-        sys.exit("nothing to migrate")
+        print("nothing to migrate", file=sys.stderr)
+        return 1
     print("node keys:", sorted(n["key"] for n in out["nodes"]))
+    return 0
 
 
 def cmd_load(args):
@@ -94,55 +118,106 @@ def cmd_load(args):
         dump = json.load(f)
     nodes, edges = dump["nodes"], dump["edges"]
 
-    created = skipped = failed = 0
-    for n in nodes:
-        try:
-            existing = rpc(args.api, args.token, "node.get",
-                           {"plane": args.plane, "key": n["key"]})
-        except RuntimeError as e:
-            print("  WARN node.get %s: %s" % (n["key"], e), file=sys.stderr)
-            existing = None
-        if existing and existing.get("id") is not None:
-            skipped += 1  # key already owned on dst — never squat it
+    # Read the target before writing anything: a partial seed is unsafe both
+    # for deciding which edges already exist and for node-key ownership.
+    target = rpc(args.api, args.token, "graph.seed",
+                 {"plane": args.plane, "limit": args.limit})
+    if target.get("truncated"):
+        print("graph.seed truncated: target plane exceeds the limit; increase --limit",
+              file=sys.stderr)
+        return 3
+    existing_nodes = {n.get("external_key") for n in target.get("nodes", [])
+                      if n.get("external_key")}
+    edge_set = keyed_edges(target)
+
+    nodes_created = nodes_skipped = nodes_failed = 0
+    for node in nodes:
+        key = node["key"]
+        if key in existing_nodes:
+            nodes_skipped += 1
             continue
         if args.dry_run:
-            print("  would create %s" % n["key"])
+            nodes_created += 1
+            existing_nodes.add(key)
+            print("  would create %s" % key)
             continue
         try:
             rpc(args.api, args.token, "node.create",
-                {"plane": args.plane, "key": n["key"], "labels": n["labels"],
-                 "properties": n["properties"]})
-            created += 1
-        except RuntimeError as e:
-            failed += 1
-            print("  FAIL create %s: %s" % (n["key"], e), file=sys.stderr)
+                {"plane": args.plane, "key": key, "labels": node["labels"],
+                 "properties": node["properties"]})
+            nodes_created += 1
+            existing_nodes.add(key)
+        except RuntimeError as error:
+            nodes_failed += 1
+            print("  FAIL create %s: %s" % (key, error), file=sys.stderr)
 
-    # Second pass: edges (endpoints must now exist as keys on dst).
     edges_created = edges_skipped = edges_failed = 0
-    for e in edges:
+    for edge in edges:
+        src_key, dst_key = edge["src_key"], edge["dst_key"]
+        signature = edge_signature(src_key, dst_key, edge["type"],
+                                   edge.get("properties", {}))
+        if signature in edge_set:
+            edges_skipped += 1
+            continue
         if args.dry_run:
+            edges_created += 1
+            edge_set.add(signature)
             print("  would create edge %s -[%s]-> %s"
-                  % (e["src_key"], e["type"], e["dst_key"]))
+                  % (src_key, edge["type"], dst_key))
             continue
         try:
             rpc(args.api, args.token, "edge.create",
-                {"plane": args.plane, "src": e["src_key"], "dst": e["dst_key"],
-                 "type": e["type"], "properties": e["properties"]})
+                {"plane": args.plane, "src": src_key, "dst": dst_key,
+                 "type": edge["type"], "properties": edge.get("properties", {})})
             edges_created += 1
-        except RuntimeError as err:
-            msg = str(err)
-            if "already" in msg.lower() or "duplicate" in msg.lower():
-                edges_skipped += 1
-            else:
-                edges_failed += 1
-                print("  FAIL edge %s -[%s]-> %s: %s"
-                      % (e["src_key"], e["type"], e["dst_key"], err),
-                      file=sys.stderr)
+            edge_set.add(signature)
+        except RuntimeError as error:
+            edges_failed += 1
+            print("  FAIL edge %s -[%s]-> %s: %s" %
+                  (src_key, edge["type"], dst_key, error), file=sys.stderr)
 
-    verb = "would" if args.dry_run else "did"
-    print("%s %s: nodes created=%d skipped=%d failed=%d; edges created=%d "
-          "skipped=%d failed=%d" % (verb, args.plane, created, skipped, failed,
-                                    edges_created, edges_skipped, edges_failed))
+    if args.dry_run:
+        print("would %s: would create %d nodes / would skip %d; "
+              "would create %d edges / would skip %d" %
+              (args.plane, nodes_created, nodes_skipped,
+               edges_created, edges_skipped))
+        return 0
+
+    verification = rpc(args.api, args.token, "graph.seed",
+                       {"plane": args.plane, "limit": args.limit})
+    if verification.get("truncated"):
+        print("verify: target seed truncated -> FAIL")
+        print("verify: nodes 0/%d edges 0/%d -> FAIL" %
+              (len({n["key"] for n in nodes}), len({
+                  edge_signature(e["src_key"], e["dst_key"], e["type"],
+                                 e.get("properties", {})) for e in edges})))
+        return 1
+
+    target_keys = {n.get("external_key") for n in verification.get("nodes", [])
+                   if n.get("external_key")}
+    required_nodes = {n["key"] for n in nodes}
+    present_nodes = required_nodes & target_keys
+    verified_edges = keyed_edges(verification)
+    required_edges = {edge_signature(e["src_key"], e["dst_key"], e["type"],
+                                     e.get("properties", {})) for e in edges}
+    present_edges = required_edges & verified_edges
+    missing_nodes = sorted(required_nodes - present_nodes)
+    missing_edges = sorted(required_edges - present_edges)
+    for key in missing_nodes:
+        print("verify missing node: %s" % key, file=sys.stderr)
+    for src_key, dst_key, edge_type, properties in missing_edges:
+        print("verify missing edge: %s -[%s]-> %s properties=%s" %
+              (src_key, edge_type, dst_key, properties), file=sys.stderr)
+
+    verified = not missing_nodes and not missing_edges
+    print("verify: nodes %d/%d edges %d/%d -> %s" %
+          (len(present_nodes), len(required_nodes), len(present_edges),
+           len(required_edges), "PASS" if verified else "FAIL"))
+    print("did %s: nodes created=%d skipped=%d failed=%d; edges created=%d "
+          "skipped=%d failed=%d" %
+          (args.plane, nodes_created, nodes_skipped, nodes_failed,
+           edges_created, edges_skipped, edges_failed))
+    return 0 if verified and not nodes_failed and not edges_failed else 1
 
 
 def main():
@@ -154,6 +229,8 @@ def main():
     d.add_argument("--api", required=True, help="source RPC base URL")
     d.add_argument("--token", required=True)
     d.add_argument("--plane", default="memory")
+    d.add_argument("--limit", type=int, default=100000,
+                   help="graph.seed node limit (default 100000)")
     d.add_argument("--out", required=True, help="output JSON file")
     d.set_defaults(func=cmd_dump)
 
@@ -161,13 +238,15 @@ def main():
     l.add_argument("--api", required=True, help="destination RPC base URL")
     l.add_argument("--token", required=True)
     l.add_argument("--plane", default="memory")
+    l.add_argument("--limit", type=int, default=100000,
+                   help="graph.seed node limit (default 100000)")
     l.add_argument("--in", dest="input", required=True, help="dump JSON file")
     l.add_argument("--dry-run", action="store_true")
     l.set_defaults(func=cmd_load)
 
     args = ap.parse_args()
-    args.func(args)
+    return args.func(args)
 
 
 if __name__ == "__main__":
-    main()
+    sys.exit(main())

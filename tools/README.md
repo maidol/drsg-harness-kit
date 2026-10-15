@@ -159,20 +159,51 @@ Back up both databases first — stop the daemon, then copy the directory.
 `migrate.py` warns about and skips nodes with no external key; a `dump`
 will tell you whether you have any.
 
+### Loading a migration dump safely
+
+Both `dump` and `load` accept `--limit` (default `100000`) for `graph.seed`.
+If the source or target seed is truncated, the command exits `3`; `dump` does
+not create or overwrite the output file, and `load` refuses before writing any
+nodes. `load` is additive: it skips existing node keys and existing edges with
+the same source key, destination key, type and canonical properties. Re-running
+the same dump is safe. After a real load, `verify:` reports the imported node
+and edge counts and `PASS` / `FAIL`; any write failure or missing item exits `1`.
+`load --dry-run` reports planned create/skip counts without writing.
+
+```bash
+python3 migrate.py dump --api <source-rpc-url> --token <source-token> \
+  --plane memory --limit 100000 --out project-memory.json
+python3 migrate.py load --api <target-rpc-url> --token <target-token> \
+  --plane memory --limit 100000 --in project-memory.json
+python3 migrate.py load --api <target-rpc-url> --token <target-token> \
+  --plane memory --limit 100000 --in project-memory.json --dry-run
+```
+
+Exit codes: `0` completed (or dry-run); `1` node/edge writes failed or
+verification found missing data; `3` a seed was truncated. An empty dump keeps
+the existing `nothing to migrate` exit code `1`.
+
+`repair_dupe_key.py` has been removed: drsg 2.17 `digest.write` skips an
+existing external key and `node.create` rejects duplicate keys, so this repair
+is no longer needed. `setup.sh` does not prune old runtime files; after
+upgrading, manually remove `repair_dupe_key.py` from the
+`~/.drsg-memory/tools/` directory.
+
 ## Repairing a Project key index
 
 Use `repair_project_key.py` only when `WHERE key(p) = …` no longer finds a
 Project but `WHERE p.path = …` still does. `DRSG_PROJECT_DIR` selects the
 project whose `.drsg/env` supplies `DRSG_API` and `DRSG_TOKEN`; the utility uses
 that daemon address. Run the dry run first and review the captured node and
-every incident edge. Before applying, stop the daemon and back
-up its database directory; `--apply` writes a JSON snapshot in the current
+every incident edge. Before applying, stop the daemon, copy the database
+directory as a backup, then restart the daemon; the utility needs a live daemon
+for the `--apply` RPC calls. It writes a JSON snapshot in the current
 directory by default, or to the path passed with `--snapshot`.
 
 ```bash
 DRSG_PROJECT_DIR=/path/to/project python3 ~/.drsg-memory/tools/repair_project_key.py \
   memory /path/to/project <project-key>
-# Stop the daemon and back up its database directory before applying.
+# Stop the daemon, copy its database directory, then restart it before applying.
 DRSG_PROJECT_DIR=/path/to/project python3 ~/.drsg-memory/tools/repair_project_key.py \
   memory /path/to/project <project-key> --apply \
   --snapshot /tmp/repair-<project-key>.json

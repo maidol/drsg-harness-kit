@@ -14,4 +14,3 @@ tools/analyze_events.py:--verbose
 tools/analyze_recall.py:--no-cache
 tools/codegraph-usage.py:--verbose
 tools/event.py:--ref
-tools/migrate.py:--dry-run
