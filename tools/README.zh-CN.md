@@ -453,6 +453,12 @@ python3 forbidden-literals-guard.py --repo /path/to/project --list /path/to/list
 
 - 名单默认位于 `<项目>/.drsg/forbidden-literals`；
 - 名单必须被 git 忽略且未被跟踪，否则退出码 3 拒绝运行；
-- 退出码：0 通过或已禁用，1 检出违规字面量，3 配置或安全错误；
+- 退出码：0 通过或已禁用，1 检出违规字面量，3 配置或安全错误。`re:` 规则写错或为空都算配置错误：这时什么都不检查，报错指向名单的那一行，而不是把要提交的每一行都报成违规：
+
+  ```text
+  ERROR: forbidden-literals list /path/to/project/.drsg/forbidden-literals has 1 invalid rule(s); nothing was checked. Fix the list:
+    line 3: empty regex (it would match every line)
+  ```
+
 - 项目级关闭：`git config --local drsg.forbiddenLiterals false`。
 

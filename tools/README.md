@@ -744,5 +744,12 @@ python3 forbidden-literals-guard.py --repo /path/to/project --list /path/to/list
 - Target list defaults to `<project>/.drsg/forbidden-literals`.
 - List file must be git-ignored and never tracked (exits 3 on violation).
 - Exit codes: 0 clean or disabled, 1 forbidden literal found, 3 configuration error.
+  An invalid or empty `re:` rule is a configuration error: nothing is checked, and
+  the error names the list line instead of blaming the lines being committed:
+
+  ```text
+  ERROR: forbidden-literals list /path/to/project/.drsg/forbidden-literals has 1 invalid rule(s); nothing was checked. Fix the list:
+    line 3: empty regex (it would match every line)
+  ```
 - Project opt-out: `git config --local drsg.forbiddenLiterals false`.
 
