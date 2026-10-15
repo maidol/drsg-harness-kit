@@ -182,7 +182,21 @@ bash tests/secret-redaction.sh
 
 ## 刷新运行时副本
 
-在本仓库中修改后，重新构建 bundle，再次运行其中的 `setup.sh`。这是为新机器安装时使用的同一条路径，这是有意的设计——避免维护两套流程。`setup.sh` 幂等，会重新运行安装器自检，但不会触碰数据库。重跑 `setup.sh` 也是将新增的全局 hook（例如 `textual-tool-call-guard.py`）注册到 `~/.claude/settings.json` 的必要步骤。改的是 `tools/templates/hooks/` 底下的东西时要加 `--project DIR`：不带参数的一次运行只刷新 `~/.drsg-memory/tools/`，各项目的 `.claude/hooks/` 仍停在旧副本上，也就是之后 `install.sh --check` 会报出来的 drift。router 和 usage report 虽然会随 bundle 提供，但项目配置默认是可选的：使用 `--router DIR`、`--usage-report DIR`，或者使用显式的 `--hub DIR` 同时启用两者；只使用 `--project` 和 `--repo` 不会安装其中任何一个。
+在本仓库中修改后，重新构建 bundle，再次运行其中的 `setup.sh`。这是为新机器安装时使用的同一条路径，这是有意的设计——避免维护两套流程。`setup.sh` 幂等，会重新运行安装器自检，但不会触碰数据库。重跑 `setup.sh` 也是将新增的全局 hook（例如 `textual-tool-call-guard.py`）注册到 `~/.claude/settings.json` 的必要步骤。改的是 `tools/templates/hooks/` 底下的东西时要加 `--project DIR`：不带参数的一次运行只刷新 `~/.drsg-memory/tools/`，各项目的 `.claude/hooks/` 仍停在旧副本上，也就是之后 `install.sh --check` 会报出来的 drift。要一次刷新所有已登记项目的记忆 hooks，可用 `--all-projects`；它只做一次全局设置，缺失目录或没有 `.drsg/env` 的项目会跳过，单个项目失败也会继续处理其他项目：
+
+```bash
+/tmp/drsg-harness-kit-*/setup.sh --all-projects --bin /path/to/drsg
+```
+
+```text
+ok /path/to/project-a
+skipped /path/to/archive (directory missing)
+skipped /path/to/project-b (no .drsg/env)
+FAILED /path/to/project-c (log: <per-project log path>)
+summary: 1 ok, 1 failed, 2 skipped
+```
+
+router 和 usage report 虽然会随 bundle 提供，但项目配置默认是可选的：使用 `--router DIR`、`--usage-report DIR`，或者使用显式的 `--hub DIR` 同时启用两者；只使用 `--project` 和 `--repo` 不会安装其中任何一个。
 
 ## 文本化工具调用防护（`textual-tool-call-guard.py`）
 

@@ -2,7 +2,6 @@
 # This baseline is strictly decremental (can only decrease, never increase).
 # Format: <script_path>:<option>
 setup.sh:--addr
-setup.sh:--bin
 setup.sh:--fetch-drsg
 setup.sh:--no-event-poller
 setup.sh:--no-skills

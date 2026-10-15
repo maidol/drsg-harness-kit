@@ -16,6 +16,7 @@
 # Usage: setup.sh [options]
 #
 #   --project DIR     install the memory layer into this project (hooks + MCP)
+#   --all-projects    refresh memory hooks for every registered project
 #   --repo DIR        build and serve a code graph for this git repository
 #   --hub DIR         explicitly register router + usage report here
 #   --router DIR      explicitly register only the code-graph router
@@ -45,7 +46,7 @@
 set -euo pipefail
 
 HERE="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
-PROJECT=""; REPO=""; HUB=""; ROUTER=""; USAGE_REPORT=""; BIN=""; ADDR=""; TOKEN=""; PORT=""
+PROJECT=""; ALL_PROJECTS=0; REPO=""; HUB=""; ROUTER=""; USAGE_REPORT=""; BIN=""; ADDR=""; TOKEN=""; PORT=""
 TOOLS="${DRSG_MEM_DIR:-$HOME/.drsg-memory}/tools"
 FETCH=0; SKILLS=1; MAIN_BRANCH_WORKFLOW=1; POLLER=1; STREAK_HINT=1; TEXTUAL_TOOL_GUARD=1
 PG_DIR=""; REVIEWS_DIR=""; PRUNE=0; SELF_COMMIT=0; MODEL_PICKER=0
@@ -53,6 +54,7 @@ PG_DIR=""; REVIEWS_DIR=""; PRUNE=0; SELF_COMMIT=0; MODEL_PICKER=0
 while [ $# -gt 0 ]; do
   case "$1" in
     --project)    PROJECT="${2:?--project needs a path}"; shift 2 ;;
+    --all-projects) ALL_PROJECTS=1; shift ;;
     --repo)       REPO="${2:?--repo needs a path}"; shift 2 ;;
     --hub)        HUB="${2:?--hub needs a path}"; shift 2 ;;
     --router)     ROUTER="${2:?--router needs a path}"; shift 2 ;;
@@ -81,6 +83,21 @@ done
 # Argument validation happens here, before step 1: rejecting a bad combination
 # after the memory layer and the code graph are already installed is a late
 # error for a mistake that is knowable at parse time.
+if [ "$ALL_PROJECTS" -eq 1 ]; then
+  for option in PROJECT REPO HUB ROUTER USAGE_REPORT; do
+    if [ -n "${!option}" ]; then
+      case "$option" in
+        PROJECT) label=--project ;;
+        REPO) label=--repo ;;
+        HUB) label=--hub ;;
+        ROUTER) label=--router ;;
+        USAGE_REPORT) label=--usage-report ;;
+      esac
+      echo "ERROR: --all-projects cannot be combined with $label" >&2
+      exit 1
+    fi
+  done
+fi
 if [ -n "$HUB" ] && { [ -n "$ROUTER" ] || [ -n "$USAGE_REPORT" ]; }; then
   echo "ERROR: --hub cannot be combined with --router or --usage-report" >&2
   exit 1
@@ -248,26 +265,101 @@ if [ -z "$BIN" ]; then
 fi
 if [ -n "$BIN" ] && [ -x "$BIN" ]; then
   echo "   $BIN ($("$BIN" --version 2>/dev/null || echo 'version unknown'))"
-elif [ -n "$PROJECT" ] || [ -n "$REPO" ]; then
+elif [ -n "$PROJECT" ] || [ -n "$REPO" ] || [ "$ALL_PROJECTS" -eq 1 ]; then
   # Installing either half without a binary would leave hooks and MCP entries
   # pointing at a daemon that can never start.
   echo "ERROR: no drsg binary. Pass --bin PATH, or --fetch-drsg to download one," >&2
   echo "       or run ./install-drsg.sh yourself." >&2
   exit 1
 else
-  echo "   none found; nothing to install without --project/--repo, continuing"
+  echo "   none found; nothing to install without --project/--all-projects/--repo, continuing"
 fi
+
+install_memory_project() {
+  local target="$1"
+  local -a args=("$target" --bin "$BIN")
+  if [ -n "$ADDR" ]; then args+=(--addr "$ADDR"); fi
+  if [ -n "$TOKEN" ]; then args+=(--token "$TOKEN"); fi
+  "$TOOLS/install.sh" "${args[@]}"
+}
 
 if [ -n "$PROJECT" ]; then
   echo "== 4/6: memory layer -> $PROJECT"
-  set -- "$PROJECT" --bin "$BIN"
-  [ -n "$ADDR" ]  && set -- "$@" --addr "$ADDR"
-  [ -n "$TOKEN" ] && set -- "$@" --token "$TOKEN"
   # install.sh self-checks (daemon reachable, plane present, a Fact readable
   # through the hooks' own recall query) and exits non-zero if any of it fails.
-  "$TOOLS/install.sh" "$@"
+  install_memory_project "$PROJECT"
+elif [ "$ALL_PROJECTS" -eq 1 ]; then
+  echo "== 4/6: memory layer -> all registered projects"
+  MEMORY_DIR="${DRSG_MEM_DIR:-$HOME/.drsg-memory}"
+  DAEMON_ENV="$MEMORY_DIR/env"
+  REGISTRY_ADDR="${ADDR:-${DRSG_MEM_ADDR:-127.0.0.1:7700}}"
+  REGISTRY_ADDR="${REGISTRY_ADDR#http://}"
+  REGISTRY_ADDR="${REGISTRY_ADDR#https://}"
+  REGISTRY_API="http://$REGISTRY_ADDR/rpc"
+  PROJECTS_FILE="$(mktemp "${TMPDIR:-/tmp}/setup-all-projects.XXXXXX")"
+  QUERY_ERROR="$PROJECTS_FILE.err"
+  if ! "$TOOLS/project_registry.py" --env "$DAEMON_ENV" --api "$REGISTRY_API" \
+      --plane memory --nul > "$PROJECTS_FILE" 2> "$QUERY_ERROR"; then
+    QUERY_DETAIL="$(<"$QUERY_ERROR")"
+    rm -f "$PROJECTS_FILE" "$QUERY_ERROR"
+    echo "ERROR: could not list projects${QUERY_DETAIL:+: $QUERY_DETAIL}" >&2
+    exit 1
+  fi
+  rm -f "$QUERY_ERROR"
+  if [ ! -s "$PROJECTS_FILE" ]; then
+    rm -f "$PROJECTS_FILE"
+    echo "no projects found"
+    echo "summary: 0 ok, 0 failed, 0 skipped"
+    exit 0
+  fi
+
+  LOG_ROOT="$MEMORY_DIR/logs"
+  mkdir -p "$LOG_ROOT"
+  OLD_UMASK="$(umask)"
+  umask 077
+  LOG_DIR="$(mktemp -d "$LOG_ROOT/setup-all-projects.XXXXXX")"
+  declare -a SEEN_REALPATHS=()
+  OK_COUNT=0; FAILED_COUNT=0; SKIPPED_COUNT=0; ATTEMPT=0
+  while IFS= read -r -d '' target; do
+    if [ ! -d "$target" ]; then
+      echo "skipped $target (directory missing)"
+      SKIPPED_COUNT=$((SKIPPED_COUNT + 1))
+      continue
+    fi
+    resolved="$(realpath "$target")"
+    duplicate=0
+    for prior in "${SEEN_REALPATHS[@]}"; do
+      if [ "$prior" = "$resolved" ]; then duplicate=1; break; fi
+    done
+    if [ "$duplicate" -eq 1 ]; then
+      echo "skipped $target (duplicate realpath: $resolved)"
+      SKIPPED_COUNT=$((SKIPPED_COUNT + 1))
+      continue
+    fi
+    SEEN_REALPATHS+=("$resolved")
+    if [ ! -f "$target/.drsg/env" ]; then
+      echo "skipped $target (no .drsg/env)"
+      SKIPPED_COUNT=$((SKIPPED_COUNT + 1))
+      continue
+    fi
+    ATTEMPT=$((ATTEMPT + 1))
+    LOG_FILE="$LOG_DIR/$(printf '%04d' "$ATTEMPT").log"
+    if install_memory_project "$target" 2>&1 | \
+        DRSG_LOG_REDACT="$TOKEN" python3 -c 'import os,sys; t=os.environ.get("DRSG_LOG_REDACT", ""); [sys.stdout.write(line.replace(t, "<hidden>") if t else line) for line in sys.stdin]' \
+        > "$LOG_FILE"; then
+      echo "ok $target"
+      OK_COUNT=$((OK_COUNT + 1))
+    else
+      echo "FAILED $target (log: $LOG_FILE)"
+      FAILED_COUNT=$((FAILED_COUNT + 1))
+    fi
+  done < "$PROJECTS_FILE"
+  rm -f "$PROJECTS_FILE"
+  echo "summary: $OK_COUNT ok, $FAILED_COUNT failed, $SKIPPED_COUNT skipped"
+  [ "$FAILED_COUNT" -eq 0 ]
+  exit $?
 else
-  echo "== 4/6: memory layer skipped (no --project)"
+  echo "== 4/6: memory layer skipped (no --project/--all-projects)"
 fi
 
 if [ -n "$REPO" ]; then

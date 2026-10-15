@@ -245,7 +245,20 @@ is ahead by mtime rather than guessing:
 With no project-dir the list comes from the memory plane's `Project` nodes —
 the same list recall itself walks. A project installed but never recorded is
 invisible here for exactly the reason it is invisible to recall, which is more
-useful than a second registry that can disagree with the first.
+useful than a second registry that can disagree with the first. The shared
+`project_registry.py` reader is used by both `install.sh --check` and
+`setup.sh --all-projects`; `--env` selects the daemon environment file instead
+of the default. Scripts can request NUL-separated paths with:
+
+```bash
+python3 ~/.drsg-memory/tools/project_registry.py --nul
+python3 ~/.drsg-memory/tools/project_registry.py --env <daemon-env-file> --nul
+```
+
+When a project's installed hooks differ from the runtime templates, SessionStart
+shows a one-line human-visible refresh prompt with the shell-quoted install
+command. It only reports drift; it does not run the installer. Run the shown
+command yourself, adding `--bin <path>` if `drsg` is not on `PATH`.
 
 ## Full layered deployment audit (`--audit`)
 

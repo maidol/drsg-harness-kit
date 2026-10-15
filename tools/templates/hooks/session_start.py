@@ -24,6 +24,7 @@ import hashlib
 import json
 import os
 import re
+import shlex
 import socket
 import sys
 import time
@@ -165,6 +166,45 @@ def load_env(proj_dir):
             if line and not line.startswith("#") and "=" in line:
                 k, v = line.split("=", 1)
                 os.environ.setdefault(k.strip(), v.strip())
+
+
+def hook_drift_message(proj_dir):
+    """Human-visible refresh command when installed project hooks differ."""
+    try:
+        tools_dir = os.path.join(os.environ.get("DRSG_MEM_DIR") or
+                                 os.path.expanduser("~/.drsg-memory"), "tools")
+        template_dir = os.path.join(tools_dir, "templates", "hooks")
+        project_hooks = os.path.join(proj_dir, ".claude", "hooks")
+        if not os.path.isdir(project_hooks):
+            return ""
+        names = sorted(n for n in os.listdir(template_dir) if n.endswith(".py"))
+        if not names:
+            return ""
+        drifted = False
+        for name in names:
+            try:
+                with open(os.path.join(template_dir, name), "rb") as fh:
+                    template = fh.read()
+            except OSError:
+                return ""
+            try:
+                with open(os.path.join(project_hooks, name), "rb") as fh:
+                    installed = fh.read()
+            except FileNotFoundError:
+                drifted = True
+                continue
+            except OSError:
+                return ""
+            if template != installed:
+                drifted = True
+        if not drifted:
+            return ""
+        installer = shlex.quote(os.path.join(tools_dir, "install.sh"))
+        project = shlex.quote(proj_dir)
+        return "DrSG hooks differ from runtime templates. Refresh with: %s %s" % (
+            installer, project)
+    except Exception:
+        return ""
 
 
 def hook_out(system_message=None, **extra):
@@ -673,6 +713,7 @@ def main():
     data = json.load(sys.stdin)
     proj_dir = os.environ.get("CLAUDE_PROJECT_DIR") or os.getcwd()
     load_env(proj_dir)
+    drift_message = hook_drift_message(proj_dir)
     # Re-read config after load_env populated os.environ (install.sh's .drsg/env).
     global API, PLANE, BRIEFING_MAX_CHARS
     API = os.environ.get("DRSG_API", API)
@@ -683,12 +724,12 @@ def main():
         pass  # a malformed value keeps the default rather than failing the hook
     token = os.environ.get("DRSG_TOKEN", "")
     if not token:
-        hook_out()
+        hook_out(system_message=drift_message or None)
         return
     try:
         rpc("db.stats", {}, token)  # liveness probe
     except Exception:
-        hook_out()  # daemon down → don't block the session
+        hook_out(system_message=drift_message or None)  # daemon down → don't block the session
         return
 
     sid = data.get("session_id", "")
@@ -845,6 +886,8 @@ def main():
                          # without the ABOUT edge again.
                          "orphan_facts": None if orphans is None else len(orphans),
                          "ms": int((time.time() - ts_start) * 1000)})
+    if drift_message:
+        user_msg = (user_msg + "\n" + drift_message) if user_msg else drift_message
     hook_out(system_message=user_msg, additionalContext=ctx)
 
 

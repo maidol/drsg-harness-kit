@@ -144,8 +144,11 @@ if [ "$CHECK_ONLY" = "1" ]; then
   if python3 - "$TEMPLATES/hooks" \
       "${DRSG_MEM_DIR:-$HOME/.drsg-memory}/env" \
       "http://$HTTP_BASE/rpc" "$PLANE" \
-      "$([ "$PROJECT_DIR_GIVEN" = "1" ] && echo "$PROJECT_DIR")" <<'PYEOF'
-import hashlib, json, os, sys, urllib.request
+      "$([ "$PROJECT_DIR_GIVEN" = "1" ] && echo "$PROJECT_DIR")" "$SCRIPT_DIR" <<'PYEOF'
+import hashlib, os, sys
+
+sys.path.insert(0, sys.argv[6])
+from project_registry import known_projects
 
 tmpl_dir, daemon_env, api, plane, explicit = sys.argv[1:6]
 
@@ -161,44 +164,11 @@ if not templates:
     sys.exit(f"no hook templates under {tmpl_dir}")
 
 
-def known_projects():
-    """Every project the memory plane knows about.
-
-    The same list the hooks recall against, deliberately: a project installed
-    but never recorded is invisible here for exactly the reason it is
-    invisible to recall, and saying so is more useful than inventing a second
-    registry that can disagree with the first.
-    """
-    token = ""
-    if os.path.exists(daemon_env):
-        for line in open(daemon_env, encoding="utf-8"):
-            if line.startswith("DRSG_TOKEN="):
-                token = line.split("=", 1)[1].strip().strip('"').strip("'")
-    body = json.dumps({"jsonrpc": "2.0", "id": 1, "method": "plane.cypher",
-                       "params": {"plane": plane,
-                                  "query": "MATCH (p:Project) RETURN p"}}).encode()
-    req = urllib.request.Request(
-        api, data=body,
-        headers={"Content-Type": "application/json",
-                 "Authorization": f"Bearer {token}"})
-    with urllib.request.urlopen(req, timeout=5) as r:
-        out = json.load(r)
-    if "error" in out:
-        sys.exit(f"cannot list projects: {out['error']}")
-    seen = []
-    for n in out["result"].get("nodes", []):
-        p = (n.get("properties") or {}).get("path")
-        p = p.get("$value") if isinstance(p, dict) else p
-        if p and p not in seen:
-            seen.append(p)
-    return seen
-
-
 if explicit:
     dirs = [explicit]
 else:
     try:
-        dirs = known_projects()
+        dirs = known_projects(daemon_env, api, plane)
     except Exception as e:
         sys.exit(f"cannot reach the daemon to list projects ({type(e).__name__}); "
                  "pass a project-dir to check just one")

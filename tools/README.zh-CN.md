@@ -155,7 +155,14 @@ python3 migrate.py load --api http://127.0.0.1:7700/rpc --token <new token> \
 - **template 更新**——某次安装被遗漏。对该项目重新运行 `install.sh`。
 - **deployment 更新**——有人直接编辑了 hook。把它复制回 `templates/hooks/` 并提交，**否则下一次安装会静默地将其覆盖**。这并非假设：这个选项正是因此而存在。
 
-不带项目目录时，列表来自 memory plane 的 `Project` 节点——与 recall 遍历的是同一份列表。安装过但从未记录的项目在这里不可见，原因也正是它对 recall 不可见；这比再维护一份可能不一致的 registry 更有用。
+不带项目目录时，列表来自 memory plane 的 `Project` 节点——与 recall 遍历的是同一份列表。安装过但从未记录的项目在这里不可见，原因也正是它对 recall 不可见；这比再维护一份可能不一致的 registry 更有用。`install.sh --check` 和 `setup.sh --all-projects` 共用 `project_registry.py` 读取项目列表；`--env` 可选择 daemon 环境文件，而非使用默认文件。脚本可用 `--nul` 请求 NUL 分隔的路径：
+
+```bash
+python3 ~/.drsg-memory/tools/project_registry.py --nul
+python3 ~/.drsg-memory/tools/project_registry.py --env <daemon-env-file> --nul
+```
+
+项目已安装的 hooks 与运行时模板不一致时，SessionStart 会通过一行人类可见提示给出带 shell 引号的刷新命令。它只报告漂移，不会自动运行安装器；请由用户执行提示中的命令。若 `drsg` 不在 `PATH`，加 `--bin <路径>`。
 
 ## 全量分层部署审计（`--audit`）
 

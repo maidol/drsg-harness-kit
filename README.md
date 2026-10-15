@@ -278,9 +278,26 @@ no database. Re-running `setup.sh` is also required to register newly added glob
 (such as `textual-tool-call-guard.py`) into `~/.claude/settings.json`. Add `--project DIR` when what you edited was under
 `tools/templates/hooks/`: a bare run refreshes `~/.drsg-memory/tools/` only,
 leaving each project's `.claude/hooks/` on the previous copy — the drift
-`install.sh --check` reports afterwards. The router and usage report are bundled but their project
-configuration is opt-in: use `--router DIR`, `--usage-report DIR`, or explicit
-`--hub DIR` for both; `--project` and `--repo` alone install neither.
+`install.sh --check` reports afterwards. To refresh every registered project's
+memory hooks in one pass, use `--all-projects`; it runs global setup once,
+skips missing directories or projects without `.drsg/env`, and continues after
+individual failures:
+
+```bash
+/tmp/drsg-harness-kit-*/setup.sh --all-projects --bin /path/to/drsg
+```
+
+```text
+ok /path/to/project-a
+skipped /path/to/archive (directory missing)
+skipped /path/to/project-b (no .drsg/env)
+FAILED /path/to/project-c (log: <per-project log path>)
+summary: 1 ok, 1 failed, 2 skipped
+```
+
+The router and usage report are bundled but their project configuration is opt-in:
+use `--router DIR`, `--usage-report DIR`, or explicit `--hub DIR` for both;
+`--project` and `--repo` alone install neither.
 
 ## Textual tool call stop guard (`textual-tool-call-guard.py`)
 
