@@ -506,13 +506,19 @@ def rank_facts(prompt, facts):
     is rare *everywhere* is the one worth ranking on."""
     pgrams = set(grams(clean(prompt)))
     df = {}
+    fgrams = []
     for f in facts:
-        for g in set(grams(f["clean"])):
+        gs = set(grams(f["clean"]))
+        fgrams.append(gs)
+        for g in gs:
             df[g] = df.get(g, 0) + 1
     n = len(facts)
     scored = []
-    for f in facts:
-        sc = sum(math.log(1.0 + n / df.get(g, n)) for g in pgrams if g in f["clean"])
+    # Walk each Fact's own grams, not the prompt's: a Fact has a few hundred,
+    # a pasted prompt can have hundreds of thousands, and the old prompt-side
+    # loop let one long paste run past the hook's 10 s timeout (G-1).
+    for f, gs in zip(facts, fgrams):
+        sc = sum(math.log(1.0 + n / df[g]) for g in gs if g in pgrams)
         if sc > 0:
             scored.append((sc, f))
     # Sort on the score alone — tuples carrying dicts blow up on a tie.
