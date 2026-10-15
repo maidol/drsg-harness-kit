@@ -2,7 +2,7 @@
 # Isolated lease-transition, manual-takeover and wake-safety contracts.
 set -eu
 HERE="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
-python3 - "$HERE/../tools/event-poller.py" "$HERE/../tools/templates/hooks/user_prompt.py" <<'PY'
+python3 - "$HERE/../tools/event-poller.py" "$HERE/../tools/templates/hooks/user_prompt.py" "$HERE/../tools/templates/hooks/session_start.py" <<'PY'
 import contextlib
 import hashlib
 import importlib.util
@@ -15,7 +15,8 @@ import tempfile
 import time
 from unittest import mock
 
-POLLER_PATH, USER_PROMPT_PATH = sys.argv[1:3]
+POLLER_PATH, USER_PROMPT_PATH, SESSION_START_PATH = sys.argv[1:4]
+POLLER_PATH = os.environ.get("POLLER", POLLER_PATH)
 
 def load(name, path):
     spec = importlib.util.spec_from_file_location(name, path)
@@ -25,6 +26,7 @@ def load(name, path):
 
 poller = load("poller_under_test", POLLER_PATH)
 user_prompt = load("user_prompt_under_test", USER_PROMPT_PATH)
+session_start = load("session_start_under_test", SESSION_START_PATH)
 with mock.patch.dict(os.environ, {"EVENT_POLL_TEST_MIN_LIFETIME": "0.25"}):
     poller_override = load("poller_test_override", POLLER_PATH)
 ran = 0
@@ -235,7 +237,7 @@ with tempfile.TemporaryDirectory(prefix="poller-lease-contract-") as temp:
                 result = poller.poll(project, str(state), "new-owner")
                 elapsed = time.monotonic() - started
         check(label, result, 2 if lower < elapsed < upper else "elapsed-out-of-range")
-        check(label + " writes seen key", "event" in read_json(state / "new-owner.901.seen.json"), True)
+        check(label + " writes seen key", "event" in read_json(state / "new-owner.901.seen.json").get("events", {}), True)
         check(label + " wake identifies fresh owner", "本会话现在持有本项目的 Event owner 租约" in capture.getvalue(), True)
 
     # A newly acquired lease with no Events does not wake; UserPromptSubmit shows the delayed owner change.
@@ -252,7 +254,12 @@ with tempfile.TemporaryDirectory(prefix="poller-lease-contract-") as temp:
              mock.patch.object(poller, "open_events", return_value=[]), \
              mock.patch.object(poller, "wait", side_effect=StopIteration), \
              contextlib.redirect_stderr(io.StringIO()) as wake_stderr:
-            before = user_prompt.event_owner(project, "delayed")
+            with mock.patch.object(user_prompt, "_proc", return_value=(92, "S")), \
+                 mock.patch.object(user_prompt, "_claude_pid", return_value=902):
+                before = user_prompt.event_owner(project, "delayed")
+            with mock.patch.object(session_start, "_proc", return_value=(92, "S")), \
+                 mock.patch.object(session_start, "_claude_pid", return_value=902):
+                before_session_start = session_start.event_owner(project, "delayed")
             try:
                 poller.poll(project, str(state), "delayed")
             except StopIteration:
@@ -262,6 +269,13 @@ with tempfile.TemporaryDirectory(prefix="poller-lease-contract-") as temp:
                 after = user_prompt.event_owner(project, "delayed")
     check("no-Event acquisition creates no model wake", wake_stderr.getvalue(), "")
     check("owner is read-only before lease acquisition", "现在没有 Event owner" in before, True)
+    temporary_owner = "轮询器通常会在几秒内取得租约并稍后唤醒本会话；收到那次唤醒后，以它为准。"
+    check("SessionStart says no-owner is a temporary snapshot", temporary_owner in before_session_start, True)
+    check("UserPromptSubmit says no-owner is a temporary snapshot", temporary_owner in before, True)
+    check("SessionStart remains read-only before the wake", "本会话只读" in before_session_start, True)
+    check("default-lane no-owner message is identical across hooks",
+          before_session_start, before)
+    check("UserPromptSubmit remains read-only before the wake", "本会话只读" in before, True)
     check("delayed owner lease is written", {key: read_json(state / "lease.json").get(key) for key in ("session_id", "pid", "start", "bg")}, {"session_id": "delayed", "pid": 902, "start": 92, "bg": False})
     check("next prompt announces newly acquired owner", after, "本会话是这个项目的 Event owner，现持有租约：可以处理本项目的待办 Event；按 Event 流程处理。")
 
@@ -275,6 +289,14 @@ with tempfile.TemporaryDirectory(prefix="poller-lease-contract-") as temp:
     expected_legacy = "\n".join(["【待办轮询】本项目有 1 条新的待办 Event（drsg-events）：", "- e1 [handoff] x", "按 CLAUDE.md 的 Event 流程处理：读 ref 指的文档，照做；做完发回执（notice）并 event_done。", "例外：summary 以「验收通过：」开头的判定只需 event_done，不要为它回 notice；回执的回执只会让对方多关一次单。", "收到 handoff 直接开工，不要先回「已读」「已收到，准备先写计划」这类 notice；回给发件方的第一条应是回执，或卡住时要问的问题。", "照旧要先停下等用户确认的：git commit、push、开 PR、改锁文件、任何不可逆操作。", "动手前先看工作区和 git 状态：另一个会话可能做过一半（本条可能是接管后重发），已做过的不要重复改。"])
     check("ordinary wake text remains byte-for-byte unchanged", legacy, expected_legacy)
     check("fresh wake states current owner permission", "本会话现在持有本项目的 Event owner 租约" in fresh, True)
+    supersession = "启动时的“没有 Event owner / 本会话只读”快照已过时；以本次唤醒为准。"
+    if os.environ.get("ONLY") == "fresh-wake":
+        ran = ok = 0
+        check("fresh wake supersedes the startup snapshot", supersession in fresh, True)
+        print("\nPASS %d/%d" % (ok, ran))
+        sys.exit(1 if ok != ran else 0)
+    check("fresh wake supersedes the startup snapshot", supersession in fresh, True)
+    check("ordinary wake does not claim fresh ownership", supersession not in legacy, True)
 
     # User-only --take resolves exactly one SID, atomically moves only its lease, and exits without polling.
     def manual_case(name, sid_files, env_sid="", project_has_env=True,

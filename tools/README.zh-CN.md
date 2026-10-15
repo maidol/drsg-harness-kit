@@ -300,6 +300,7 @@ Bash 的 `git commit` 仍保留 `ask` 规则，照样会问你：
 - **每个项目只有一个轮询，靠租约保证。** 同一目录开两个会话时，两边都会去处理同一条 Event。所以轮询权是一份租约，记的是会话和它的 Claude Code 进程（pid 加启动时间），而不是轮询进程持有的文件锁。原因是：轮询进程要退出才能唤醒模型，锁如果随进程一起释放，就会在第一个会话刚开始干活时把项目交给另一个会话。持有者的进程消失后，等待中的会话一分钟内接管；不论持有者是正常退出（`SessionEnd` 会释放租约），还是被强行结束。被挂起（`Ctrl+Z`，状态 `T`）或成了僵尸进程的持有者也算已经不在：它已经处理不了唤醒。持有者进程还活着、但它的轮询进程死了（被杀或崩溃：`<会话>.<pid>.pid` 里记的进程已经不在）时，租约超过 `EVENT_POLL_LEASE_STALE` 秒（默认是 5 个 `EVENT_POLL_TICK`，即 300 秒）没刷新就会被接管。轮询进程为唤醒模型而退出时会先删掉这个文件，所以正在处理唤醒的会话不管做多久都不会被抢。持有者只是空闲、轮询还活着时，不会自动接管，要用 `event_take` 或 `--take`。
 - **后台会话让给前台会话。** 后台会话（`claude --bg`，挂在 `claude bg-pty-host` 下）里 `/exit` 只是 detach，进程还活着，租约也就一直占着。Claude Code 不对外暴露「有没有客户端连着」，所以只要持有者是后台会话，同项目的前台会话一分钟内就会接管——你正 attach 着的后台会话也一样。后台会话之间不互相抢。`claude stop <id>` 仍会立即释放。
 - **由 `Stop` 重新拉起。** 唤醒后轮询进程就退出了，下一次 `Stop` 会再把它启动起来；如果它已经在运行，这次 `Stop` 拉起的进程会立刻退出。
+- **仍未关闭的 handoff 只再提醒一次。** 首次唤醒后，如果 handoff 仍处于 open 状态，等待 `EVENT_POLL_RENUDGE` 秒（默认 `1800`）会再通知一次。可在 poller 的环境中设置 `EVENT_POLL_RENUDGE=600`，改为十分钟。单独的提醒会说明已等待多久，并要求继续现有工作，或发 notice 告诉发件方正在等什么。这是同一条 Event 的一次重试，不是新 Event，也不改变租约；notice 不会重复提醒。
 - **发件方会踢一下。** `event.py post()`（`drsg-events` 的 MCP 工具也走它）写完 Event 后，如果收件项目的状态目录存在，就 touch 其中的 `kick` 文件。等待中的轮询进程每秒 stat 一次这个文件（`EVENT_POLL_KICK_STEP`），一变就立刻查 daemon，所以空闲会话一两秒内就能看到新 Event，不用等下一次 15 分钟的定时查询。只在同一台机器上有效；没踢到时仍由 15 分钟的定时查询兜底。
 - **出错时不出声。** 没有 `.drsg/env`、daemon 没起来、返回结果不对，都只记日志，下一轮再试，不会唤醒模型。
 - 状态和日志在 `~/.drsg-memory/poller/<项目哈希>/`（`lease.json`，用了车道时还有 `lease.<车道>.json` 和 `claims.json`；`<会话>.<pid>.seen.json`、`<会话>.<pid>.pid`、`poller.log`；`<pid>` 是 Claude Code 进程）。测试时可以用 `EVENT_POLL_INTERVAL`、`EVENT_POLL_TICK`（单位：秒）调短间隔；`EVENT_POLL_OWNER_PID` 在轮询脚本和 hook 的 owner 行里代替 Claude Code 进程。
@@ -309,7 +310,7 @@ Bash 的 `git commit` 仍保留 `ask` 规则，照样会问你：
   ```text
   本会话是这个项目的 Event owner：按 Event 流程处理。
   Event owner 是会话 f8e05069（pid 3651），本会话只读：……不要执行这些 Event；本会话调 event_done 会被拒绝，用户明确要求本会话接手时才带 force。……
-  现在没有 Event owner。本会话的待办轮询拿到租约后会唤醒你；在那之前本会话只读，不要执行这些 Event。
+  现在没有 Event owner（只是当前快照）。轮询器通常会在几秒内取得租约并稍后唤醒本会话；收到那次唤醒后，以它为准。在那之前本会话只读，不要执行这些 Event。
   ```
 
   owner 的会话记录（`~/.claude/projects/<项目>/<会话>.jsonl`）一小时以上没有更新时，这一行会写明空闲多久：`Event owner 是会话 f8e05069（pid 3651，已空闲 5 小时）…`，车道写成 `any-auto-register（会话 f8e05069，已空闲 5 小时）`。VS Code 窗口关掉后，丢掉的终端进程还活着，租约也就一直占着：用 `Terminal: Attach to Session` 找回那个终端执行 `/exit`，或者结束那个 pid，本会话的轮询就会接管。
@@ -328,7 +329,7 @@ Bash 的 `git commit` 仍保留 `ask` 规则，照样会问你：
   本会话是车道 any-auto-register 的 Event owner：只执行待办轮询唤醒你处理的 Event；列表里其他 Event 只读，不要执行，也不要 event_done。
   本会话是这个项目的 Event owner：按 Event 流程处理。车道 any-auto-register 的 Event 归各自的车道会话，本会话对它们只读：不要执行，也不要 event_done。
   本会话声明的车道 any-auto-register（会话 f8e05069）由别的会话持有，本会话只读：不要执行这些 Event。owner 退出后，本会话的待办轮询会接管并唤醒你。
-  本会话声明的车道 sub2api 现在没有 Event owner。本会话的待办轮询拿到租约后会唤醒你；在那之前本会话只读，不要执行这些 Event。
+  本会话声明的车道 sub2api 现在没有 Event owner（只是当前快照）。轮询器通常会在几秒内取得租约并稍后唤醒本会话；收到那次唤醒后，以它为准。在那之前本会话只读，不要执行这些 Event。
   ```
 
   没有任何会话持有默认车道（`lease.json`）时，车道会话的这一行末尾还会多一句：`默认车道现在没有 Event owner：没有车道的发件项目发来的 Event 不会唤醒任何会话；要有人处理，开一个不声明车道的会话。` 只开车道会话、没开默认会话时，其余发件项目的 Event 没人处理，这句就是用来提醒这一点的。

@@ -37,6 +37,8 @@ import sys
 import time
 
 INTERVAL = int(os.environ.get("EVENT_POLL_INTERVAL", "900"))   # 15 minutes
+EVENT_POLL_RENUDGE = int(os.environ.get("EVENT_POLL_RENUDGE", "1800"))
+SEEN_VERSION = 1
 TICK = int(os.environ.get("EVENT_POLL_TICK", "60"))             # takeover latency
 # A lease not refreshed for this long, whose holder's poller is dead, is free.
 LEASE_STALE = int(os.environ.get("EVENT_POLL_LEASE_STALE", str(5 * TICK)))
@@ -199,6 +201,36 @@ def read_json(path, default):
             return json.load(f)
     except (OSError, ValueError):
         return default
+
+
+def empty_seen():
+    return {"version": SEEN_VERSION, "events": {}}
+
+
+def seen_state(value):
+    if isinstance(value, list):
+        events = {key: {"first_wake": None, "renudged": True}
+                  for key in value if isinstance(key, str)}
+        state = {"version": SEEN_VERSION, "events": events}
+        return state, state != value
+    if isinstance(value, dict) and isinstance(value.get("events"), dict):
+        if value.get("version") != SEEN_VERSION:
+            events = {key: {"first_wake": None, "renudged": True}
+                      for key in value["events"] if isinstance(key, str)}
+        else:
+            events = {}
+            for key, entry in value["events"].items():
+                if not isinstance(key, str) or not isinstance(entry, dict):
+                    continue
+                first_wake = entry.get("first_wake")
+                if isinstance(first_wake, bool) or not isinstance(first_wake, (int, float)):
+                    first_wake = None
+                events[key] = {"first_wake": first_wake,
+                               "renudged": bool(entry.get("renudged"))}
+        state = {"version": SEEN_VERSION, "events": events}
+        return state, state != value
+    state = empty_seen()
+    return state, state != value
 
 
 def write_json(path, data):
@@ -388,8 +420,12 @@ def open_events(project):
     return out
 
 
-def wake_text(new, fresh=False):
-    lines = ["【待办轮询】本项目有 %d 条新的待办 Event（drsg-events）：" % len(new)]
+def wake_text(new, fresh=False, renudged=None):
+    renudged = renudged or []
+    if not new and renudged:
+        lines = ["【待办轮询】有 %d 条仍未处理的 handoff 到了再提醒时间：" % len(renudged)]
+    else:
+        lines = ["【待办轮询】本项目有 %d 条新的待办 Event（drsg-events）：" % len(new)]
     for e in new:
         lines.append("- %s [%s] %s" % (e["key"], e["kind"], e["summary"]))
         if e.get("ref"):
@@ -401,6 +437,13 @@ def wake_text(new, fresh=False):
             lines.append("  ↳ 回复你发出的 %s：%s" % (e["reply_to"], summary))
     if fresh:
         lines.append("本会话现在持有本项目的 Event owner 租约，可以处理下面列出的 Event。")
+        lines.append("启动时的“没有 Event owner / 本会话只读”快照已过时；以本次唤醒为准。")
+    if renudged:
+        lines.append("仍未处理的 handoff：")
+        for e in renudged:
+            lines.append("- %s [handoff] %s" % (e["key"], e["summary"]))
+            lines.append("  ↻ 再提醒（已等待 %d 分钟）" % e["re_nudge_minutes"])
+        lines.append("如果你已经在处理这条，继续做完就行，不要重做；如果你把它挂起了，现在继续，或者给发件方发一条 notice，写明在等什么。")
     lines += [
         "按 CLAUDE.md 的 Event 流程处理：读 ref 指的文档，照做；做完发回执（notice）并 event_done。",
         "例外：summary 以「验收通过：」开头的判定只需 event_done，不要为它回 notice；回执的回执只会让对方多关一次单。",
@@ -429,7 +472,6 @@ def poll(project, state, sid):
         write_json(pidfile, {"pid": os.getpid(), "start": proc_start(os.getpid())})
         sweep_seen(state, tag(sid, pid))
     seen_path = os.path.join(state, tag(sid, pid) + ".seen.json")
-    seen = set(read_json(seen_path, []))
     next_check = 0
     kick = os.path.join(state, "kick")
     kicked = mtime(kick)
@@ -440,7 +482,8 @@ def poll(project, state, sid):
             release(state, sid, pid, start)
             diagnostic(state, "poll_owner_gone", sid, pid)
             return 0
-        seen = set(read_json(seen_path, []))
+        raw_seen = read_json(seen_path, [])
+        seen, needs_migration = seen_state(raw_seen)
         k = mtime(kick)
         if k != kicked:                                  # a sender just posted here
             kicked, next_check = k, 0
@@ -454,30 +497,49 @@ def poll(project, state, sid):
             # A new owner is told about every open Event again, including the
             # ones a previous owner (or this process, before it lost the lease)
             # was woken for: nobody can tell "half done" from "never started".
-            seen.clear()
-            write_json(seen_path, [])
+            seen = empty_seen()
+            write_json(seen_path, seen)
+            needs_migration = False
             next_check = 0
         if held and time.time() >= next_check:
             next_check = time.time() + INTERVAL
             try:
                 events = open_events(project)
                 prune_claims(state, events)
-                new = [e for e in events if e["key"] not in seen and lane_of(state, e) in held]
+                now = time.time()
+                new = [e for e in events
+                       if e["key"] not in seen["events"] and lane_of(state, e) in held]
+                renudged = []
+                for e in events:
+                    entry = seen["events"].get(e["key"], {})
+                    first_wake = entry.get("first_wake")
+                    if (e.get("kind") == "handoff" and not entry.get("renudged")
+                            and isinstance(first_wake, (int, float))
+                            and not isinstance(first_wake, bool)
+                            and now - first_wake >= EVENT_POLL_RENUDGE
+                            and lane_of(state, e) in held):
+                        item = dict(e)
+                        item["re_nudge_minutes"] = int((now - first_wake) // 60)
+                        renudged.append(item)
             except Exception as exc:                     # daemon down, bad answer: retry later
                 log(state, "check failed: %r" % (exc,))
                 new = []
-            if new:
-                remaining = MIN_POLL_LIFETIME - (time.monotonic() - poll_started_at)
-                if remaining > 0:
-                    time.sleep(remaining)
+                renudged = []
+            if new or renudged or needs_migration:
+                had_work = bool(new or renudged)
+                if had_work:
+                    remaining = MIN_POLL_LIFETIME - (time.monotonic() - poll_started_at)
+                    if remaining > 0:
+                        time.sleep(remaining)
                 with Locked(state):
                     still = {lane for lane in held if holds(read_json(os.path.join(
                         state, event_module().lease_name(lane)), {}), sid, pid, start)}
                     new = [e for e in new if lane_of(state, e) in still]
-                    if still and not new:
+                    renudged = [e for e in renudged if lane_of(state, e) in still]
+                    if had_work and still and not new and not renudged:
                         # Still an owner, but another lane claimed these first.
                         continue
-                    if not new:
+                    if had_work and not new and not renudged:
                         log(state, "wake cancelled: lease lost by %s" % tag(sid, pid))
                         try:
                             os.remove(pidfile)
@@ -485,17 +547,29 @@ def poll(project, state, sid):
                             pass
                         diagnostic(state, "poll_lease_lost_before_wake", sid, pid)
                         return 0
-                    claim(state, new)
-                    seen.update(e["key"] for e in new)
-                    write_json(seen_path, sorted(seen))
-                    log(state, "wake %s: %s" % (sid, ",".join(e["key"] for e in new)))
-                    try:
-                        os.remove(pidfile)
-                    except OSError:
-                        pass
-                sys.stderr.write(wake_text(new, fresh=fresh) + "\n")
-                diagnostic(state, "poll_wake", sid, pid)
-                return 2                                 # lease stays with this session
+                    if not had_work and still and needs_migration:
+                        write_json(seen_path, seen)
+                        needs_migration = False
+                    if new or renudged:
+                        if new:
+                            claim(state, new)
+                        woke_at = time.time()
+                        for e in new:
+                            seen["events"][e["key"]] = {
+                                "first_wake": woke_at, "renudged": False}
+                        for e in renudged:
+                            seen["events"][e["key"]]["renudged"] = True
+                        write_json(seen_path, seen)
+                        keys = [e["key"] for e in new + renudged]
+                        log(state, "wake %s: %s" % (sid, ",".join(keys)))
+                        try:
+                            os.remove(pidfile)
+                        except OSError:
+                            pass
+                if new or renudged:
+                    sys.stderr.write(wake_text(new, fresh=fresh, renudged=renudged) + "\n")
+                    diagnostic(state, "poll_wake", sid, pid)
+                    return 2                                 # lease stays with this session
         wait(kick, kicked, TICK)
 
 

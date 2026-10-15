@@ -55,11 +55,13 @@ project = ev.rpc("node.create", {"plane": "memory", "key": "proj-open-window",
                                  "properties": {"path": proj}}, token)
 
 
-def event(key, status, created_at):
+def event(key, status, created_at, kind="notice", seen_at=None):
+    properties = {"kind": kind, "status": status, "summary": key,
+                  "from_project": "sender", "created_at": created_at}
+    if seen_at is not None:
+        properties["seen_at"] = seen_at
     ev.rpc("node.create", {"plane": "memory", "key": key, "labels": ["Event"],
-                           "properties": {"kind": "notice", "status": status,
-                                          "summary": key, "from_project": "sender",
-                                          "created_at": created_at}}, token)
+                           "properties": properties}, token)
     ev.rpc("edge.create", {"plane": "memory", "src": key, "dst": project["id"],
                            "type": "NOTIFY"}, token)
 
@@ -72,11 +74,12 @@ for i in range(25):
 ran = ok = 0
 
 
-def check(name, cond):
+def check(name, cond, want=True):
     global ran, ok
     ran += 1
-    ok += bool(cond)
-    print("%s %s" % ("ok  " if cond else "FAIL", name))
+    passed = cond == want
+    ok += bool(passed)
+    print("%s %s" % ("ok  " if passed else "FAIL", name))
 
 
 # 1. event.fetch with status pushed down.
@@ -133,6 +136,45 @@ nodes = [{"external_key": k, "properties": {"status": s, "created_at": c}}
                          ("old-done", "done", now - 30 * 86400)]]
 check("stale_open counts only open Events past 7 days",
       ev.stale_open(nodes, now) == ["old-open"])
+
+# Seen open handoffs have a separate 24-hour reminder, independent of the seven-day line.
+now = int(time.time())
+seen_cases = [
+    ("seen-old", "handoff", "open", now - 86401),
+    ("seen-boundary", "handoff", "open", now - 86400),
+    ("seen-recent", "handoff", "open", now - 86399),
+    ("unseen-old", "handoff", "open", None),
+    ("notice-old", "notice", "open", now - 2 * 86400),
+    ("done-old", "handoff", "done", now - 2 * 86400),
+    ("nonnumeric-old", "handoff", "open", "yesterday"),
+]
+for key, kind, status, seen_at in seen_cases:
+    if seen_at != "yesterday" and key != "seen-boundary":
+        event("evt-" + key, status, now, kind=kind, seen_at=seen_at)
+
+nodes = [{"external_key": "evt-" + key,
+          "properties": {"kind": kind, "status": status, "seen_at": seen_at}}
+         for key, kind, status, seen_at in seen_cases]
+stale_seen_handoffs = getattr(ev, "stale_seen_handoffs", lambda _events, _now=None: [])
+check("24-hour receipt helper includes only older open handoffs",
+      stale_seen_handoffs(nodes, now), ["evt-seen-old"])
+
+expected_seen_line = "1 open handoff seen over 24 hours ago (follow up): evt-seen-old"
+expected_old_line = "1 open Event older than 7 days (act on or close): evt-old-open"
+updated_events = ev.fetch(proj, token, status="open")
+check("stale_open_line adds a distinct seen-handoff line",
+      expected_seen_line in ev.stale_open_line(updated_events))
+
+buf = io.StringIO()
+with contextlib.redirect_stdout(buf):
+    ev.cmd_list(types.SimpleNamespace(project=proj), token)
+cli_out = buf.getvalue()
+check("event.py list reports the seen handoff", expected_seen_line in cli_out)
+check("event.py list preserves the exact seven-day line", expected_old_line in cli_out)
+
+mcp_out = mcp.call_tool("event_list", {"project": proj}, token)
+check("MCP event_list reports the seen handoff", expected_seen_line in mcp_out)
+check("MCP event_list preserves the exact seven-day line", expected_old_line in mcp_out)
 
 print("PASS %d/%d" % (ok, ran))
 sys.exit(0 if ok == ran else 1)

@@ -481,6 +481,13 @@ there is one this session has not been told about yet.
   at once.
 - **Re-armed by `Stop`.** After a wake-up the poller is gone; the next `Stop`
   starts it again. A `Stop` while it is running exits at once.
+- **One re-nudge for a still-open handoff.** After its first wake, a handoff that
+  remains open is announced once more after `EVENT_POLL_RENUDGE` seconds (default
+  `1800`). Set `EVENT_POLL_RENUDGE=600` in the poller's environment for ten
+  minutes. The separate wake says how long it has waited and asks to continue
+  existing work or send the sender a notice explaining what is awaited. This is
+  one retry for the same Event, not a new Event or a lease change; notices are
+  never re-nudged.
 - **Kicked by the sender.** After writing an Event, `event.py post()` (which the
   `drsg-events` MCP tool also goes through) touches `kick` in the recipient's
   state directory, if that directory exists. A waiting poller stats that file
@@ -510,7 +517,7 @@ there is one this session has not been told about yet.
   ```text
   本会话是这个项目的 Event owner：按 Event 流程处理。
   Event owner 是会话 f8e05069（pid 3651），本会话只读：……不要执行这些 Event；本会话调 event_done 会被拒绝，用户明确要求本会话接手时才带 force。……
-  现在没有 Event owner。本会话的待办轮询拿到租约后会唤醒你；在那之前本会话只读，不要执行这些 Event。
+  现在没有 Event owner（只是当前快照）。轮询器通常会在几秒内取得租约并稍后唤醒本会话；收到那次唤醒后，以它为准。在那之前本会话只读，不要执行这些 Event。
   ```
 
   When the owner's transcript (`~/.claude/projects/<project>/<session>.jsonl`)
@@ -546,7 +553,7 @@ there is one this session has not been told about yet.
   本会话是车道 any-auto-register 的 Event owner：只执行待办轮询唤醒你处理的 Event；列表里其他 Event 只读，不要执行，也不要 event_done。
   本会话是这个项目的 Event owner：按 Event 流程处理。车道 any-auto-register 的 Event 归各自的车道会话，本会话对它们只读：不要执行，也不要 event_done。
   本会话声明的车道 any-auto-register（会话 f8e05069）由别的会话持有，本会话只读：不要执行这些 Event。owner 退出后，本会话的待办轮询会接管并唤醒你。
-  本会话声明的车道 sub2api 现在没有 Event owner。本会话的待办轮询拿到租约后会唤醒你；在那之前本会话只读，不要执行这些 Event。
+  本会话声明的车道 sub2api 现在没有 Event owner（只是当前快照）。轮询器通常会在几秒内取得租约并稍后唤醒本会话；收到那次唤醒后，以它为准。在那之前本会话只读，不要执行这些 Event。
   ```
 
   When no session holds the default lane (`lease.json`), a lane session's line

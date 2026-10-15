@@ -672,13 +672,33 @@ def stale_open(events, now=None):
             if isinstance(c, (int, float)) and c < cutoff]
 
 
+def stale_seen_handoffs(events, now=None):
+    """Keys of open handoffs seen more than 24 hours ago, oldest receipt first."""
+    now = now if now is not None else time.time()
+    cutoff = now - 24 * 60 * 60
+    old = []
+    for n in events:
+        props = n.get("properties") or {}
+        seen_at = props.get("seen_at")
+        if (props.get("kind") == "handoff" and props.get("status") == "open"
+                and isinstance(seen_at, (int, float)) and not isinstance(seen_at, bool)
+                and seen_at < cutoff):
+            old.append((seen_at, n.get("external_key")))
+    return [key for _, key in sorted(old, key=lambda row: (row[0], row[1] or "")) if key]
+
+
 def stale_open_line(events):
-    """One line naming the open Events older than STALE_OPEN_DAYS, or ""."""
+    """Lines naming old open Events and seen handoffs that need follow-up."""
+    lines = []
     keys = stale_open(events)
-    if not keys:
-        return ""
-    return "%d open Event%s older than %d days (act on or close): %s" % (
-        len(keys), "" if len(keys) == 1 else "s", STALE_OPEN_DAYS, ", ".join(keys))
+    if keys:
+        lines.append("%d open Event%s older than %d days (act on or close): %s" % (
+            len(keys), "" if len(keys) == 1 else "s", STALE_OPEN_DAYS, ", ".join(keys)))
+    handoffs = stale_seen_handoffs(events)
+    if handoffs:
+        lines.append("%d open handoff%s seen over 24 hours ago (follow up): %s" % (
+            len(handoffs), "" if len(handoffs) == 1 else "s", ", ".join(handoffs)))
+    return "\n".join(lines)
 
 
 def cmd_list(args, token):

@@ -365,7 +365,8 @@ def _lane_owner_line(state, sid, me, lanes, proj_dir):
     if taken:
         return ("本会话声明的车道 %s 由别的会话持有，本会话只读：不要执行这些 Event。"
                 "owner 退出后，本会话的待办轮询会接管并唤醒你。" % "、".join(taken)) + note
-    return ("本会话声明的车道 %s 现在没有 Event owner。本会话的待办轮询拿到租约后会唤醒你；"
+    return ("本会话声明的车道 %s 现在没有 Event owner（只是当前快照）。"
+            "轮询器通常会在几秒内取得租约并稍后唤醒本会话；收到那次唤醒后，以它为准。"
             "在那之前本会话只读，不要执行这些 Event。" % "、".join(lanes)) + note
 
 
@@ -399,8 +400,8 @@ def event_owner(proj_dir, sid):
                     "不要执行这些 Event；本会话调 event_done 会被拒绝，用户明确要求本会话接手时才带 force。"
                     "owner 退出后，本会话的待办轮询会接管并唤醒你，到时再处理。"
                     % (str(lease.get("session_id"))[:8], holder, _hook_idle(proj_dir, lease)))
-        return ("现在没有 Event owner。本会话的待办轮询拿到租约后会唤醒你；"
-                "在那之前本会话只读，不要执行这些 Event。")
+        return ("现在没有 Event owner（只是当前快照）。轮询器通常会在几秒内取得租约并稍后唤醒本会话；"
+                "收到那次唤醒后，以它为准。在那之前本会话只读，不要执行这些 Event。")
     except Exception:
         return ""
 

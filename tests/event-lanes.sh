@@ -134,7 +134,12 @@ for h in session_start.py user_prompt.py; do
   check "L6 $h: lane owner"                  "$(EVENT_POLL_OWNER_PID=$B owner_line $h B | grep -c '本会话是车道 aar 的 Event owner')" 1
   check "L6 $h: second aar session is read-only" "$(EVENT_POLL_OWNER_PID=$C owner_line $h C | grep -c '由别的会话持有，本会话只读')" 1
   check "L6 $h: lane without an owner yet"   "$(EVENT_POLL_OWNER_PID=$K owner_line $h K | grep -c '车道 drsg-harness-kit 现在没有 Event owner')" 1
+  check "L6 $h: later wake supersedes the snapshot" "$(EVENT_POLL_OWNER_PID=$K owner_line $h K | grep -c '轮询器通常会在几秒内取得租约并稍后唤醒本会话；收到那次唤醒后，以它为准。')" 1
+  check "L6 $h: remains read-only until that wake" "$(EVENT_POLL_OWNER_PID=$K owner_line $h K | grep -c '在那之前本会话只读，不要执行这些 Event。')" 1
 done
+check "L6 unowned-lane message is identical across hooks" \
+  "$(EVENT_POLL_OWNER_PID=$K owner_line session_start.py K)" \
+  "$(EVENT_POLL_OWNER_PID=$K owner_line user_prompt.py K)"
 for h in session_start.py user_prompt.py; do
   check "L6 $h: default lane owned, no default-lane note" "$(EVENT_POLL_OWNER_PID=$B owner_line $h B | grep -c '默认车道现在没有 Event owner')" 0
 done
@@ -197,4 +202,4 @@ check "L8 bad lane name is refused"                  "$(EVENT_POLL_OWNER_PID=$C 
 fi
 
 echo "PASS $OK/$RAN"
-[ "$OK" -eq "$RAN" ] && { [ -n "${ONLY:-}" ] || [ "$RAN" -eq 51 ]; }
+[ "$OK" -eq "$RAN" ] && { [ -n "${ONLY:-}" ] || [ "$RAN" -eq 56 ]; }
