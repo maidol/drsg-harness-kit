@@ -85,6 +85,10 @@ def load_rules(list_path):
                 continue
             if line.startswith("re:"):
                 pattern_str = line[3:].strip()
+                if not pattern_str:
+                    # An empty pattern matches every line: a typo, not a rule.
+                    rules.append((idx, "invalid", None, "empty regex (it would match every line)"))
+                    continue
                 try:
                     compiled = re.compile(pattern_str, re.IGNORECASE)
                     rules.append((idx, True, compiled, None))
@@ -265,6 +269,15 @@ def main():
     rules = load_rules(list_path)
     if not rules:
         sys.exit(0)
+    broken = [(idx, err) for idx, kind, _, err in rules if kind == "invalid"]
+    if broken:
+        # GRD-2: a broken list is a configuration error (exit 3), reported once
+        # against the list, not as a violation on every line it was run over.
+        sys.stderr.write("ERROR: forbidden-literals list %s has %d invalid rule(s); "
+                         "nothing was checked. Fix the list:\n" % (list_path, len(broken)))
+        for idx, err in broken:
+            sys.stderr.write("  line %d: %s\n" % (idx, err))
+        sys.exit(3)
 
     violations = []
     if args.commit_msg:

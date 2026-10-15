@@ -111,11 +111,28 @@ echo "modified line" >> "$REPO/base.txt"
 git -C "$REPO" add base.txt
 rc_p7=0
 out_p7=$(python3 "$GUARD" --repo "$REPO" --staged 2>&1) || rc_p7=$?
-check "scene8_p7_invalid_regex_yields_exit_1" "$rc_p7" "1"
+# GRD-2: a broken list is a configuration error (exit 3, as documented), not a
+# content violation pinned on every added line.
+check "scene8_p7_invalid_regex_yields_exit_3" "$rc_p7" "3"
 
 regex_not_leaked=0
 echo "$out_p7" | grep -q "invalid regex" && regex_not_leaked=1
 check "scene8_p7_reports_invalid_regex" "$regex_not_leaked" "1"
+blamed_line=0
+echo "$out_p7" | grep -q "base.txt:" && blamed_line=1
+check "scene8_grd2_invalid_regex_not_reported_against_content" "$blamed_line" "0"
+names_list_line=0
+echo "$out_p7" | grep -q "line 1: invalid regex" && names_list_line=1
+check "scene8_grd2_names_the_list_line" "$names_list_line" "1"
+
+# 场景 8c: GRD-2 空的 re: 会匹配一切，按配置错误拒绝
+echo "re:" > "$REPO/.drsg/forbidden-literals"
+rc_empty=0
+out_empty=$(python3 "$GUARD" --repo "$REPO" --staged 2>&1) || rc_empty=$?
+check "scene8c_grd2_empty_regex_yields_exit_3" "$rc_empty" "3"
+empty_named=0
+echo "$out_empty" | grep -q "line 1: empty regex" && empty_named=1
+check "scene8c_grd2_reports_empty_regex" "$empty_named" "1"
 
 # 还原 base.txt 与规则文件
 git -C "$REPO" checkout -q HEAD -- base.txt
