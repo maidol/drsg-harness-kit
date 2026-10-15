@@ -222,6 +222,18 @@ db_holder_pid() {
 # What a pid is listening on, and who holds an address — the two directions of
 # the same `ss` table.
 pid_addr()     { ss -ltnp 2>/dev/null | awk -v p="pid=$1," '$0 ~ p {print $4; exit}'; }
+# A daemon that already holds the database but has not bound its port yet (the
+# first seconds of a cold start) has no address. Give it up to 10 s rather than
+# report an empty address as a port mismatch; empty after that is a real fault.
+listen_addr() {
+  local addr="" _
+  for _ in $(seq 1 20); do
+    addr="$(pid_addr "$1")"
+    [ -n "$addr" ] && break
+    sleep 0.5
+  done
+  printf '%s' "$addr"
+}
 addr_holder()  { ss -ltnp 2>/dev/null | awk -v a="$1" '$4 == a {sub(/.*pid=/, ""); sub(/,.*/, ""); print; exit}'; }
 
 healthy() { curl -sf -m 2 "http://$ADDR/health" >/dev/null 2>&1; }
@@ -327,7 +339,11 @@ status() {
     echo "not running ($REPO: nothing holds its database; .mcp.json says $CFG_ADDR)"
     return 1
   fi
-  ADDR="$(pid_addr "$pid")"
+  ADDR="$(listen_addr "$pid")"
+  if [ -z "$ADDR" ]; then
+    echo "starting (pid $pid holds the database but is not listening yet) — $REPO; .mcp.json says $CFG_ADDR"
+    return 0
+  fi
   echo "running (pid $pid) on http://$ADDR/mcp — $REPO"
   if [ "$ADDR" != "$CFG_ADDR" ]; then
     echo "  WARNING: .mcp.json points at $CFG_ADDR — clients are looking at the wrong port"
@@ -673,7 +689,11 @@ doctor() {
     echo "  daemon      ** DOWN — nothing holds $DB (.mcp.json says $CFG_ADDR) **"
     return 1
   fi
-  ADDR="$(pid_addr "$pid")"
+  ADDR="$(listen_addr "$pid")"
+  if [ -z "$ADDR" ]; then
+    echo "  daemon      ** pid $pid holds $DB but is not listening (still starting, or stuck) **"
+    return 1
+  fi
   echo "  daemon      up on $ADDR (pid $pid)$([ "$ADDR" = "$CFG_ADDR" ] || echo "  ** .mcp.json says $CFG_ADDR **")"
   [ "$ADDR" = "$CFG_ADDR" ] || rc=1
   rpc plane.list '{}' > "$STATE/planes.json" 2>/dev/null || { echo "  plane       RPC failed"; return 1; }
