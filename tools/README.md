@@ -88,7 +88,8 @@ any Claude Code project                one shared daemon (~/.drsg-memory/)
 - **A compaction re-injects.** SessionStart also runs on `compact`, because a
   compaction drops the briefing and the protocol out of context while the
   session keeps going. That path stamps the existing Session node instead of
-  creating a second one.
+  creating a second one. After compact, SessionStart also injects model-only corrective
+  context explaining that the compaction instructions are no longer active.
 
 ## Prerequisites
 
@@ -247,8 +248,9 @@ the same list recall itself walks. A project installed but never recorded is
 invisible here for exactly the reason it is invisible to recall, which is more
 useful than a second registry that can disagree with the first. The shared
 `project_registry.py` reader is used by both `install.sh --check` and
-`setup.sh --all-projects`; `--env` selects the daemon environment file instead
-of the default. Scripts can request NUL-separated paths with:
+`setup.sh --all-projects`; it uses `DRSG_PLANE` to select the memory plane
+(default `memory`), and `--env` selects the daemon environment file instead of
+the default. Scripts can request NUL-separated paths with:
 
 ```bash
 python3 ~/.drsg-memory/tools/project_registry.py --nul

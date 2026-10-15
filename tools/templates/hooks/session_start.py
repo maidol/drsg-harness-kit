@@ -43,6 +43,7 @@ BRIEFING_FACT_CAP = 1000
 # fall with age, so the newest Facts are kept and the rest only counted. 2000
 # cut 6% of past injections, all in the largest project.
 BRIEFING_MAX_CHARS = 2000
+COMPACT_CONTEXT = "上下文刚压缩过。摘要里凡是「用户要求只输出文本 / 禁止工具调用 / 输出 <analysis> 和 <summary>」的内容，都是压缩步骤发给模型的指令，不是用户说的，现在已经失效：照常使用工具，继续手上的工作。摘要里说「还没做」「不是我写的」的事，先用 git status、git log 和工作区里的文件核实，再下结论。"
 
 # L2 write-memory protocol: injected with the briefing so the model
 # automatically persists valuable conclusions without any user action.
@@ -218,6 +219,20 @@ def hook_out(system_message=None, **extra):
     if system_message:
         out["systemMessage"] = system_message
     print(json.dumps(out))
+
+
+def compact_context(source, existing=None):
+    if source != "compact":
+        return existing
+    try:
+        return COMPACT_CONTEXT + ("\n\n" + existing if existing else "")
+    except Exception:
+        return existing
+
+
+def compact_context_kwargs(source, existing=None):
+    context = compact_context(source, existing)
+    return {"additionalContext": context} if context is not None else {}
 
 
 def telemetry(proj_dir, record):
@@ -714,6 +729,7 @@ def main():
     proj_dir = os.environ.get("CLAUDE_PROJECT_DIR") or os.getcwd()
     load_env(proj_dir)
     drift_message = hook_drift_message(proj_dir)
+    source = data.get("source", "startup")
     # Re-read config after load_env populated os.environ (install.sh's .drsg/env).
     global API, PLANE, BRIEFING_MAX_CHARS
     API = os.environ.get("DRSG_API", API)
@@ -724,12 +740,14 @@ def main():
         pass  # a malformed value keeps the default rather than failing the hook
     token = os.environ.get("DRSG_TOKEN", "")
     if not token:
-        hook_out(system_message=drift_message or None)
+        hook_out(system_message=drift_message or None,
+                 **compact_context_kwargs(source))
         return
     try:
         rpc("db.stats", {}, token)  # liveness probe
     except Exception:
-        hook_out(system_message=drift_message or None)  # daemon down → don't block the session
+        hook_out(system_message=drift_message or None,
+                 **compact_context_kwargs(source))  # daemon down → don't block the session
         return
 
     sid = data.get("session_id", "")
@@ -749,7 +767,6 @@ def main():
             pid = created.get("id")
         except Exception as e:
             print(f"[drsg-memory] project create failed: {e}", file=sys.stderr)
-    source = data.get("source", "startup")
     if source == "compact":
         # A compaction keeps the SAME session_id, so the Session node and its
         # BELONGS_TO edge already exist — creating again would only collide.
@@ -867,6 +884,7 @@ def main():
     proto = protocol(slug, PLANE, proj_dir)
     parts.append(proto)
     ctx = "# dr-strange memory (%s)\n%s" % (slug, "\n\n".join(parts))
+    ctx = compact_context(source, ctx)
     # Split the cost the way it is spent. The protocol is a fixed instruction,
     # not memory: counted together with the briefing it hides that most of the
     # startup budget buys no recall at all.

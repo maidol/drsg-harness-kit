@@ -41,7 +41,7 @@
   ```bash
   echo 'DRSG_BRIEFING_MAX_CHARS=3000' >> .drsg/env
   ```
-- **压缩会重新注入。** SessionStart 也会在 `compact` 时运行，因为压缩会从上下文中移除摘要和协议，但会话本身仍在继续。这条路径会给现有 Session 节点加戳，而不是创建第二个节点。
+- **压缩会重新注入。** SessionStart 也会在 `compact` 时运行，因为压缩会从上下文中移除摘要和协议，但会话本身仍在继续。这条路径会给现有 Session 节点加戳，而不是创建第二个节点。压缩后，SessionStart 还会向模型注入一段纠正上下文，说明压缩指令已经失效。
 
 ## 前置条件
 
@@ -155,7 +155,7 @@ python3 migrate.py load --api http://127.0.0.1:7700/rpc --token <new token> \
 - **template 更新**——某次安装被遗漏。对该项目重新运行 `install.sh`。
 - **deployment 更新**——有人直接编辑了 hook。把它复制回 `templates/hooks/` 并提交，**否则下一次安装会静默地将其覆盖**。这并非假设：这个选项正是因此而存在。
 
-不带项目目录时，列表来自 memory plane 的 `Project` 节点——与 recall 遍历的是同一份列表。安装过但从未记录的项目在这里不可见，原因也正是它对 recall 不可见；这比再维护一份可能不一致的 registry 更有用。`install.sh --check` 和 `setup.sh --all-projects` 共用 `project_registry.py` 读取项目列表；`--env` 可选择 daemon 环境文件，而非使用默认文件。脚本可用 `--nul` 请求 NUL 分隔的路径：
+不带项目目录时，列表来自 memory plane 的 `Project` 节点——与 recall 遍历的是同一份列表。安装过但从未记录的项目在这里不可见，原因也正是它对 recall 不可见；这比再维护一份可能不一致的 registry 更有用。`install.sh --check` 和 `setup.sh --all-projects` 共用 `project_registry.py` 读取项目列表；它通过 `DRSG_PLANE` 选择 memory plane（默认 `memory`），`--env` 可选择 daemon 环境文件，而非使用默认文件。脚本可用 `--nul` 请求 NUL 分隔的路径：
 
 ```bash
 python3 ~/.drsg-memory/tools/project_registry.py --nul
