@@ -94,6 +94,21 @@ python3 migrate.py load --api http://127.0.0.1:7700/rpc --token <new token> \
 
 先备份两个数据库——停止 daemon，然后复制目录。`migrate.py` 会警告并跳过没有 external key 的节点；dump 输出会告诉你是否存在这类节点。
 
+## 修复 Project key 索引
+
+只有在 `WHERE key(p) = …` 查不到 Project、但 `WHERE p.path = …` 仍能查到时，才使用 `repair_project_key.py`。`DRSG_PROJECT_DIR` 用来选择提供 `DRSG_API` 和 `DRSG_TOKEN` 的项目 `.drsg/env`，工具会使用其中的 daemon 地址。先运行 dry run 并检查它记录的节点和全部关联边。执行修复前，先停止 daemon 并备份数据库目录；默认会在当前目录写入 JSON 快照，也可通过 `--snapshot` 指定路径。
+
+```bash
+DRSG_PROJECT_DIR=/path/to/project python3 ~/.drsg-memory/tools/repair_project_key.py \
+  memory /path/to/project <project-key>
+# 执行前先停止 daemon，并备份数据库目录。
+DRSG_PROJECT_DIR=/path/to/project python3 ~/.drsg-memory/tools/repair_project_key.py \
+  memory /path/to/project <project-key> --apply \
+  --snapshot /tmp/repair-<project-key>.json
+```
+
+退出码：`0` 表示 dry run 或修复验证通过；`1` 表示修复后的验证失败；`2` 表示边或节点重建失败（根据输出中的快照和失败边恢复）；`3` 表示输入不安全、图数据已截断，或快照写入失败且尚未修改图。
+
 ## 选项
 
 | 选项 | 默认值 | 含义 |

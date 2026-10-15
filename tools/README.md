@@ -159,6 +159,30 @@ Back up both databases first — stop the daemon, then copy the directory.
 `migrate.py` warns about and skips nodes with no external key; a `dump`
 will tell you whether you have any.
 
+## Repairing a Project key index
+
+Use `repair_project_key.py` only when `WHERE key(p) = …` no longer finds a
+Project but `WHERE p.path = …` still does. `DRSG_PROJECT_DIR` selects the
+project whose `.drsg/env` supplies `DRSG_API` and `DRSG_TOKEN`; the utility uses
+that daemon address. Run the dry run first and review the captured node and
+every incident edge. Before applying, stop the daemon and back
+up its database directory; `--apply` writes a JSON snapshot in the current
+directory by default, or to the path passed with `--snapshot`.
+
+```bash
+DRSG_PROJECT_DIR=/path/to/project python3 ~/.drsg-memory/tools/repair_project_key.py \
+  memory /path/to/project <project-key>
+# Stop the daemon and back up its database directory before applying.
+DRSG_PROJECT_DIR=/path/to/project python3 ~/.drsg-memory/tools/repair_project_key.py \
+  memory /path/to/project <project-key> --apply \
+  --snapshot /tmp/repair-<project-key>.json
+```
+
+Exit codes: `0` dry run or repair verified; `1` post-repair verification failed;
+`2` an edge or recreation failed (use the printed snapshot and failed-edge
+records); `3` unsafe input, truncated graph data or snapshot failure before any
+mutation.
+
 ## Options
 
 | Option | Default | Meaning |
