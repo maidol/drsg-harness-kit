@@ -155,7 +155,8 @@ python3 migrate.py load --api http://127.0.0.1:7700/rpc --token <new token> \
 ./serve.sh stop
 ```
 
-Back up both databases first — stop the daemon, then copy the directory.
+Back up both databases first — stop the daemon, copy the directory, then start
+the daemon again: `dump` and `load` talk to it over RPC.
 `migrate.py` warns about and skips nodes with no external key; a `dump`
 will tell you whether you have any.
 

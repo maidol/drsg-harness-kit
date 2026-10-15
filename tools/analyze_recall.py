@@ -79,7 +79,7 @@ import time
 import urllib.request
 from collections import defaultdict
 
-TRANSCRIPT_ROOT = os.path.expanduser("~/.claude/projects")
+TRANSCRIPT_ROOT = os.path.join(os.environ.get("CLAUDE_CONFIG_DIR") or os.path.expanduser("~/.claude"), "projects")
 # Assistant turns after the prompt that count as "the reply". More than one
 # because the answer often lands after a couple of tool calls.
 REPLY_TURNS = 3

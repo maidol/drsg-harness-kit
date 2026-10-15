@@ -15,11 +15,16 @@ _MODEL_ID = re.compile(r"^[A-Za-z0-9._:/@\[\]-]{1,256}$")
 _MODEL_LABEL = re.compile(r"^[ -~]{1,80}$")
 
 
+def _claude_config_dir():
+    """Claude Code's config directory: $CLAUDE_CONFIG_DIR, else ~/.claude."""
+    return os.environ.get("CLAUDE_CONFIG_DIR") or os.path.expanduser("~/.claude")
+
+
 def _merged_env():
     values = dict(os.environ)
     cwd = os.getcwd()
     paths = (
-        os.path.expanduser("~/.claude/settings.json"),
+        os.path.join(_claude_config_dir(), "settings.json"),
         os.path.join(cwd, ".claude", "settings.json"),
         os.path.join(cwd, ".claude", "settings.local.json"),
     )
@@ -66,7 +71,7 @@ def _cache_models(env, base_url):
         return None
     try:
         with open(
-            os.path.expanduser("~/.claude/cache/gateway-models.json"),
+            os.path.join(_claude_config_dir(), "cache", "gateway-models.json"),
             encoding="utf-8",
         ) as cache_file:
             cache = json.load(cache_file)

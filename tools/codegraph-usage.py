@@ -43,7 +43,7 @@ import os
 import re
 import sys
 
-PROJECTS = os.path.expanduser("~/.claude/projects")
+PROJECTS = os.path.join(os.environ.get("CLAUDE_CONFIG_DIR") or os.path.expanduser("~/.claude"), "projects")
 # Two ways a session reaches a graph: the repository's own daemon, or the
 # router's `graph_*` proxies, which carry the same verbs to any repository.
 # Counting only the first is how the hub — the heaviest user of the router, and

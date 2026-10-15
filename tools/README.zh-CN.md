@@ -92,7 +92,7 @@ python3 migrate.py load --api http://127.0.0.1:7700/rpc --token <new token> \
 ./serve.sh stop
 ```
 
-先备份两个数据库——停止 daemon，然后复制目录。`migrate.py` 会警告并跳过没有 external key 的节点；dump 输出会告诉你是否存在这类节点。
+先备份两个数据库——停止 daemon，复制目录，再重新启动 daemon：`dump` 和 `load` 都要通过 RPC 访问它。`migrate.py` 会警告并跳过没有 external key 的节点；dump 输出会告诉你是否存在这类节点。
 
 ### 安全加载迁移 dump
 

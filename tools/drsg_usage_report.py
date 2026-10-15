@@ -89,10 +89,10 @@ def read_hook_input() -> dict:
 
 
 def project_transcript_dir() -> Path:
-    """`~/.claude/projects/<cwd with slashes turned into dashes>`."""
+    """`$CLAUDE_CONFIG_DIR/projects/<cwd with slashes turned into dashes>` (default `~/.claude`)."""
     root = os.environ.get("CLAUDE_PROJECT_DIR") or os.getcwd()
     slug = str(Path(root).resolve()).replace("/", "-")
-    return Path.home() / ".claude" / "projects" / slug
+    return Path(os.environ.get("CLAUDE_CONFIG_DIR") or Path.home() / ".claude") / "projects" / slug
 
 
 def find_transcript(hook: dict) -> Path | None:

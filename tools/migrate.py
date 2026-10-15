@@ -10,7 +10,8 @@ Two subcommands (run separately so each phase is verifiable):
   dump  — read src plane fully (graph.seed) and write {nodes, edges} JSON.
           Edges' internal node ids are resolved to external keys so the dump
           is portable between daemons. Read-only on the source.
-  load  — write a dump into a dst plane. Per-node existence check via node.get
+  load  — write a dump into a dst plane. Reads the dst plane once (graph.seed)
+          before writing and skips node keys and edges already there
           (never silently squats an existing key — the key-collision incident
           this guard exists for); edges created by key. Never deletes on dst.
 
