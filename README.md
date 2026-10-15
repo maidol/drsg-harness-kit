@@ -246,6 +246,14 @@ python3 ~/.drsg-memory/tools/event.py --help
 python3 ~/.drsg-memory/tools/event.py list
 ```
 
+Both `event.py list` and `event_list` show every open Event, however many newer
+ones were closed, and end with one line when some have stayed open more than 7
+days — delivered but never closed, they would otherwise sink out of sight:
+
+```text
+2 open Events older than 7 days (act on or close): evt-kit-1786000000-83141f, evt-kit-1786000000-0e07d1
+```
+
 A refused post looks like this; rewrite the value as its variable name or `<hidden>`:
 
 ```text

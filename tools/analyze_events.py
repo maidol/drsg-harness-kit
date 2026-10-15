@@ -49,12 +49,25 @@ def load_env(proj_dir):
                 os.environ.setdefault(k.strip(), v.strip())
 
 
+# urllib sends even 127.0.0.1 through http_proxy unless no_proxy names it, and
+# a proxy that cannot reach this machine's loopback fails every call.
+_DIRECT = urllib.request.build_opener(urllib.request.ProxyHandler({}))
+
+
+def _urlopen(req, timeout):
+    """urlopen that never proxies a loopback address."""
+    host = urllib.parse.urlsplit(req.full_url).hostname or ""
+    if host in ("localhost", "::1") or host.startswith("127."):
+        return _DIRECT.open(req, timeout=timeout)
+    return urllib.request.urlopen(req, timeout=timeout)
+
+
 def rpc(method, params, token):
     body = json.dumps({"jsonrpc": "2.0", "id": 1,
                        "method": method, "params": params}).encode()
     req = urllib.request.Request(API, data=body, headers={
         "Content-Type": "application/json", "Authorization": "Bearer " + token})
-    with urllib.request.urlopen(req, timeout=20) as r:
+    with _urlopen(req, 20) as r:
         res = json.load(r)
     if "result" not in res:
         raise RuntimeError((res.get("error") or {}).get("message") or res)

@@ -260,8 +260,9 @@ def main():
         log("usage: l3_digest.py <session_id> <transcript_path>")
         sys.exit(0)
     sid, transcript_path = sys.argv[1], sys.argv[2]
-    # Proj dir = two levels up from this hook (hooks live in <proj>/.claude/hooks).
-    proj_dir = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+    # Proj dir = three levels up from this file (hooks live in <proj>/.claude/hooks),
+    # the parent of DRSG_DIR. Two levels was <proj>/.claude, which has no .drsg/env.
+    proj_dir = os.path.dirname(DRSG_DIR)
     load_env(proj_dir)
     # Re-read config after load_env populated os.environ (install.sh's .drsg/env).
     global API, PLANE, CHAT, KEY_ENV, MODEL, REASONING_EFFORT

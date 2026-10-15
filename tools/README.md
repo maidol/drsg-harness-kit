@@ -378,7 +378,13 @@ plumbing commands are never used. A hook failure stops without retry and
 surfaces its output (recognizable secret values are redacted). After commit, the
 tool verifies `HEAD^`, `HEAD^{tree}`, and the exact commit message. If a hook or
 race made them differ, the commit remains local and the tool reports the
-mismatch; it never automatically resets or amends. On success its last line,
+mismatch; it never automatically resets or amends. When the commit does not
+happen (a hook refused it, say), the tool puts the formal index back to the
+authorized parent tree, so the files are no longer staged and the next
+`commit_auth_apply` starts clean; the error ends with
+`formal index restored to authorized parent tree`. If HEAD moved, it touches
+nothing and says so; if restoring fails, the error tells you to run
+`git reset --mixed HEAD`. On success its last line,
 `receipt: post kind="notice" to <reviewer> with reply_to=<event-key>`, names
 where the commit receipt goes, so the executor never reads `commit-auth.json`. It never pushes, creates a
 PR/tag/release, or closes the Event; after successful verification, the
@@ -435,7 +441,14 @@ there is one this session has not been told about yet.
   working. A waiting session takes the lease over within a minute of the holder's
   process disappearing — clean exit (`SessionEnd` releases it) or not. A holder
   that is stopped (`Ctrl+Z`, state `T`) or a zombie counts as gone too: it can no
-  longer act on a wake-up.
+  longer act on a wake-up. A holder whose process lives but whose poller died
+  (killed, crashed: its `<session>.<pid>.pid` still names a process that is
+  gone) is taken over once the lease has gone unrefreshed for
+  `EVENT_POLL_LEASE_STALE` seconds (default five `EVENT_POLL_TICK`s, 300). A
+  poller that exited to wake its model removed that file first, so a session
+  busy with a woken turn keeps the lease however long the turn runs. A holder
+  that is merely idle with a live poller is never taken over automatically; use
+  `event_take` or `--take` for that.
 - **A background session yields to a foreground one.** In a background session
   (`claude --bg`, under `claude bg-pty-host`) `/exit` only detaches; the process
   lives on and so would its lease. Whether a client is attached is not exposed,

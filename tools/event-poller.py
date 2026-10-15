@@ -38,6 +38,8 @@ import time
 
 INTERVAL = int(os.environ.get("EVENT_POLL_INTERVAL", "900"))   # 15 minutes
 TICK = int(os.environ.get("EVENT_POLL_TICK", "60"))             # takeover latency
+# A lease not refreshed for this long, whose holder's poller is dead, is free.
+LEASE_STALE = int(os.environ.get("EVENT_POLL_LEASE_STALE", str(5 * TICK)))
 KICK_STEP = float(os.environ.get("EVENT_POLL_KICK_STEP", "1"))  # seconds between looks at `kick`
 MIN_POLL_LIFETIME = float(os.environ.get("EVENT_POLL_TEST_MIN_LIFETIME", "3"))  # tests only
 LOG_MAX = int(os.environ.get("EVENT_POLL_LOG_MAX", "262144"))   # bytes before poller.log rotates
@@ -222,6 +224,21 @@ def live_poller(state, sid, pid):
             and any(MARK in arg for arg in cmdline(poller_pid)))
 
 
+def poller_died(state, lease):
+    """The holder's poller is gone without having exited: its pid file still
+    names a process that is not running, and it has not refreshed `updated`
+    for LEASE_STALE. Its Claude Code may live on idle, and nothing else would
+    ever free the lease. A poller that exited to wake its session removed its
+    pid file first, so a holder busy with that turn never looks like this."""
+    sid, pid = lease.get("session_id"), lease.get("pid")
+    updated = lease.get("updated")
+    if not isinstance(updated, int) or time.time() - updated < LEASE_STALE:
+        return False
+    if not os.path.exists(os.path.join(state, tag(sid, pid) + ".pid")):
+        return False
+    return not live_poller(state, sid, pid)
+
+
 def take_lease(state, sid, pid, start, bg, lane="*"):
     """(held, fresh): whether this process holds the lease after the call, and
     whether it has only just taken it (from another process, or from nobody).
@@ -239,9 +256,14 @@ def take_lease(state, sid, pid, start, bg, lane="*"):
                               and isinstance(start, int) and isinstance(lease.get("start"), int)
                               and start > lease["start"] and not (lease.get("bg") and bg)
                               and live_poller(state, old_sid, old_pid))
-        if mine or gone or background_take or newer_same_session:
+        died = (not mine and not gone and not background_take and not newer_same_session
+                and poller_died(state, lease))
+        if mine or gone or background_take or newer_same_session or died:
             if not mine:
-                if newer_same_session and not gone and not background_take:
+                if died:
+                    log(state, "lease -> %s%s (was %s, holder's poller died)" %
+                        (tag(sid, pid), lane_tag(lane), tag(old_sid, old_pid)))
+                elif newer_same_session and not gone and not background_take:
                     log(state, "lease -> %s%s (was %s, same session newer process)" %
                         (tag(sid, pid), lane_tag(lane), tag(old_sid, old_pid)))
                 else:

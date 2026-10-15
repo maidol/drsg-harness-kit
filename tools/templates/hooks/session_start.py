@@ -536,6 +536,7 @@ def ensure_briefing(proj_dir, pid, token):
                 stale = False
         except Exception:
             facts = None  # read failed — not the same as "no facts"
+            stale = False  # keep the stored briefing; the next read rebuilds it
         if stale:
             brief = build_briefing(facts) if facts else ""
             rpc("node.update", {"plane": PLANE, "id": pid, "set": {
@@ -572,11 +573,17 @@ def heal_text(token):
 
     Plane-wide, not per-project: every install shares one plane, so whichever
     session starts first heals it for all of them. Returns the repair count.
+
+    Only Facts with no `text` at all are fetched: that is how an omission
+    looks, and the full scan it replaced pulled every Fact (1.1 MB at 377)
+    on every session start. Facts are replaced, not edited in place, so a
+    `text` that exists stays current; tools/backfill_text.py re-derives all.
     """
     # Whole nodes on purpose, unlike orphan_facts below: the update addresses
     # each Fact by node id, the query language has no `id(f)`, and addressing
     # by key instead would miss keyless Facts and hit shadows (see project_id).
-    res = rpc("plane.cypher", {"plane": PLANE, "query": "MATCH (f:Fact) RETURN f",
+    res = rpc("plane.cypher", {"plane": PLANE,
+                               "query": "MATCH (f:Fact) WHERE f.text IS NULL RETURN f",
                                "params": {}}, token)
     fixed = 0
     for n in res.get("nodes", []):

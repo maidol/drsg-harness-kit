@@ -116,6 +116,24 @@ lines = up.event_notice(proj, "sid-open-window", token)
 check("UserPromptSubmit event_notice shows the open Event",
       any(OLD in line for line in (lines or [])))
 
+# 6. N2: open Events older than 7 days are counted where they are listed;
+# the 25 old done Events are not.
+check("event_list flags the open Event older than 7 days",
+      "1 open Event older than 7 days" in out and OLD in out.splitlines()[-1])
+buf = io.StringIO()
+with contextlib.redirect_stdout(buf):
+    ev.cmd_list(types.SimpleNamespace(project=proj), token)
+check("event.py list flags the open Event older than 7 days",
+      "1 open Event older than 7 days" in buf.getvalue())
+import time
+now = int(time.time())
+nodes = [{"external_key": k, "properties": {"status": s, "created_at": c}}
+         for k, s, c in [("old-open", "open", now - 8 * 86400),
+                         ("new-open", "open", now - 6 * 86400),
+                         ("old-done", "done", now - 30 * 86400)]]
+check("stale_open counts only open Events past 7 days",
+      ev.stale_open(nodes, now) == ["old-open"])
+
 print("PASS %d/%d" % (ok, ran))
 sys.exit(0 if ok == ran else 1)
 PY

@@ -52,6 +52,9 @@ LIST_CAP = 20
 # itself: filtering after `LIMIT 20` let 20 newer closed Events push an open
 # one out of every read path, and it was never delivered.
 STATUS_CAP = 200
+# An open Event older than this is called out where it is listed: delivered,
+# never closed, it otherwise sinks out of sight (2026-10 kit, two from 10-10).
+STALE_OPEN_DAYS = 7
 
 # The code-graph verbs an Event may point at, and how many symbols each needs.
 # Deliberately not the whole tool surface: a to-do says where to start looking,
@@ -81,6 +84,19 @@ def load_env(proj_dir):
                 os.environ.setdefault(k.strip(), v.strip())
 
 
+# urllib sends even 127.0.0.1 through http_proxy unless no_proxy names it, and
+# a proxy that cannot reach this machine's loopback fails every call.
+_DIRECT = urllib.request.build_opener(urllib.request.ProxyHandler({}))
+
+
+def _urlopen(req, timeout):
+    """urlopen that never proxies a loopback address."""
+    host = urllib.parse.urlsplit(req.full_url).hostname or ""
+    if host in ("localhost", "::1") or host.startswith("127."):
+        return _DIRECT.open(req, timeout=timeout)
+    return urllib.request.urlopen(req, timeout=timeout)
+
+
 def rpc(method, params, token):
     body = json.dumps({"jsonrpc": "2.0", "id": 1,
                        "method": method, "params": params}).encode()
@@ -88,7 +104,7 @@ def rpc(method, params, token):
         API, data=body,
         headers={"Content-Type": "application/json",
                  "Authorization": f"Bearer {token}"})
-    with urllib.request.urlopen(req, timeout=5) as r:
+    with _urlopen(req, 5) as r:
         out = json.load(r)
     if "error" in out:
         raise RuntimeError(out["error"])
@@ -646,6 +662,25 @@ def receipt(pr):
     return "seen just now"
 
 
+def stale_open(events, now=None):
+    """Keys of the open Events among `events` created more than
+    STALE_OPEN_DAYS ago, oldest first."""
+    cutoff = (now if now is not None else time.time()) - STALE_OPEN_DAYS * 86400
+    old = [((n.get("properties") or {}).get("created_at"), n.get("external_key"))
+           for n in events if (n.get("properties") or {}).get("status") == "open"]
+    return [k for c, k in sorted(old, key=lambda x: x[0])
+            if isinstance(c, (int, float)) and c < cutoff]
+
+
+def stale_open_line(events):
+    """One line naming the open Events older than STALE_OPEN_DAYS, or ""."""
+    keys = stale_open(events)
+    if not keys:
+        return ""
+    return "%d open Event%s older than %d days (act on or close): %s" % (
+        len(keys), "" if len(keys) == 1 else "s", STALE_OPEN_DAYS, ", ".join(keys))
+
+
 def cmd_list(args, token):
     path = os.path.abspath(os.path.normpath(args.project or os.getcwd()))
     # Every open Event, then recent history: an old open one must not hide
@@ -667,6 +702,9 @@ def cmd_list(args, token):
         # The sender's only view of what the recipient is actually shown.
         if pr.get("graph_hint"):
             print("%-9s %s" % ("", pr["graph_hint"]))
+    line = stale_open_line(events)
+    if line:
+        print(line)
 
 
 def _proc(pid):

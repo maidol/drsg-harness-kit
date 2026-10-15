@@ -409,6 +409,42 @@ class CommitAuthTests(unittest.TestCase):
             self.assertEqual(self.git(path, "rev-parse", "HEAD"), parent)
             self.assertIn("--hidden-flag", str(raised.exception))
 
+    def test_precommit_failure_restores_formal_index_to_parent_tree(self):
+        # A hook that refuses the commit used to leave the authorized files
+        # staged, and the next apply then failed with "formal index must match
+        # authorized parent tree" until someone ran `git reset`.
+        with tempfile.TemporaryDirectory() as temp:
+            path = self.make_git_repo(os.path.join(temp, "repo"))
+            pathlib.Path(path, ".completeness.json").write_text(
+                '{"require_code_block": false}' + chr(10))
+            pathlib.Path(path, "README.md").write_text("# Test" + chr(10))
+            self.git(path, "add", "--", ".completeness.json", "README.md")
+            self.git(path, "commit", "-m", "base")
+            parent = self.git(path, "rev-parse", "HEAD")
+            parent_tree = self.git(path, "rev-parse", parent + "^{tree}")
+            file_path = "change.sh"
+            pathlib.Path(path, file_path).write_text(
+                "#!/usr/bin/env bash" + chr(10) +
+                'case "$1" in' + chr(10) +
+                "  --hidden-flag) ;;" + chr(10) + "esac" + chr(10))
+            tool_dir = os.path.join(temp, "runtime", "tools")
+            result = subprocess.run(["bash", os.path.join(tools, "install-precommit-guard.sh"),
+                                     path, tool_dir], capture_output=True, text=True)
+            self.assertEqual(result.returncode, 0, result.stderr)
+            with tempfile.TemporaryDirectory() as index_dir:
+                env = _test_git_env(index_dir)
+                self.git(path, "read-tree", parent, env=env)
+                self.git(path, "add", "--", file_path, env=env)
+                tree = self.git(path, "write-tree", env=env)
+            self.set_apply_event(path, parent, tree, "feat: refused by hook",
+                                 files=[file_path])
+            with self.assertRaisesRegex(ValueError, "formal index restored to authorized parent tree"):
+                self.mcp.call_tool("commit_auth_apply", {
+                    "event_key": "evt-test"}, "fake-token")
+            self.assertEqual(self.git(path, "rev-parse", "HEAD"), parent)
+            self.assertEqual(self.git(path, "write-tree"), parent_tree)
+            self.assertEqual(self.git(path, "status", "--porcelain"), "?? " + file_path)
+
     def test_apply_verifies_parent_tree_and_exact_message_after_commit(self):
         with tempfile.TemporaryDirectory() as temp:
             path, parent, tree = self.temp_commit_repo(temp)

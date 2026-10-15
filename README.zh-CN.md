@@ -159,6 +159,12 @@ python3 ~/.drsg-memory/tools/event.py --help
 python3 ~/.drsg-memory/tools/event.py list
 ```
 
+`event.py list` 和 `event_list` 会列出全部 open 的 Event，不管之后又关了多少条更新的；有 Event 开着超过 7 天时，末尾多一行点名。这种 Event 通常已经投递过、但一直没人关，不点名就会沉下去：
+
+```text
+2 open Events older than 7 days (act on or close): evt-kit-1786000000-83141f, evt-kit-1786000000-0e07d1
+```
+
 被拒发时的输出如下，把值改写成变量名或 `<hidden>` 再发：
 
 ```text

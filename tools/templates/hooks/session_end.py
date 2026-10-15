@@ -243,7 +243,7 @@ def mine(transcript_path):
                         # before masking, a key is too short to be recognised.
                         cmd = redact(t.get("input", {}).get("command") or "")[0][:40]
                         if cmd:
-                            commands[re.sub(r"\\s+", " ", cmd)] += 1
+                            commands[re.sub(r"\s+", " ", cmd)] += 1
                 elif t.get("type") == "tool_result":
                     # Results before the first typed prompt (a resumed session
                     # replaying its tail) have no prompt to belong to. They stay

@@ -90,7 +90,19 @@ EOF
   # Launch detached. The daemon reads DRSG_TOKEN from its own env; it also
   # needs the L3 LLM key (persisted by install.sh) in ITS
   # env for digest.run to authenticate — export the env file's key=value pairs.
-  set -a; [ -f "$ENVFILE" ] && source "$ENVFILE"; set +a
+  # Read as KEY=value data, not sourced: a value is exported verbatim, so `$`,
+  # backticks or spaces in a key neither run nor get mangled — the same reading
+  # the Python hooks give .drsg/env.
+  if [ -f "$ENVFILE" ]; then
+    while IFS= read -r line || [ -n "$line" ]; do
+      case "$line" in
+        [A-Za-z_]*=*)
+          key="${line%%=*}"
+          case "$key" in *[!A-Za-z0-9_]*) continue ;; esac
+          export "$key=${line#*=}" ;;
+      esac
+    done < "$ENVFILE"
+  fi
   # Launched from DRSG_MEM_DIR, not from wherever the caller happened to stand:
   # drsg auto-loads `./drsg.toml` from the working directory, so starting this
   # daemon inside a code repository silently hands it that repository's server

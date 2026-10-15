@@ -10,6 +10,7 @@ import json
 import os
 import sys
 import tempfile
+import time
 import types
 import unittest
 from unittest.mock import patch
@@ -244,9 +245,10 @@ class ReplyToTests(unittest.TestCase):
         self.assertEqual(output.count("↳ 回复你发出的"), 1)
 
     def test_plain_event_list_output_remains_unchanged(self):
+        # Recent: an open Event older than 7 days adds a footer line (N2).
         self.graph.add_event("evt-plain", {
             "kind": "notice", "status": "open", "summary": "plain",
-            "from_project": "other", "created_at": 1}, recipient)
+            "from_project": "other", "created_at": int(time.time())}, recipient)
         expected = "open   notice   unseen         evt-plain  plain"
         actual = self.mcp.call_tool("event_list", {
             "project": recipient, "status": "open"}, "fake-token")

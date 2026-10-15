@@ -159,6 +159,19 @@ def is_listening(url):
 SESSIONS = {}
 
 
+# urllib sends even 127.0.0.1 through http_proxy unless no_proxy names it, and
+# a proxy that cannot reach this machine's loopback fails every call.
+_DIRECT = urllib.request.build_opener(urllib.request.ProxyHandler({}))
+
+
+def _urlopen(req, timeout):
+    """urlopen that never proxies a loopback address."""
+    host = urllib.parse.urlsplit(req.full_url).hostname or ""
+    if host in ("localhost", "::1") or host.startswith("127."):
+        return _DIRECT.open(req, timeout=timeout)
+    return urllib.request.urlopen(req, timeout=timeout)
+
+
 def _post(url, auth, body, session_id, timeout):
     headers = {
         "Authorization": auth,
@@ -169,7 +182,7 @@ def _post(url, auth, body, session_id, timeout):
         headers["Mcp-Session-Id"] = session_id
     req = urllib.request.Request(
         url, data=json.dumps(body).encode("utf-8"), headers=headers)
-    resp = urllib.request.urlopen(req, timeout=timeout)
+    resp = _urlopen(req, timeout)
     raw = resp.read().decode("utf-8", "replace")
     msg = None
     # The response is an SSE stream whose first `data:` line is empty; taking

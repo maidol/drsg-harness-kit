@@ -609,6 +609,23 @@ def _load_commit_auth(event_key, proj, token, reviewer):
     return auth
 
 
+def _restore_formal_index(repo, parent, parent_tree):
+    """Put the formal index back where apply found it, the parent tree, after
+    the commit did not happen. Left staged, the next apply refuses with
+    "formal index must match authorized parent tree". Only while HEAD is still
+    the parent: if something moved it, nothing is touched."""
+    try:
+        if _git(repo, ["rev-parse", "HEAD"]) != parent:
+            return "HEAD moved; formal index left untouched, inspect with git status"
+        _git(repo, ["reset", "-q", "--mixed", parent])
+        if _git(repo, ["write-tree"]) == parent_tree:
+            return "formal index restored to authorized parent tree"
+    except ValueError:
+        pass
+    return ("formal index could not be restored; run `git reset --mixed HEAD` "
+            "before the next commit_auth_apply")
+
+
 def _commit_auth_apply(args, proj, token):
     if not isinstance(args, dict) or set(args) != {"event_key"}:
         raise ValueError("commit_auth_apply accepts event_key only")
@@ -658,16 +675,20 @@ def _commit_auth_apply(args, proj, token):
     if index_after != parent_tree:
         raise ValueError("formal index changed after preflight")
     live_env = _git_environment()
-    _add_paths(repo, auth["files"], auth["force_paths"], live_env, steps)
-    final_tree = _git_step(repo, ["write-tree"], steps,
-                           label="git write-tree (formal index)")
-    if final_tree != auth["tree"]:
-        raise ValueError("formal index tree mismatch; commit refused")
-    # Hooks inherit this environment. Literal pathspecs would break any hook
-    # that globs; the kit's own check-docs.py runs `git ls-files "*.md"`.
-    commit_env = _git_environment()
-    commit_env.pop("GIT_LITERAL_PATHSPECS", None)
-    _git(repo, ["commit", "--cleanup=verbatim", "-m", auth["message"]], commit_env)
+    try:
+        _add_paths(repo, auth["files"], auth["force_paths"], live_env, steps)
+        final_tree = _git_step(repo, ["write-tree"], steps,
+                               label="git write-tree (formal index)")
+        if final_tree != auth["tree"]:
+            raise ValueError("formal index tree mismatch; commit refused")
+        # Hooks inherit this environment. Literal pathspecs would break any hook
+        # that globs; the kit's own check-docs.py runs `git ls-files "*.md"`.
+        commit_env = _git_environment()
+        commit_env.pop("GIT_LITERAL_PATHSPECS", None)
+        _git(repo, ["commit", "--cleanup=verbatim", "-m", auth["message"]], commit_env)
+    except ValueError as e:
+        raise ValueError("%s\n%s" % (
+            e, _restore_formal_index(repo, auth["parent"], parent_tree))) from None
     steps.append("git commit --cleanup=verbatim -m <authorized message>: completed")
     commit = _git_step(repo, ["rev-parse", "HEAD"], steps)
     committed_parent = _git_step(repo, ["rev-parse", "HEAD^"], steps)
@@ -761,6 +782,9 @@ def call_tool(name, args, token):
             # The sender's only view of the second line the recipient gets.
             if pr.get("graph_hint"):
                 rows.append("%-6s %s" % ("", pr["graph_hint"]))
+        line = ev.stale_open_line(events) if want in ("open", "all") else ""
+        if line:
+            rows.append(line)
         return "\n".join(rows) if rows else "no %s events for %s" % (want, path)
 
     if name == "event_done":

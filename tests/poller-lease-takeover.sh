@@ -53,11 +53,12 @@ def read_json(path):
     return json.loads(path.read_text(encoding="utf-8"))
 
 def lease_fixture(root, sid="same", holder=101, start=100, bg=False,
-                  poller_pid=301, poller_start=300):
+                  poller_pid=301, poller_start=300, updated=None):
     state = pathlib.Path(root)
     state.mkdir(parents=True, exist_ok=True)
-    lease = {"session_id": sid, "pid": holder, "start": start,
-             "bg": bg, "updated": 1}
+    # Fresh by default: a stale lease whose poller is dead is taken (EVT-2).
+    lease = {"session_id": sid, "pid": holder, "start": start, "bg": bg,
+             "updated": int(time.time()) if updated is None else updated}
     save_json(state / "lease.json", lease)
     if poller_pid is not None:
         save_json(state / (poller.tag(sid, holder) + ".pid"),
@@ -102,6 +103,28 @@ with tempfile.TemporaryDirectory(prefix="poller-lease-contract-") as temp:
         check(label + " blocks automatic takeover", result, (False, False))
         check(label + " leaves lease unchanged", read_json(state / "lease.json"), old)
         check(label + " writes no lease log", (state / "poller.log").exists(), False)
+
+    # EVT-2: a live holder whose poller died is taken once the lease is stale.
+    # A poller that exited to wake its session removed its pid file, so a
+    # holder busy with that turn (no pid file) keeps the lease however old.
+    stale = int(time.time()) - poller.LEASE_STALE - 1
+    for label, poller_pid, updated, want in [
+        ("dead poller and stale lease is taken", 301, stale, (True, True)),
+        ("dead poller but fresh lease is kept", 301, None, (False, False)),
+        ("no pid file (woken, working) and stale lease is kept", None, stale, (False, False)),
+    ]:
+        state, old = lease_fixture(base / ("stale-" + label.split(" and ")[0].replace(" ", "-")
+                                           + str(updated)), sid="old",
+                                   poller_pid=poller_pid, updated=updated)
+        with mock.patch.object(poller, "alive", side_effect=fake_alive({(101, 100)})), \
+             mock.patch.object(poller, "cmdline", return_value=[]):
+            result = poller.take_lease(str(state), "new", 202, 200, False)
+        check(label, result, want)
+        if want == (True, True):
+            check(label + " logs the dead poller",
+                  "lease -> new.202 (was old.101, holder's poller died)" in log_text(state), True)
+        else:
+            check(label + " leaves lease unchanged", read_json(state / "lease.json"), old)
 
     # Process start ticks make same-session takeover strictly monotonic.
     for label, holder_start, candidate_start in [
