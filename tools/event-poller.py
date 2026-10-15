@@ -346,7 +346,7 @@ def open_events(project):
     ev.API = os.environ.get("DRSG_API", ev.API)
     ev.PLANE = os.environ.get("DRSG_PLANE", ev.PLANE)
     out = []
-    events = ev.fetch(project, os.environ.get("DRSG_TOKEN", ""))
+    events = ev.fetch(project, os.environ.get("DRSG_TOKEN", ""), status="open")
     token = os.environ.get("DRSG_TOKEN", "")
     for n in events:
         pr = n.get("properties") or {}

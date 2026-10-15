@@ -46,9 +46,12 @@ import urllib.request
 
 API = "http://127.0.0.1:7700/rpc"
 PLANE = "memory"
-# What a SessionStart is willing to look at. Kept here as well so `list` and
-# the hook agree on how much is "too many to still be a to-do list".
+# How much history `list` shows when it is not asked for one status.
 LIST_CAP = 20
+# How many Events one status may return. Open Events are filtered in the query
+# itself: filtering after `LIMIT 20` let 20 newer closed Events push an open
+# one out of every read path, and it was never delivered.
+STATUS_CAP = 200
 
 # The code-graph verbs an Event may point at, and how many symbols each needs.
 # Deliberately not the whole tool surface: a to-do says where to start looking,
@@ -107,15 +110,22 @@ def project_id(path, token):
     return None
 
 
-def fetch(path, token):
-    """Every Event addressed to `path`, newest first. Status is filtered by
-    the caller: one predicate on the pattern's first variable is the shape
-    every other query in this layer uses and is known to work."""
-    res = rpc("plane.cypher", {"plane": PLANE,
-        "query": ("MATCH (p:Project)<-[:NOTIFY]-(e:Event) "
-                  "WHERE p.path = $path "
-                  "RETURN e ORDER BY e.created_at DESC LIMIT %d") % LIST_CAP,
-        "params": {"path": path}}, token)
+def fetch(path, token, status=None):
+    """Events addressed to `path`, newest first: the latest LIST_CAP of any
+    status, or with `status` every one of that status up to STATUS_CAP. The
+    status predicate must sit in the query, before LIMIT, or newer Events of
+    other statuses crowd the ones asked for out of the window."""
+    if status is None:
+        query = ("MATCH (p:Project)<-[:NOTIFY]-(e:Event) WHERE p.path = $path "
+                 "RETURN e ORDER BY e.created_at DESC LIMIT %d" % LIST_CAP)
+        params = {"path": path}
+    else:
+        query = ("MATCH (p:Project)<-[:NOTIFY]-(e:Event) "
+                 "WHERE p.path = $path AND e.status = $status "
+                 "RETURN e ORDER BY e.created_at DESC LIMIT %d" % STATUS_CAP)
+        params = {"path": path, "status": status}
+    res = rpc("plane.cypher", {"plane": PLANE, "query": query,
+                               "params": params}, token)
     return res.get("nodes", [])
 
 
@@ -638,7 +648,13 @@ def receipt(pr):
 
 def cmd_list(args, token):
     path = os.path.abspath(os.path.normpath(args.project or os.getcwd()))
-    events = fetch(path, token)
+    # Every open Event, then recent history: an old open one must not hide
+    # behind newer closed ones.
+    events = fetch(path, token, status="open")
+    keys = {n.get("external_key") for n in events}
+    events += [n for n in fetch(path, token) if n.get("external_key") not in keys]
+    events.sort(key=lambda n: (n.get("properties") or {}).get("created_at") or 0,
+                reverse=True)
     for n in events:
         pr = n.get("properties", {})
         print("%-9s %-8s %-14s %s  %s" % (pr.get("status", "?"), pr.get("kind", "?"),

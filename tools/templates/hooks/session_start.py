@@ -251,14 +251,14 @@ def open_events(proj_dir, token, limit=3):
     absent. Costs nothing when there are none — the caller only appends the
     block if this returns something, same rule as Recent sessions.
 
-    `status` is filtered here rather than in the WHERE clause: the volume is a
-    handful of nodes, and one predicate on the pattern's first variable is the
-    shape every other query in this file uses."""
+    `status` is filtered in the WHERE clause, before LIMIT: filtered after it,
+    20 newer closed Events pushed an open one out and it was never shown. The
+    window is wide; `limit` caps what is displayed."""
     try:
         res = rpc("plane.cypher", {"plane": PLANE,
             "query": ("MATCH (p:Project)<-[:NOTIFY]-(e:Event) "
-                      "WHERE p.path = $path "
-                      "RETURN e ORDER BY e.created_at DESC LIMIT 20"),
+                      "WHERE p.path = $path AND e.status = 'open' "
+                      "RETURN e ORDER BY e.created_at DESC LIMIT 200"),
             "params": {"path": proj_dir}}, token)
     except Exception as e:
         print(f"[drsg-memory] open events: {e}", file=sys.stderr)

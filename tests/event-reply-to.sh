@@ -212,7 +212,7 @@ class ReplyToTests(unittest.TestCase):
         fake_ev = types.SimpleNamespace(
             API="", PLANE="memory",
             load_env=lambda path: None,
-            fetch=lambda path, token: [current],
+            fetch=lambda path, token, status=None: [current],
             reply_line=lambda key, events, token: "↳ 回复你发出的 evt-source：source summary",
         )
         loader = types.SimpleNamespace(exec_module=lambda module: None)

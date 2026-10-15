@@ -744,7 +744,9 @@ def call_tool(name, args, token):
         path = os.path.abspath(os.path.normpath(args.get("project") or proj))
         want = args.get("status") or "open"
         rows = []
-        events = ev.fetch(path, token)
+        # Open Events are filtered in the query (an old one must not hide
+        # behind newer closed ones); history keeps the recent LIST_CAP window.
+        events = ev.fetch(path, token, status="open" if want == "open" else None)
         for n in events:
             pr = n.get("properties", {})
             if want != "all" and pr.get("status") != want:

@@ -407,10 +407,13 @@ def event_notice(proj_dir, sid, token):
     is filtered, ranked or injected differently — the same line shadow_bm25
     stays behind."""
     seen = events_shown(proj_dir, sid)
+    # Open only, in the query and before LIMIT (see session_start.open_events);
+    # the window is wide because already-shown Events are skipped below and an
+    # older unseen one must still be reachable.
     res = rpc("plane.cypher", {"plane": PLANE,
         "query": ("MATCH (p:Project)<-[:NOTIFY]-(e:Event) "
-                  "WHERE p.path = $path "
-                  "RETURN e ORDER BY e.created_at DESC LIMIT 20"),
+                  "WHERE p.path = $path AND e.status = 'open' "
+                  "RETURN e ORDER BY e.created_at DESC LIMIT 200"),
         "params": {"path": proj_dir}}, token)
     lines, keys, fresh = [], [], []
     for n in res.get("nodes", []):
