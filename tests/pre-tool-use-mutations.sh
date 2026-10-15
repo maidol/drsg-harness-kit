@@ -24,10 +24,12 @@ mutations = {
         '    if "-h" in segment or "--help" in segment:\n'
         '        return False, False\n'),
     "no-python-options": (
-        '            elif option in ("-u", "-B", "-E", "-I"):\n'
+        '            elif option in ("-u", "-B", "-E", "-I", "-O", "-OO", "-s", "-S",\n'
+        '                            "-b", "-bb", "-q", "-v", "-d", "-P", "-R"):\n'
         '                continue\n',
-        '            elif option in ("-u", "-B", "-E", "-I"):\n'
-        '                return False, False\n'),
+        '            elif option in ("-B", "-E", "-I", "-O", "-OO", "-s", "-S",\n'
+        '                            "-b", "-bb", "-q", "-v", "-d", "-P", "-R"):\n'
+        '                continue\n'),
     "no-bash-c": (
         '        return _analyze(shell_script, depth + 1, shell_c_depth + 1)\n',
         '        return False, False\n'),
@@ -39,17 +41,42 @@ mutations = {
     "no-target-gate": (
         '        if TARGET_TEXT.search(cmd):\n            _denial(False)\n',
         '        _denial(False)\n'),
+    "no-brace-group": (
+        '        elif char == "{":\n',
+        '        elif char == "{" and False:\n'),
+    "no-bang-negation": (
+        '        elif char == "!" and not "".join(current).strip() and i + 1 < len(text) and text[i + 1].isspace():\n',
+        '        elif False:\n'),
+    "no-process-substitution": [
+        ('            if text.startswith(("<(", ">("), i):\n',
+         '            if False:\n'),
+        ('        elif text.startswith(("<(", ">("), i):\n',
+         '        elif False:\n'),
+    ],
+    "no-python-optimize": (
+        '            elif option in ("-u", "-B", "-E", "-I", "-O", "-OO", "-s", "-S",\n'
+        '                            "-b", "-bb", "-q", "-v", "-d", "-P", "-R"):\n'
+        '                continue\n',
+        '            elif option in ("-u", "-B", "-E", "-I"):\n'
+        '                continue\n'),
+    "no-sudo-wrapper": (
+        '        if name == "sudo":\n',
+        '        if False:\n'),
     "no-op": (
         '"""PreToolUse guard for event CLI and user-only lease transfer commands."""',
         '"""PreToolUse guard for event CLI and user-only lease transfer commands. """'),
 }
 if variant not in mutations:
     raise SystemExit("unknown mutation")
-old, new = mutations[variant]
-if text.count(old) != 1:
-    raise SystemExit("mutation target not unique: " + variant)
+edits = mutations[variant]
+if isinstance(edits, tuple):
+    edits = [edits]
+for old, new in edits:
+    if text.count(old) != 1:
+        raise SystemExit("mutation target not unique: " + variant)
+    text = text.replace(old, new, 1)
 with open(output_path, "w", encoding="utf-8") as out:
-    out.write(text.replace(old, new))
+    out.write(text)
 PY
   then
     printf 'NOT RUN %s (mutation setup failed)\n' "$name"
@@ -71,6 +98,11 @@ run_mutation interpreter-options python-unbuffered no-python-options
 run_mutation bash-c-recursion bash-c no-bash-c
 run_mutation actual-executable git-commit-mention no-executable-check
 run_mutation parse-target-gate heredoc-apostrophe no-target-gate
+run_mutation no-brace-group brace-group no-brace-group
+run_mutation no-bang-negation bang-negation no-bang-negation
+run_mutation no-process-substitution process-substitution no-process-substitution
+run_mutation no-python-optimize python-optimize no-python-optimize
+run_mutation no-sudo-wrapper sudo no-sudo-wrapper
 if [ "${MUTATION_SELF_TEST:-0}" = 1 ]; then
   run_mutation self-test-noop help-in-summary no-op
 fi

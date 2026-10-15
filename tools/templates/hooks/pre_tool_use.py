@@ -53,6 +53,8 @@ def _matching_paren(text, start):
 
 def _matching_group(text, start):
     depth = 1
+    opening = text[start]
+    closing = ")" if opening == "(" else "}"
     quote = None
     escaped = False
     i = start + 1
@@ -76,9 +78,9 @@ def _matching_group(text, start):
         elif text.startswith("$(", i):
             close = _matching_paren(text, i)
             i = close
-        elif char == "(":
+        elif char == opening:
             depth += 1
-        elif char == ")":
+        elif char == closing:
             depth -= 1
             if depth == 0:
                 return i
@@ -141,6 +143,14 @@ def _split_segments(text, depth):
                 escaped = True
                 i += 1
                 continue
+            if text.startswith(("<(", ">("), i):
+                close = _matching_paren(text, i)
+                sub_take, sub_deny = _analyze(text[i + 2:close], depth + 1, 0)
+                nested_take = nested_take or sub_take
+                nested_deny = nested_deny or sub_deny
+                current.append(text[i:close + 1])
+                i = close + 1
+                continue
             if text.startswith("$(", i):
                 close = _matching_paren(text, i)
                 sub_take, sub_deny = _analyze(text[i + 2:close], depth + 1, 0)
@@ -168,6 +178,13 @@ def _split_segments(text, depth):
             current.append(char)
             quote = char
             i += 1
+        elif text.startswith(("<(", ">("), i):
+            close = _matching_paren(text, i)
+            sub_take, sub_deny = _analyze(text[i + 2:close], depth + 1, 0)
+            nested_take = nested_take or sub_take
+            nested_deny = nested_deny or sub_deny
+            current.append(text[i:close + 1])
+            i = close + 1
         elif text.startswith("$(", i):
             close = _matching_paren(text, i)
             sub_take, sub_deny = _analyze(text[i + 2:close], depth + 1, 0)
@@ -182,6 +199,18 @@ def _split_segments(text, depth):
             nested_deny = nested_deny or sub_deny
             current.append(text[i:close + 1])
             i = close + 1
+        elif char == "{":
+            if not "".join(current).strip():
+                close = _matching_group(text, i)
+                sub_take, sub_deny = _analyze(text[i + 1:close], depth + 1, 0)
+                nested_take = nested_take or sub_take
+                nested_deny = nested_deny or sub_deny
+                i = close + 1
+            else:
+                current.append(char)
+                i += 1
+        elif char == "!" and not "".join(current).strip() and i + 1 < len(text) and text[i + 1].isspace():
+            i += 1
         elif char == "(":
             if not "".join(current).strip():
                 close = _matching_group(text, i)
@@ -214,6 +243,52 @@ def _command_start(argv, shell_c_depth):
         i += 1
     while i < len(argv):
         name = os.path.basename(argv[i])
+        if name == "sudo":
+            i += 1
+            value_options = {
+                "-u", "--user", "-g", "--group", "-C", "--close-from",
+                "-D", "--chdir", "-h", "--host", "-p", "--prompt",
+                "-r", "--role", "-t", "--type", "-U", "--other-user",
+                "-T", "--command-timeout",
+            }
+            long_value_options = {
+                "--user", "--group", "--close-from", "--chdir", "--host",
+                "--prompt", "--role", "--type", "--other-user",
+                "--command-timeout", "--preserve-env",
+            }
+            short_value_options = ("-u", "-g", "-C", "-D", "-h", "-p", "-r", "-t", "-U", "-T")
+            no_argument_options = {
+                "-A", "--askpass", "-b", "--background", "-E", "--preserve-env",
+                "-H", "--set-home", "-i", "--login", "-K", "--remove-timestamp",
+                "-k", "--reset-timestamp", "-n", "--non-interactive", "-P",
+                "--preserve-groups", "-S", "--stdin", "-s", "--shell", "-V",
+                "--version", "-v", "--validate",
+            }
+            while i < len(argv):
+                arg = argv[i]
+                if arg == "--":
+                    i += 1
+                    break
+                if arg in value_options:
+                    if i + 1 >= len(argv):
+                        return None, None
+                    i += 2
+                elif any(arg.startswith(option + "=") for option in long_value_options):
+                    i += 1
+                elif any(arg.startswith(option) and len(arg) > len(option)
+                         for option in short_value_options):
+                    i += 1
+                elif arg in no_argument_options:
+                    i += 1
+                elif arg in ("-e", "--edit", "-l", "--list"):
+                    return None, None
+                elif arg.startswith("-"):
+                    return None, None
+                else:
+                    break
+            while i < len(argv) and ASSIGNMENT.match(argv[i]):
+                i += 1
+            continue
         if name == "env":
             i += 1
             while i < len(argv):
@@ -303,14 +378,15 @@ def _analyze_segment(segment, depth, shell_c_depth):
     if PYTHON.match(executable):
         while args and args[0].startswith("-"):
             option = args.pop(0)
-            if option == "-X":
+            if option in ("-X", "-W"):
                 if args:
                     args.pop(0)
                 else:
                     return False, False
             elif option == "--":
                 break
-            elif option in ("-u", "-B", "-E", "-I"):
+            elif option in ("-u", "-B", "-E", "-I", "-O", "-OO", "-s", "-S",
+                            "-b", "-bb", "-q", "-v", "-d", "-P", "-R"):
                 continue
             else:
                 # Unknown interpreter options are not guessed past.

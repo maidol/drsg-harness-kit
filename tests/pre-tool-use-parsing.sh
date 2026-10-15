@@ -59,6 +59,24 @@ check("take-wrapper", "env DRSG_RAW=1 command python3 -B ~/.drsg-memory/tools/ev
 check("take-has-priority", "python3 event.py list; python3 event-poller.py --take", "deny", take_reason)
 check("help-after-double-dash", "python3 ~/.drsg-memory/tools/event.py post /x -- -h", "deny", mcp)
 
+# v1.12 GRD-1 remainder: five shapes that still slipped through.
+check("brace-group", "{ python3 ~/.drsg-memory/tools/event.py post /x hi; }", "deny", mcp)
+check("bang-negation", "! python3 ~/.drsg-memory/tools/event.py post /x hi", "deny", mcp)
+check("process-substitution", "cat <(python3 ~/.drsg-memory/tools/event.py list)", "deny", mcp)
+check("python-optimize", "python3 -O ~/.drsg-memory/tools/event.py post /x hi", "deny", mcp)
+check("sudo", "sudo python3 ~/.drsg-memory/tools/event.py post /x hi", "deny", mcp)
+check("take-brace-group", "{ python3 ~/.drsg-memory/tools/event-poller.py --take; }", "deny", take_reason)
+check("sudo-grep-event", "sudo grep -n post tools/event.py")
+check("brace-grep-event", "{ grep -n post tools/event.py; }")
+check("diff-process-substitution", "diff <(cat a) <(cat tools/event.py)")
+check("python-optimize-help", "python3 -O ~/.drsg-memory/tools/event.py --help")
+for opt in ("-u", "-g", "-C", "-D", "-h", "-p", "-r", "-t", "-U", "-T"):
+    check("sudo-opt" + opt, "sudo %s x python3 ~/.drsg-memory/tools/event.py post /x hi" % opt, "deny", mcp)
+check("sudo-long-user", "sudo --user=x python3 ~/.drsg-memory/tools/event.py post /x hi", "deny", mcp)
+check("output-process-substitution", "cat >(python3 ~/.drsg-memory/tools/event.py post /x hi)", "deny", mcp)
+check("python-c-allowed", "python3 -c 'print(1)'")
+check("python-module-allowed", "python3 -m http.server --help")
+
 # Harmless commands that mention the names are not executions.
 check("grep-event", "grep -n post tools/event.py")
 check("rg-event", "rg event.py")
