@@ -424,7 +424,13 @@ def _claude_pid():
                 argv = [a.decode("utf-8", "replace") for a in f.read().split(b"\0") if a]
         except OSError:
             return None
-        if any("claude" in os.path.basename(a) for a in argv[:2]):
+        is_native_claude = any("claude" in os.path.basename(a) for a in argv[:2])
+        is_node_claude = (
+            len(argv) > 1
+            and os.path.basename(argv[0]).startswith("node")
+            and "/@anthropic-ai/claude-code/" in argv[1]
+        )
+        if is_native_claude or is_node_claude:
             return pid
         st = _proc(pid)
         if not st:

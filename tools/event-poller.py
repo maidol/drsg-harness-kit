@@ -146,7 +146,13 @@ def owner_process():
     pid = os.getppid()
     while pid > 1:
         argv = cmdline(pid)
-        if any("claude" in os.path.basename(a) for a in argv[:2]):
+        is_native_claude = any("claude" in os.path.basename(a) for a in argv[:2])
+        is_node_claude = (
+            len(argv) > 1
+            and os.path.basename(argv[0]).startswith("node")
+            and "/@anthropic-ai/claude-code/" in argv[1]
+        )
+        if is_native_claude or is_node_claude:
             return pid, proc_start(pid)
         try:
             with open("/proc/%d/stat" % pid) as f:

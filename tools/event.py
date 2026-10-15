@@ -736,7 +736,13 @@ def _claude_process():
         st = _proc(pid)
         if not st:
             break
-        if any("claude" in os.path.basename(a) for a in argv[:2]):
+        is_native_claude = any("claude" in os.path.basename(a) for a in argv[:2])
+        is_node_claude = (
+            len(argv) > 1
+            and os.path.basename(argv[0]).startswith("node")
+            and "/@anthropic-ai/claude-code/" in argv[1]
+        )
+        if is_native_claude or is_node_claude:
             return pid, st[0]
         pid = st[2]
     return None, None
