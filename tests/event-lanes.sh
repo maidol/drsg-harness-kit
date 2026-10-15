@@ -135,6 +135,16 @@ for h in session_start.py user_prompt.py; do
   check "L6 $h: second aar session is read-only" "$(EVENT_POLL_OWNER_PID=$C owner_line $h C | grep -c '由别的会话持有，本会话只读')" 1
   check "L6 $h: lane without an owner yet"   "$(EVENT_POLL_OWNER_PID=$K owner_line $h K | grep -c '车道 drsg-harness-kit 现在没有 Event owner')" 1
 done
+for h in session_start.py user_prompt.py; do
+  check "L6 $h: default lane owned, no default-lane note" "$(EVENT_POLL_OWNER_PID=$B owner_line $h B | grep -c '默认车道现在没有 Event owner')" 0
+done
+reset; owner aar; B=$OWNER
+run B $B >/dev/null
+for h in session_start.py user_prompt.py; do
+  check "L6 $h: lane session alone is told the default lane is unowned" "$(EVENT_POLL_OWNER_PID=$B owner_line $h B | grep -c '默认车道现在没有 Event owner')" 1
+done
+reset; owner aar; B=$OWNER; owner ""; A=$OWNER; owner aar; C=$OWNER
+run B $B >/dev/null; run A $A >/dev/null
 export CLAUDE_CONFIG_DIR="$T/claude"
 TR="$CLAUDE_CONFIG_DIR/projects/$(printf %s "$(realpath "$T/proj")" | tr -c 'A-Za-z0-9' '-')"
 mkdir -p "$TR"; touch -d '-5 hours -5 minutes' "$TR/B.jsonl"
@@ -187,4 +197,4 @@ check "L8 bad lane name is refused"                  "$(EVENT_POLL_OWNER_PID=$C 
 fi
 
 echo "PASS $OK/$RAN"
-[ "$OK" -eq "$RAN" ] && { [ -n "${ONLY:-}" ] || [ "$RAN" -eq 47 ]; }
+[ "$OK" -eq "$RAN" ] && { [ -n "${ONLY:-}" ] || [ "$RAN" -eq 51 ]; }

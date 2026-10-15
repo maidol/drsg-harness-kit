@@ -441,7 +441,12 @@ def _hook_idle(proj_dir, lease):
 
 
 def _lane_owner_line(state, sid, me, lanes, proj_dir):
-    """The owner line for a session started with DRSG_EVENT_LANES."""
+    """The owner line for a session started with DRSG_EVENT_LANES. Ends with a
+    note when nobody holds the default lane: Events from every sender without a
+    lane then wake no session at all, and nothing else would say so."""
+    note = ("" if _hook_lease(state, "*") else
+            "默认车道现在没有 Event owner：没有车道的发件项目发来的 Event 不会唤醒任何会话；"
+            "要有人处理，开一个不声明车道的会话。")
     mine, taken = [], []
     for lane in lanes:
         lease = _hook_lease(state, lane)
@@ -453,12 +458,12 @@ def _lane_owner_line(state, sid, me, lanes, proj_dir):
     if mine:
         line = ("本会话是车道 %s 的 Event owner：只执行待办轮询唤醒你处理的 Event；"
                 "列表里其他 Event 只读，不要执行，也不要 event_done。" % "、".join(mine))
-        return line + ("声明的车道 %s 由别的会话持有。" % "、".join(taken) if taken else "")
+        return line + ("声明的车道 %s 由别的会话持有。" % "、".join(taken) if taken else "") + note
     if taken:
         return ("本会话声明的车道 %s 由别的会话持有，本会话只读：不要执行这些 Event。"
-                "owner 退出后，本会话的待办轮询会接管并唤醒你。" % "、".join(taken))
+                "owner 退出后，本会话的待办轮询会接管并唤醒你。" % "、".join(taken)) + note
     return ("本会话声明的车道 %s 现在没有 Event owner。本会话的待办轮询拿到租约后会唤醒你；"
-            "在那之前本会话只读，不要执行这些 Event。" % "、".join(lanes))
+            "在那之前本会话只读，不要执行这些 Event。" % "、".join(lanes)) + note
 
 
 def event_owner(proj_dir, sid):

@@ -534,6 +534,11 @@ there is one this session has not been told about yet.
   本会话声明的车道 sub2api 现在没有 Event owner。本会话的待办轮询拿到租约后会唤醒你；在那之前本会话只读，不要执行这些 Event。
   ```
 
+  When no session holds the default lane (`lease.json`), a lane session's line
+  ends with one more sentence: `默认车道现在没有 Event owner：没有车道的发件项目发来的 Event 不会唤醒任何会话；要有人处理，开一个不声明车道的会话。`
+  With only lane sessions running, Events from every other sender wake nobody,
+  and this is the only place that says so.
+
   A lane name is letters, digits, `.`, `_` and `-`; other names are ignored. A
   misspelt name is not reported: that lane never gets an Event and its sender's
   Events go to the default lane, so copy the name from `from_project`. To move
