@@ -72,6 +72,30 @@ router = load("codegraph-router")
 check("codegraph-router._post reaches 127.0.0.1 past http_proxy",
       lambda: router._post(api, "Bearer t", {"jsonrpc": "2.0", "id": 1}, None, 5))
 
+# setup.sh --all-projects lists projects through project_registry.py; the
+# request carries the daemon token. os.devnull: no env file, empty token.
+reg = load("project_registry")
+check("project_registry.known_projects reaches 127.0.0.1 past http_proxy",
+      lambda: (reg.known_projects(os.devnull, api, "memory"),))
+
+# install.sh's post-install self-check is a heredoc; run that exact text. Its
+# first call is db.stats, so "daemon reachable" means the request got through.
+import subprocess
+lines = open(os.path.join(tools, "install.sh"), encoding="utf-8").read().splitlines()
+start = next(i for i, l in enumerate(lines)
+             if l.startswith('SELFCHECK="$(') and l.endswith("<<'PYEOF'"))
+end = next(i for i in range(start + 1, len(lines)) if lines[i] == "PYEOF")
+proc = subprocess.run([sys.executable, "-", api, "memory", "loopback-slug", repo],
+                      input="\n".join(lines[start + 1:end]) + "\n",
+                      capture_output=True, text=True, timeout=60,
+                      env=dict(os.environ, DRSG_INSTALL_TOKEN="t"))
+ran += 1
+reached = "✓ daemon reachable" in proc.stdout
+ok += reached
+print("%s install.sh self-check reaches 127.0.0.1 past http_proxy%s" % (
+    "ok  " if reached else "FAIL",
+    "" if reached else ": " + (proc.stdout + proc.stderr).strip().splitlines()[0][:120]))
+
 # The other half: a non-loopback host still goes to the proxy (port 9 refuses;
 # sent direct, the .invalid name would fail to resolve instead).
 import urllib.request

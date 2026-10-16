@@ -8,6 +8,20 @@ import sys
 import urllib.request
 
 
+# urllib sends even 127.0.0.1 through http_proxy unless no_proxy names it: the
+# proxy would receive the daemon token. Loopback goes direct, anything else
+# keeps the user's proxy.
+_DIRECT = urllib.request.build_opener(urllib.request.ProxyHandler({}))
+
+
+def _urlopen(req, timeout):
+    """urlopen that never proxies a loopback address."""
+    host = urllib.parse.urlsplit(req.full_url).hostname or ""
+    if host in ("localhost", "::1") or host.startswith("127."):
+        return _DIRECT.open(req, timeout=timeout)
+    return urllib.request.urlopen(req, timeout=timeout)
+
+
 def known_projects(daemon_env, api, plane):
     """Return unique Project paths in the daemon's result order."""
     token = ""
@@ -25,7 +39,7 @@ def known_projects(daemon_env, api, plane):
         api, data=body,
         headers={"Content-Type": "application/json",
                  "Authorization": "Bearer " + token})
-    with urllib.request.urlopen(req, timeout=5) as response:
+    with _urlopen(req, 5) as response:
         out = json.load(response)
     if "error" in out:
         # Do not echo daemon error payloads: they may contain request details.

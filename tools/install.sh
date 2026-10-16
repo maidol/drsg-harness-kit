@@ -656,7 +656,13 @@ def rpc(method, params):
     body = json.dumps({"jsonrpc": "2.0", "id": 1, "method": method, "params": params}).encode()
     req = urllib.request.Request(api, data=body, headers={
         "Content-Type": "application/json", "Authorization": "Bearer " + token})
-    with urllib.request.urlopen(req, timeout=5) as r:
+    host = urllib.parse.urlsplit(api).hostname or ""
+    if host in ("localhost", "::1") or host.startswith("127."):
+        # urllib would hand even 127.0.0.1 to http_proxy, token included.
+        opener = urllib.request.build_opener(urllib.request.ProxyHandler({}))
+    else:
+        opener = urllib.request.build_opener()
+    with opener.open(req, timeout=5) as r:
         res = json.load(r)
     if "result" not in res:
         # Without this the caller sees KeyError('result') and has nothing to
