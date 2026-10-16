@@ -6,7 +6,7 @@
 
 只需一条命令，即可把 Dr Strange 变成 Claude Code 项目的持久化跨会话记忆层：图会记住之前的会话结论，每个新会话都会从摘要而不是空白上下文开始。
 
-整个系统由四个 Python hook、一个安装器和一个 daemon 控制脚本组成。不需要插件、不需要注册服务，也不会有数据离开本机。
+运行时包含七个 Python hook 模板、一个安装器和一个 daemon 控制脚本。`drsg_hook_common.py` 与 SessionStart、UserPromptSubmit 一起部署；`tools/drsg_rpc.py` 是六个工具共用的回环 RPC 客户端。`memory-backup.py` 保留独立 transport。不需要插件、不需要注册服务，也不会有数据离开本机。
 
 `tools/claude-model-picker.sh` 是一个 Bash 函数，会在交互式 `claude` 启动前询问模型。未设置 `CLAUDE_PICK_MODELS` 时，它通过 `tools/claude-model-discovery.py` 查询配置的网关，失败时退回静态选单。程序文件随 tools 部署，但全新安装默认不启用。可在安装时用 `setup.sh --model-picker` 显式启用，也可之后运行 `~/.drsg-memory/tools/claude-model-picker-config.sh enable`；传 `disable` 可关闭。普通安装/更新会保留当前选择。详细说明见仓库根目录 README 的「启动前选模型」一节。
 
@@ -157,7 +157,7 @@ DRSG_PROJECT_DIR=/path/to/project python3 ~/.drsg-memory/tools/repair_project_ke
 ## 安装实际做了什么
 
 1. 确保共享 daemon 正在运行，生成或复用 token。启用 L3 时，会在 daemon 启动**之前**把 key 的**值**写入 `~/.drsg-memory/env`，这样 `start` 才能导出它。
-2. 把四个 hook 复制到 `<project>/.claude/hooks/`。
+2. 把七个 Python hook 模板复制到 `<project>/.claude/hooks/`，包括由 SessionStart 和 UserPromptSubmit 共用的 `drsg_hook_common.py`。全局 `event-poller.py` 则由 `setup.sh` 单独部署。
 3. 写入 `<project>/.drsg/env`（`chmod 600`）——daemon 地址、token 和 L3 设置只包含 key 的**名称**。
 4. 把 SessionStart / UserPromptSubmit / SessionEnd 条目合并到 `<project>/.claude/settings.local.json`，保留已有内容。
 5. 注册两个 MCP server（项目级）：`drsg` 指向 daemon 的 `/mcp`，以及 `drsg-events`——本目录中的 stdio server，提供 `event_post` / `event_list` / `event_done` / `event_take`。第二个 server 有意独立：`Event` 和 `NOTIFY` 是本层建立在软 schema 图之上的约定，而不了解 Fact 的 engine 不应学习 Event 是什么。
@@ -261,6 +261,8 @@ reply_to 指向的 Event 是旧格式（没有 from_path），无法核对来源
 ```
 
 目标不存在或关联路径不符时会提示核对 key，或去掉 `reply_to` 重发。该字段只在唤醒提示和 `event_list` 中添加关联信息，不授权任何操作，也不会关闭原 Event；原 Event 仍由 owner 调用 `event_done` 关闭。双方都需部署新版 `drsg-events` runtime 并重启 Claude Code 后再使用 `reply_to`。手动部署时请在自己的 shell 用 `!` 前缀运行 setup 命令。
+
+这些约束用于避免静默失败：收件方按 `Project.path` 匹配，不依赖可能被重复 key 遮蔽的节点；Event 节点与 `NOTIFY` 边必须一起写入；关闭时使用 `key(e)`，因为 `e.key` 可能不报错但一条也匹配不到。时间戳用 Unix 整数秒，ISO 字符串可能静默比较为 false。Event 与 Fact 分开，是因为召回会排序并丢弃内容，而待办必须完整送达。使用 MCP 工具而非手写 Cypher，才能把 Event 节点和 `NOTIFY` 边一起创建。代码图的 `symbols` 和 `verb` 要放在对应字段：`summary` 会截到 80 字符，符号 key 放进去可能丢掉识别所需的尾部。接收不需要调用工具；agent 会话也不能通过 Bash 运行 `event.py`，Event 由 hook 和 poller 的既定路径送达。
 
 ```bash
 python3 ~/.drsg-memory/tools/event.py post /path/to/other-repo \

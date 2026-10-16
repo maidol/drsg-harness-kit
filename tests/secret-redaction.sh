@@ -195,6 +195,8 @@ check "event post lets a placeholder through"  "$(val "$O" clean)" posted
 check "event.py without secret_redact.py refuses" "$(val "$O" lone)" refused
 check "install parks secret_redact.py with event.py" \
   "$(grep -c 'templates/hooks/secret_redact.py' "$REPO/tools/install.sh")" 1
+check "install parks drsg_rpc.py with event.py" \
+  "$(grep -c '"$SCRIPT_DIR/drsg_rpc.py"' "$REPO/tools/install.sh")" 1
 
 # ---- 5. the path & token gate now knows secret shapes ----------------------
 cat > "$T/t5.py" <<'PY'
@@ -209,4 +211,4 @@ python3 "$REPO/tools/check-no-machine-paths.py" "$T/leak.txt" >/dev/null 2>&1
 check "path & token gate flags an API key" "$?" 1
 
 printf '\nPASS %d/%d\n' "$OK" "$RAN"
-[ "$RAN" -eq 22 ] && [ "$OK" -eq "$RAN" ]
+[ "$RAN" -eq 23 ] && [ "$OK" -eq "$RAN" ]

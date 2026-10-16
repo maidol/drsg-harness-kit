@@ -11,22 +11,27 @@ NOT_RUN=0
 
 run_mutation() {
   local name="$1" only="$2" variant="$3"
-  local source="$T/$name.py" output="$T/$name.out" rc
-  if ! cp "$REPO/tools/repair_project_key.py" "$source"; then
+  local source="$T/$name.py" common="$T/$name/drsg_hook_common.py"
+  local output="$T/$name.out" rc
+  mkdir -p "$(dirname "$common")"
+  if ! cp "$REPO/tools/repair_project_key.py" "$source" \
+      || ! cp "$REPO/tools/templates/hooks/drsg_hook_common.py" "$common"; then
     printf 'MUTATION NOT RUN %s (source copy failed)\n' "$name"
     NOT_RUN=$((NOT_RUN + 1))
     return
   fi
   if [ "$variant" != no-op ]; then
-    if ! python3 - "$source" "$variant" <<'PY'
+    if ! python3 - "$source" "$common" "$variant" <<'PY'
 from pathlib import Path
 import sys
 
-path, variant = Path(sys.argv[1]), sys.argv[2]
+source, common, variant = Path(sys.argv[1]), Path(sys.argv[2]), sys.argv[3]
+path = common if variant == "no-api-binding" else source
 mutations = {
     "no-api-binding": (
-        '    u.API = os.environ.get("DRSG_API", u.API)\n',
-        ''),
+        '    api = os.environ.get("DRSG_API", API)\n',
+        # Ignore DRSG_API, but fall back to a dead port, never the live daemon's default.
+        '    api = "http://127.0.0.1:9/rpc"\n'),
     "keyed-about-belongs-only": (
         '    edges = incident_edges(seed.get("edges", []), old_id)\n',
         '    nodes_by_id = {node.get("id"): node for node in nodes}\n'
@@ -102,7 +107,8 @@ PY
   fi
 
   printf '\n== %s: ONLY=%s ==\n' "$name" "$only"
-  REPAIR_SCRIPT="$source" ONLY="$only" bash "$HERE/repair-project-key.sh" \
+  REPAIR_SCRIPT="$source" REPAIR_TEST_COMMON="$common" ONLY="$only" \
+    bash "$HERE/repair-project-key.sh" \
     >"$output" 2>&1
   rc=$?
   python3 - "$output" <<'PY'

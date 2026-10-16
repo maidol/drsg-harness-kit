@@ -13,6 +13,7 @@ run_mutation() {
   local name="$1" only="$2" variant="$3"
   if ! cp "$REPO/tools/mcp_events.py" "$T/mcp_events.py" ||
      ! cp "$REPO/tools/event.py" "$T/event.py" ||
+     ! cp "$REPO/tools/drsg_rpc.py" "$T/drsg_rpc.py" ||
      ! cp "$REPO/tools/templates/hooks/secret_redact.py" "$T/secret_redact.py"; then
     printf 'MUTATION NOT RUN %s (source copy failed)\n' "$name"
     NOT_RUN=$((NOT_RUN + 1))

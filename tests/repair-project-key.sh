@@ -38,6 +38,9 @@ API="http://127.0.0.1:$PORT/rpc"
 HOOKS="$T/hooks"
 mkdir -p "$HOOKS"
 cp -R "$REPO/tools/templates/hooks/." "$HOOKS/"
+if [ -n "${REPAIR_TEST_COMMON:-}" ]; then
+  cp "$REPAIR_TEST_COMMON" "$HOOKS/drsg_hook_common.py"
+fi
 python3 - "$HOOKS/user_prompt.py" "$DEAD_PORT" <<'PY'
 from pathlib import Path
 import sys

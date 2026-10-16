@@ -250,6 +250,7 @@ cp "$PICKER" "$T/broken-tools/claude-model-picker.sh"
 cp "$HERE/../tools/claude-lane-picker.py" "$T/broken-tools/claude-lane-picker.py"
 cp "$HERE/../tools/claude-model-discovery.py" "$T/broken-tools/claude-model-discovery.py"
 cp "$HERE/../tools/event.py" "$T/broken-tools/event.py"
+cp "$HERE/../tools/drsg_rpc.py" "$T/broken-tools/drsg_rpc.py"
 invoke '' PICKER_PATH="$T/broken-tools/claude-model-picker.sh" CLAUDE_PICK_MODEL=0 -- --resume helper-error
 check "helper failure does not start claude" "$(<"$T/stdout")" 'FUNCTION_RC:1'
 check "helper failure explains cause and explicit bypass" "$(grep -c 'lane picker:.*session_start.py' "$T/stderr") $(grep -c 'CLAUDE_PICK_LANES=0 to bypass' "$T/stderr")" '1 1'

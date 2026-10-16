@@ -55,6 +55,7 @@ def check(name, call):
 
 
 sys.argv = [os.path.join(tools, "x.py")]
+transport = load("drsg_rpc")
 ev = load("event")
 ev.API = api
 check("event.rpc reaches 127.0.0.1 past http_proxy", lambda: ev.rpc("m", {}, "t"))
@@ -101,13 +102,13 @@ print("%s install.sh self-check reaches 127.0.0.1 past http_proxy%s" % (
 import urllib.request
 ran += 1
 try:
-    ev._urlopen(urllib.request.Request("http://daemon.example.invalid/rpc", data=b"{}"), 5)
+    transport._urlopen(urllib.request.Request("http://daemon.example.invalid/rpc", data=b"{}"), 5)
     why = "no error"
 except Exception as e:
     why = repr(e)
 proxied = "Connection refused" in why
 ok += proxied
-print("%s event._urlopen still proxies a non-loopback host%s" % (
+print("%s drsg_rpc._urlopen still proxies a non-loopback host%s" % (
     "ok  " if proxied else "FAIL", "" if proxied else ": " + why[:120]))
 
 server.shutdown()

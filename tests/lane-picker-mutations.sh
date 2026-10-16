@@ -22,9 +22,10 @@ run_mutation() {
   rm -rf "$T/tools"
   mkdir -p "$T/tools"
   cp "$TOOLS/claude-model-picker.sh" "$TOOLS/claude-lane-picker.py" "$TOOLS/event.py" \
-    "$TOOLS/claude-model-discovery.py" "$T/tools/"
+    "$TOOLS/claude-model-discovery.py" "$TOOLS/drsg_rpc.py" "$T/tools/"
   mkdir -p "$T/tools/templates/hooks"
-  cp "$TOOLS/templates/hooks/session_start.py" "$T/tools/templates/hooks/"
+  cp "$TOOLS/templates/hooks/session_start.py" "$TOOLS/templates/hooks/drsg_hook_common.py" \
+    "$T/tools/templates/hooks/"
   if ! python3 - "$target" "$needle" "$replacement" <<'PY'
 import sys
 path, old, new = sys.argv[1:]

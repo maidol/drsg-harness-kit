@@ -58,9 +58,18 @@ import json
 import math
 import os
 import re
-import socket
 import sys
 import time
+
+# Loaded by path (tests use importlib) the hook's own directory is not on
+# sys.path; put it there so the shared module next to it is found.
+_HERE = os.path.dirname(os.path.abspath(__file__))
+if _HERE not in sys.path:
+    sys.path.insert(0, _HERE)
+try:
+    import drsg_hook_common as _common
+except Exception:
+    _common = None
 
 # --- Configuration (overridable via .drsg/env) -----------------------------
 API = "http://127.0.0.1:7700/rpc"
@@ -98,21 +107,6 @@ SUPPRESS_PCT = 15
 MACHINE_PREFIXES = ("<agent-message", "<task-notification", "<cross-session-message")
 
 
-def telemetry(proj_dir, record):
-    """Append one JSON line to .drsg/recall.jsonl.
-
-    Best-effort and silent by construction: this is the read path, and a
-    session must never degrade because a log write failed. The recall
-    decision is already made by the time this runs.
-    """
-    try:
-        d = os.path.join(proj_dir, ".drsg")
-        os.makedirs(d, exist_ok=True)
-        record["ts"] = int(time.time())
-        with open(os.path.join(d, "recall.jsonl"), "a", encoding="utf-8") as f:
-            f.write(json.dumps(record, ensure_ascii=False) + "\n")
-    except Exception:
-        pass
 
 
 def prompt_id(prompt):
@@ -136,70 +130,8 @@ def arm(session_id, pid):
     return "suppressed" if int(h[:8], 16) % 100 < SUPPRESS_PCT else "treated"
 
 
-def rpc(method, params, token):
-    """POST one JSON-RPC call to the local daemon over a bare socket.
-
-    Not urllib: `import urllib.request` is ~45 ms of this hook's ~90 ms
-    interpreter+import floor, because it pulls in http.client and, through
-    it, email.parser — a MIME header parser, to read one Content-Type off a
-    fixed loopback endpoint that needs no proxy, redirect, TLS or chunked
-    decoding. Anything that is not plain http still goes through urllib,
-    imported lazily so the common path never pays for it.
-
-    Behaviour is deliberately unchanged: any failure raises (every caller
-    wraps this in `except Exception` and degrades), and the timeout keeps
-    urlopen's semantics — per socket operation, not a deadline for the call.
-    """
-    body = json.dumps({"jsonrpc": "2.0", "id": 1, "method": method, "params": params}).encode()
-    scheme, _, rest = API.partition("://")
-    hostport, _, path = rest.partition("/")
-    if scheme != "http" or hostport.startswith("["):
-        import urllib.request  # https, or an IPv6 literal: not the local daemon
-        req = urllib.request.Request(
-            API, data=body,
-            headers={"Content-Type": "application/json", "Authorization": f"Bearer {token}"},
-        )
-        with urllib.request.urlopen(req, timeout=3) as r:
-            return json.load(r)["result"]
-    host, _, port = hostport.partition(":")
-    head = (
-        f"POST /{path} HTTP/1.1\r\nHost: {hostport}\r\n"
-        f"Content-Type: application/json\r\nAuthorization: Bearer {token}\r\n"
-        f"Content-Length: {len(body)}\r\nConnection: close\r\n\r\n"
-    ).encode()
-    with socket.create_connection((host, int(port or 80)), timeout=3) as s:
-        s.sendall(head + body)
-        buf = b""
-        while b"\r\n\r\n" not in buf:
-            chunk = s.recv(65536)
-            if not chunk:
-                raise OSError("drsg rpc: closed before headers")
-            buf += chunk
-        raw, _, payload = buf.partition(b"\r\n\r\n")
-        lines = raw.decode("latin-1").split("\r\n")
-        if lines[0].split(" ")[1:2] != ["200"]:
-            raise OSError(f"drsg rpc: {lines[0]}")
-        length = None
-        for line in lines[1:]:
-            name, _, value = line.partition(":")
-            if name.strip().lower() == "content-length":
-                length = int(value.strip())
-        while length is None or len(payload) < length:
-            chunk = s.recv(65536)
-            if not chunk:
-                break
-            payload += chunk
-    return json.loads(payload)["result"]
 
 
-def load_env(proj_dir):
-    p = os.path.join(proj_dir, ".drsg", "env")
-    if os.path.exists(p):
-        for line in open(p, encoding="utf-8"):
-            line = line.strip()
-            if line and not line.startswith("#") and "=" in line:
-                k, v = line.split("=", 1)
-                os.environ.setdefault(k.strip(), v.strip())
 
 
 # The to-do lines this prompt should put on the terminal, set once in main().
@@ -220,19 +152,6 @@ def hook_out(**extra):
     print(json.dumps(out))
 
 
-def mark_events_shown(proj_dir, sid, keys):
-    """Record which Events this session has already put on the terminal.
-
-    Deliberately duplicated from session_start.py — the two hooks are separate
-    files with no shared module, and this file is what keeps a fresh session
-    from being shown the same to-do twice, once by each hook."""
-    try:
-        d = os.path.join(proj_dir, ".drsg")
-        os.makedirs(d, exist_ok=True)
-        with open(os.path.join(d, "events_seen.json"), "w", encoding="utf-8") as f:
-            json.dump({"session": sid, "keys": sorted(keys)}, f)
-    except Exception:
-        pass
 
 
 def events_shown(proj_dir, sid):
@@ -248,162 +167,20 @@ def events_shown(proj_dir, sid):
         return set()
 
 
-def _proc(pid):
-    """(start ticks, state letter, parent pid) of `pid` from /proc, None when gone."""
-    try:
-        with open("/proc/%d/stat" % pid) as f:
-            rest = f.read().rsplit(")", 1)[1].split()
-        return int(rest[19]), rest[0], int(rest[1])
-    except (OSError, ValueError, IndexError, TypeError):
-        return None
 
 
-def _claude_pid():
-    """This hook's Claude Code process: the nearest ancestor whose first or
-    second argv names `claude` — the same walk event-poller.py makes, so the
-    two name the same process."""
-    if os.environ.get("EVENT_POLL_OWNER_PID"):          # tests only
-        return int(os.environ["EVENT_POLL_OWNER_PID"])
-    pid = os.getppid()
-    while pid > 1:
-        try:
-            with open("/proc/%d/cmdline" % pid, "rb") as f:
-                argv = [a.decode("utf-8", "replace") for a in f.read().split(b"\0") if a]
-        except OSError:
-            return None
-        is_native_claude = any("claude" in os.path.basename(a) for a in argv[:2])
-        is_node_claude = (
-            len(argv) > 1
-            and os.path.basename(argv[0]).startswith("node")
-            and "/@anthropic-ai/claude-code/" in argv[1]
-        )
-        if is_native_claude or is_node_claude:
-            return pid
-        st = _proc(pid)
-        if not st:
-            return None
-        pid = st[2]
-    return None
 
 
-def _hook_lanes(pid):
-    """DRSG_EVENT_LANES of the Claude Code process `pid`, read from /proc like
-    event.py process_lanes does; ["*"] (the default lane) when unset."""
-    try:
-        with open("/proc/%d/environ" % pid, "rb") as f:
-            items = f.read().split(b"\0")
-    except (OSError, TypeError):
-        return ["*"]
-    for item in items:
-        if item.startswith(b"DRSG_EVENT_LANES="):
-            names = item[len(b"DRSG_EVENT_LANES="):].decode("utf-8", "replace").split(",")
-            lanes = sorted({n.strip() for n in names if re.match(r"^[A-Za-z0-9._-]+$", n.strip())})
-            return lanes or ["*"]
-    return ["*"]
 
 
-def _hook_lease(state, lane):
-    """`lane`'s lease while its holder can still act, else None."""
-    name = "lease.json" if lane == "*" else "lease.%s.json" % lane
-    try:
-        with open(os.path.join(state, name), encoding="utf-8") as f:
-            lease = json.load(f)
-    except (OSError, ValueError):
-        return None
-    holder = lease.get("pid") if isinstance(lease, dict) else None
-    st = _proc(holder) if holder else None
-    if not st or st[0] != lease.get("start") or st[1] in ("T", "t", "Z", "X"):
-        return None
-    return lease
 
 
-def _hook_lane_names(state):
-    try:
-        names = os.listdir(state)
-    except OSError:
-        return []
-    return sorted(n[6:-5] for n in names if n.startswith("lease.") and n.endswith(".json")
-                  and re.match(r"^[A-Za-z0-9._-]+$", n[6:-5]))
 
 
-def _hook_idle(proj_dir, lease):
-    """"，已空闲 N 小时" when the lease holder's transcript has not changed for an
-    hour or more: a terminal lost in a detached pty (a closed VS Code window)
-    keeps its process, and so the lease, alive. "" when unknown or recent."""
-    sid = str(lease.get("session_id") or "")
-    if not re.match(r"^[A-Za-z0-9-]+$", sid):
-        return ""
-    root = os.environ.get("CLAUDE_CONFIG_DIR") or os.path.expanduser("~/.claude")
-    path = os.path.join(root, "projects", re.sub(r"[^A-Za-z0-9]", "-", os.path.realpath(proj_dir)),
-                        sid + ".jsonl")
-    try:
-        hours = int((time.time() - os.path.getmtime(path)) // 3600)
-    except OSError:
-        return ""
-    return "，已空闲 %d 小时" % hours if hours >= 1 else ""
 
 
-def _lane_owner_line(state, sid, me, lanes, proj_dir):
-    """The owner line for a session started with DRSG_EVENT_LANES. Ends with a
-    note when nobody holds the default lane: Events from every sender without a
-    lane then wake no session at all, and nothing else would say so."""
-    note = ("" if _hook_lease(state, "*") else
-            "默认车道现在没有 Event owner：没有车道的发件项目发来的 Event 不会唤醒任何会话；"
-            "要有人处理，开一个不声明车道的会话。")
-    mine, taken = [], []
-    for lane in lanes:
-        lease = _hook_lease(state, lane)
-        if lease and lease.get("session_id") == sid and lease.get("pid") == me:
-            mine.append(lane)
-        elif lease:
-            taken.append("%s（会话 %s%s）" % (lane, str(lease.get("session_id"))[:8],
-                                           _hook_idle(proj_dir, lease)))
-    if mine:
-        line = ("本会话是车道 %s 的 Event owner：只执行待办轮询唤醒你处理的 Event；"
-                "列表里其他 Event 只读，不要执行，也不要 event_done。" % "、".join(mine))
-        return line + ("声明的车道 %s 由别的会话持有。" % "、".join(taken) if taken else "") + note
-    if taken:
-        return ("本会话声明的车道 %s 由别的会话持有，本会话只读：不要执行这些 Event。"
-                "owner 退出后，本会话的待办轮询会接管并唤醒你。" % "、".join(taken)) + note
-    return ("本会话声明的车道 %s 现在没有 Event owner（只是当前快照）。"
-            "轮询器通常会在几秒内取得租约并稍后唤醒本会话；收到那次唤醒后，以它为准。"
-            "在那之前本会话只读，不要执行这些 Event。" % "、".join(lanes)) + note
 
 
-def event_owner(proj_dir, sid):
-    """One line saying whether THIS session executes the project's Events.
-
-    Every session is shown the open Events; only the event-poller's lease
-    holder, a session id together with its Claude Code process, acts on them,
-    so two terminals resuming one session id do not both act. Read from the
-    poller's own lease file, so this line and its wake-ups cannot disagree.
-    Duplicated in session_start.py and user_prompt.py, like mark_events_shown.
-    "" on any error: an unknown owner must not cost the to-do list it annotates."""
-    try:
-        state = os.path.join(os.environ.get("DRSG_MEM_DIR") or os.path.expanduser("~/.drsg-memory"),
-                             "poller", hashlib.sha1(os.path.realpath(proj_dir).encode()).hexdigest()[:12])
-        me = _claude_pid()
-        lanes = _hook_lanes(me)
-        if lanes != ["*"]:
-            return _lane_owner_line(state, sid, me, lanes, proj_dir)
-        lease = _hook_lease(state, "*")
-        live = lease is not None
-        lease = lease or {}
-        holder = lease.get("pid")
-        if live and lease.get("session_id") == sid and holder == me:
-            others = [lane for lane in _hook_lane_names(state) if _hook_lease(state, lane)]
-            return "本会话是这个项目的 Event owner，现持有租约：可以处理本项目的待办 Event；按 Event 流程处理。" + (
-                "车道 %s 的 Event 归各自的车道会话，本会话对它们只读：不要执行，也不要 event_done。"
-                % "、".join(others) if others else "")
-        if live:
-            return ("Event owner 是会话 %s（pid %s%s），本会话只读：可以看、可以回答用户的问题，"
-                    "不要执行这些 Event；本会话调 event_done 会被拒绝，用户明确要求本会话接手时才带 force。"
-                    "owner 退出后，本会话的待办轮询会接管并唤醒你，到时再处理。"
-                    % (str(lease.get("session_id"))[:8], holder, _hook_idle(proj_dir, lease)))
-        return ("现在没有 Event owner（只是当前快照）。轮询器通常会在几秒内取得租约并稍后唤醒本会话；"
-                "收到那次唤醒后，以它为准。在那之前本会话只读，不要执行这些 Event。")
-    except Exception:
-        return ""
 
 
 def event_notice(proj_dir, sid, token):
@@ -460,28 +237,10 @@ def event_notice(proj_dir, sid, token):
         # only this prompt's keys forgets earlier prompts when the open list is
         # larger than MAX_EVENTS.
         mark_events_shown(proj_dir, sid, seen | set(keys))
-        ack_events(fresh, sid, token)
+        ack_events(fresh, sid, token, quiet=True)
     return lines
 
 
-def ack_events(keys, sid, token):
-    """Write the delivery receipt back to the graph — see session_start.py.
-
-    Duplicated rather than shared for the same reason mark_events_shown is: the
-    hooks are installed as independent files with no import path between them.
-
-    Swallowed on failure, and deliberately quiet on stderr too: this hook runs
-    on every prompt, and a daemon hiccup must not print into the user's typing."""
-    if not keys:
-        return
-    try:
-        rpc("plane.cypher", {"plane": PLANE,
-            "query": ("MATCH (e:Event) WHERE key(e) IN $keys "
-                      "SET e.seen_at = $ts, e.seen_by = $sid"),
-            "params": {"keys": sorted(keys), "ts": int(time.time()), "sid": sid}},
-            token)
-    except Exception:
-        pass
 
 
 def clean(s):
@@ -566,17 +325,6 @@ def score_facts(prompt, facts, maxhits=MAX):
     return [f for _, f in rank_facts(prompt, facts)[:maxhits]]
 
 
-def retired(valid_to, now):
-    """True for a Fact whose `valid_to` has passed.
-
-    A value that is not a number is kept rather than trusted: the protocol
-    asks for integer Unix seconds, and a Fact with a malformed retirement date
-    is still one someone wrote on purpose. Same rule in session_start.py; the
-    hooks share no module."""
-    try:
-        return valid_to is not None and int(valid_to) <= now
-    except (TypeError, ValueError):
-        return False
 
 
 def fetch_facts(token):
@@ -652,7 +400,27 @@ def fetch_facts(token):
     return facts
 
 
+if _common is not None:
+    rpc = _common.rpc
+    load_env = _common.load_env
+    telemetry = _common.telemetry
+    _proc = _common._proc
+    _claude_pid = _common._claude_pid
+    _hook_lanes = _common._hook_lanes
+    _hook_lease = _common._hook_lease
+    _hook_lane_names = _common._hook_lane_names
+    _hook_idle = _common._hook_idle
+    _lane_owner_line = _common._lane_owner_line
+    event_owner = _common.event_owner
+    mark_events_shown = _common.mark_events_shown
+    ack_events = _common.ack_events
+    retired = _common.retired
+
+
 def main():
+    if _common is None:
+        hook_out()
+        return
     t0 = time.time()
     data = json.load(sys.stdin)
     prompt = (data.get("prompt") or "").strip()
@@ -684,7 +452,6 @@ def main():
     # split is only verifiable if the misses are logged too. The analyzer counts
     # the arm only where an injection was actually on the table.
     rec["arm"] = arm(rec["session"], rec["prompt"])
-
     # Before any early return: whether recall finds anything is unrelated to
     # whether someone left a to-do here, and the failure paths below must not
     # swallow it. Swallowed whole on error for the same reason shadow_bm25 is —

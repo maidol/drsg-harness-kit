@@ -12,7 +12,8 @@ NOT_RUN=0
 run_mutation() {
   local name="$1" only="$2" variant="$3"
   local source="$T/$name.py" output="$T/$name.out" rc
-  if ! cp "$REPO/tools/migrate.py" "$source"; then
+  if ! cp "$REPO/tools/migrate.py" "$source" ||
+     ! cp "$REPO/tools/drsg_rpc.py" "$T/drsg_rpc.py"; then
     printf 'MUTATION NOT RUN %s (source copy failed)\n' "$name"
     NOT_RUN=$((NOT_RUN + 1))
     return

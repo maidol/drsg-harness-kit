@@ -382,7 +382,7 @@ bash "$SCRIPT_DIR/install-precommit-guard.sh" "$PROJECT_DIR" "$TOOLS_DIR"
 if [ "$(cd "$SCRIPT_DIR" && pwd -P)" != "$(mkdir -p "$TOOLS_DIR" && cd "$TOOLS_DIR" && pwd -P)" ]; then
   echo "== parking the Event tooling in $TOOLS_DIR"
   mkdir -p "$TOOLS_DIR"
-  cp -a "$SCRIPT_DIR/mcp_events.py" "$SCRIPT_DIR/event.py" "$TOOLS_DIR/"
+  cp -a "$SCRIPT_DIR/mcp_events.py" "$SCRIPT_DIR/event.py" "$SCRIPT_DIR/drsg_rpc.py" "$TOOLS_DIR/"
   # event.py refuses every post without its redactor; it travels with it.
   cp -a "$SCRIPT_DIR/templates/hooks/secret_redact.py" "$TOOLS_DIR/"
   chmod +x "$TOOLS_DIR/mcp_events.py" "$TOOLS_DIR/event.py"
@@ -408,54 +408,13 @@ BEGIN = "<!-- drsg-memory:events:begin -->"
 END = "<!-- drsg-memory:events:end -->"
 
 block = f"""{BEGIN}
-## Cross-agent to-dos (`Event`, memory layer)
+## Cross-project Events
 
-Leaving work for an agent in *another* project goes through an `Event` node in
-the `{plane}` plane, not through a `Fact`. **A to-do must not be written as a
-Fact**: Facts reach a session by winning a relevance ranking, so one that loses
-is never delivered at all, while an open Event is injected verbatim.
-
-Use the `drsg-events` MCP tools — not hand-written cypher:
-
-| Tool | What it does |
-|---|---|
-| `event_post` | leave a to-do (`recipient` = the other project's directory) |
-| `event_list` | what is open here, and whether it was ever delivered |
-| `event_done` | close one, verifying the node actually changed |
-
-When the work is about specific code, `event_post` also takes `symbols` (up to
-three code-graph symbol keys) and `verb` (`context` / `impact` / `trace`). The
-recipient is then shown an imperative graph call under the to-do instead of a
-sentence that merely hints at one — a description written to *sound* like it
-wants a graph lookup does not produce one. Keys, not prose, and never inside
-`summary`: that field is truncated to 80 characters on the way to the terminal,
-so a symbol put there loses the tail that identifies it.
-
-Each key is checked against that graph before anything is written — one that
-misses or is ambiguous refuses the post and shows candidates, one that resolves
-is rewritten to its canonical full key. So a rough name is fine. Fixing an
-address here costs one call; leaving it to the recipient costs them a
-`no symbol matches` they cannot tell from a gap in the graph.
-
-**Receiving** needs no call at all: open Events addressed here are injected at
-session start under "Open for you", and printed to the terminal. Closing makes
-that block disappear on its own.
-
-The tools exist because each of them encodes a rule that has silently produced
-an invisible or unclosed to-do at least once: the recipient is matched on
-`p.path` and never on its key (a duplicate node can shadow a Project's key, and
-every key-filtered query then resolves to the shadow and returns nothing); the
-node and its `NOTIFY` edge are written together (an Event without that edge is
-unreachable by every read path); and closing needs `key(e)`, because
-`WHERE e.key = ...` matches nothing, reports `props_set: 0`, and does not error.
-Times are integer Unix seconds — an ISO string does not error either, it just
-compares false against every existing value.
-
-**Important:** Within agent sessions, always use the `drsg-events` MCP tools above.
-Do NOT run `event.py` via Bash — command-line calls inside sessions are blocked.
-`event_list` accepts a `project` parameter to view events of any project.
-The CLI (`python3 {tools_dir}/event.py post|list|done …`) is reserved exclusively
-for humans running from their own terminal outside an agent session.
+- Record work for another project as an `Event`, not a `Fact`.
+- Use `drsg-events` MCP tools; do not write Cypher by hand.
+- For code, pass `symbols` and `verb` as fields, never in `summary`.
+- Receiving: open Events appear at session start; no call is needed.
+- In agent sessions, never run `event.py` via Bash.
 {END}"""
 
 path = os.path.join(proj_dir, "CLAUDE.md")

@@ -23,30 +23,15 @@ Usage:
 """
 import argparse
 import json
+import os
 import sys
-import urllib.request
 
-
-# urllib sends even 127.0.0.1 through http_proxy unless no_proxy names it, and
-# a proxy that cannot reach this machine's loopback fails every call.
-_DIRECT = urllib.request.build_opener(urllib.request.ProxyHandler({}))
-
-
-def _urlopen(req, timeout):
-    """urlopen that never proxies a loopback address."""
-    host = urllib.parse.urlsplit(req.full_url).hostname or ""
-    if host in ("localhost", "::1") or host.startswith("127."):
-        return _DIRECT.open(req, timeout=timeout)
-    return urllib.request.urlopen(req, timeout=timeout)
+sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
+import drsg_rpc
 
 
 def rpc(api, token, method, params):
-    body = json.dumps({"jsonrpc": "2.0", "id": 1, "method": method,
-                       "params": params}).encode()
-    req = urllib.request.Request(api, data=body, headers={
-        "Content-Type": "application/json", "Authorization": "Bearer " + token})
-    with _urlopen(req, 30) as r:
-        resp = json.load(r)
+    resp = drsg_rpc.rpc(api, token, method, params, 30)
     if "error" in resp:
         raise RuntimeError("%s: %s" % (method, resp["error"]))
     return resp.get("result")

@@ -11,6 +11,8 @@ T="$(mktemp -d)"
 LOG_DIR="${N5_MUTATION_LOG_DIR:-$T}"
 mkdir -p "$LOG_DIR"
 trap 'rm -rf "$T"' EXIT
+# Mutants are written into $T; the shared module the hook imports goes with them.
+cp "$REPO/tools/templates/hooks/drsg_hook_common.py" "$T/"
 KILLED=0
 SURVIVED=0
 NOT_RUN=0

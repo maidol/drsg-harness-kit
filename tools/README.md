@@ -14,8 +14,11 @@ memory for [Claude Code](https://claude.com/claude-code) projects: the graph
 remembers what earlier sessions concluded, and every new session starts with a
 briefing instead of a blank slate.
 
-The whole thing is four Python hooks, an installer, and a daemon control
-script. No plugin, no service to sign up for, no data leaving the machine.
+The runtime has seven Python hook templates, an installer, and a daemon control
+script. `drsg_hook_common.py` is deployed beside the SessionStart and
+UserPromptSubmit hooks; `tools/drsg_rpc.py` is the shared loopback-aware RPC
+client for six tools. `memory-backup.py` keeps its separate transport. No plugin,
+no service to sign up for, no data leaving the machine.
 
 The `tools/claude-model-picker.sh` Bash function asks which model to use before
 an interactive `claude` starts. Unless `CLAUDE_PICK_MODELS` is set, it uses
@@ -252,7 +255,7 @@ running under the old environment will keep sending an empty key and
 1. Ensures the shared daemon is running, generating or reusing a token. With
    L3 enabled, the key's **value** is written to `~/.drsg-memory/env` *before*
    the daemon starts, so `start` can export it.
-2. Copies the four hooks into `<project>/.claude/hooks/`.
+2. Copies all seven Python hook templates into `<project>/.claude/hooks/`, including `drsg_hook_common.py`, which is shared by SessionStart and UserPromptSubmit. `setup.sh` separately deploys the global `event-poller.py`.
 3. Writes `<project>/.drsg/env` (`chmod 600`) — daemon address, token, and the
    L3 settings, with the key's **name** only.
 4. Merges the SessionStart / UserPromptSubmit / SessionEnd entries into
@@ -413,6 +416,18 @@ text and `event_list`; it does not authorize actions or close the original Event
 `event_done`. Both projects must deploy the updated `drsg-events` runtime and
 restart Claude Code before using `reply_to`; if you deploy manually, run the
 setup command from your own shell with the `!` prefix.
+
+These invariants prevent silent failures: Event recipients are matched through
+`Project.path` rather than a potentially shadowed key; the Event node and its
+`NOTIFY` edge are written together; and close operations use `key(e)` because
+`e.key` can match nothing without an error. Timestamps are integer Unix seconds;
+an ISO string can compare false silently. Events are separate from Facts because
+recall is ranked and lossy, while a to-do must arrive intact. Use the MCP tools
+rather than hand-written Cypher so the Event and its `NOTIFY` edge are created
+together. Put code-graph `symbols` and `verb` in their fields: `summary` is
+truncated to 80 characters, so a key there can lose the tail that identifies it.
+Receiving needs no tool call, and agent sessions must not run `event.py` through
+Bash; the hook and poller deliver the Event through their supported paths.
 
 ```bash
 python3 ~/.drsg-memory/tools/event.py post /path/to/other-repo \

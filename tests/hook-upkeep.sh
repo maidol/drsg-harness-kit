@@ -147,6 +147,7 @@ if not api:
     print("SKIP heal_text: no drsg binary (set DRSG_MEM_BIN)")
 else:
     ss = load("ss_heal", os.path.join(hooks, "session_start.py"))
+    os.environ["DRSG_API"] = api
     ss.API, ss.PLANE = api, "memory"
     tok = "test-upkeep"
     ss.rpc("plane.create", {"name": "memory"}, tok)

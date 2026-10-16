@@ -39,6 +39,8 @@ cp "$REPO/setup.sh" "$BASE/setup.sh"
 cp "$REPO/tools/doc-coverage-baseline.txt" "$BASE/tools/doc-coverage-baseline.txt"
 cp "$REPO/tools/install.sh" "$BASE/tools/install.sh"
 cp "$REPO/tools/project_registry.py" "$BASE/tools/project_registry.py"
+cp "$REPO/tools/drsg_rpc.py" "$BASE/tools/drsg_rpc.py"
+cp "$REPO/tools/templates/hooks/drsg_hook_common.py" "$BASE/tools/templates/hooks/drsg_hook_common.py"
 cp "$REPO/tools/templates/hooks/session_start.py" "$BASE/tools/templates/hooks/session_start.py"
 if [ -f "$REPO/tools/textual-tool-call-guard.py" ]; then
   cp "$REPO/tools/textual-tool-call-guard.py" "$BASE/tools/textual-tool-call-guard.py"

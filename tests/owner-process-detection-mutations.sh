@@ -27,18 +27,20 @@ run_mutation() {
   local dir="$T/$name" poller="$T/$name/poller.py"
   local session_start="$T/$name/session_start.py"
   local user_prompt="$T/$name/user_prompt.py" event="$T/$name/event.py"
+  local common="$T/$name/drsg_hook_common.py"
   mkdir -p "$dir"
   cp "$REPO/tools/event-poller.py" "$poller"
   cp "$REPO/tools/templates/hooks/session_start.py" "$session_start"
   cp "$REPO/tools/templates/hooks/user_prompt.py" "$user_prompt"
+  cp "$REPO/tools/templates/hooks/drsg_hook_common.py" "$common"
   cp "$REPO/tools/event.py" "$event"
+  cp "$REPO/tools/drsg_rpc.py" "$dir/drsg_rpc.py"
 
   if [ "$variant" != no-op ]; then
     local target_path
     case "$target" in
       poller) target_path="$poller" ;;
-      session_start) target_path="$session_start" ;;
-      user_prompt) target_path="$user_prompt" ;;
+      session_start|user_prompt) target_path="$common" ;;
       event) target_path="$event" ;;
       all) target_path=all ;;
       *)
@@ -47,39 +49,43 @@ run_mutation() {
         return
         ;;
     esac
-    if ! python3 - "$variant" "$target_path" "$poller" "$session_start" "$user_prompt" "$event" <<'PY'
+    if ! python3 - "$variant" "$target_path" "$poller" "$common" "$event" <<'PY'
 import sys
 
 variant, target, *paths = sys.argv[1:]
-node_rule = '''        is_node_claude = (
+if variant not in ("no-node-rule", "no-package-path-gate"):
+    raise SystemExit("unknown mutation")
+selected = paths if target == "all" else [target]
+for path in selected:
+    text = open(path, encoding="utf-8").read()
+    if path.endswith("drsg_hook_common.py"):
+        node_rule = '''        is_node_claude = (
+            len(argv) > 1 and os.path.basename(argv[0]).startswith("node")
+            and "/@anthropic-ai/claude-code/" in argv[1]
+        )
+'''
+    else:
+        node_rule = '''        is_node_claude = (
             len(argv) > 1
             and os.path.basename(argv[0]).startswith("node")
             and "/@anthropic-ai/claude-code/" in argv[1]
         )
 '''
-mutations = {
-    "no-node-rule": [
-        (node_rule, ""),
-        ("        if is_native_claude or is_node_claude:\n",
-         "        if is_native_claude:\n"),
-    ],
-    "no-package-path-gate": [
-        (node_rule, '''        is_node_claude = (
+    if text.count(node_rule) != 1:
+        raise SystemExit("mutation target not unique: " + variant)
+    if variant == "no-node-rule":
+        text = text.replace(node_rule, "", 1)
+        old = "if is_native_claude or is_node_claude:"
+        if text.count(old) != 1:
+            raise SystemExit("mutation target not unique: " + variant)
+        text = text.replace(old, "if is_native_claude:", 1)
+    else:
+        replacement = '''        is_node_claude = (
             len(argv) > 0
             and os.path.basename(argv[0]).startswith("node")
         )
-'''),
-    ],
-}
-if variant not in mutations:
-    raise SystemExit("unknown mutation")
-selected = paths if target == "all" else [target]
-for path in selected:
-    text = open(path, encoding="utf-8").read()
-    for old, new in mutations[variant]:
-        if text.count(old) != 1:
-            raise SystemExit("mutation target not unique: " + variant)
-        text = text.replace(old, new, 1)
+'''
+        text = text.replace(node_rule, replacement, 1)
     with open(path, "w", encoding="utf-8") as out:
         out.write(text)
 PY
@@ -91,7 +97,7 @@ PY
   fi
 
   printf '\n== %s: ONLY=%s ==\n' "$name" "$only"
-  if ONLY="$only" \
+  if ONLY="$only" PYTHONPATH="$dir${PYTHONPATH:+:$PYTHONPATH}" \
     SOURCE_POLLER="$poller" SOURCE_SESSION_START="$session_start" \
     SOURCE_USER_PROMPT="$user_prompt" SOURCE_EVENT="$event" \
     bash "$TEST"; then

@@ -18,6 +18,9 @@ repo, source_path, tmp = sys.argv[1:]
 source_path = pathlib.Path(source_path)
 source = source_path.read_text(encoding="utf-8")
 test_script = pathlib.Path(repo, "tests", "session-start-health-warning.sh")
+# Mutants are written into tmp; the shared module the hook imports goes with them.
+pathlib.Path(tmp, "drsg_hook_common.py").write_bytes(
+    pathlib.Path(repo, "tools", "templates", "hooks", "drsg_hook_common.py").read_bytes())
 
 
 def run_case(hook_path, only):

@@ -13,6 +13,7 @@ run_mutation() {
   local name="$1" only="$2" source="$3" variant="$4"
   local copy="$T/$name.py"
   cp "$REPO/tools/event.py" "$T/event.py"
+  cp "$REPO/tools/drsg_rpc.py" "$T/drsg_rpc.py"
   cp "$source" "$copy"
   if [ "$variant" != no-op ]; then
     if ! python3 - "$copy" "$variant" <<'PY'

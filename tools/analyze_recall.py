@@ -76,8 +76,10 @@ import os
 import random
 import sys
 import time
-import urllib.request
 from collections import defaultdict
+
+sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
+import drsg_rpc
 
 TRANSCRIPT_ROOT = os.path.join(os.environ.get("CLAUDE_CONFIG_DIR") or os.path.expanduser("~/.claude"), "projects")
 # Assistant turns after the prompt that count as "the reply". More than one
@@ -158,25 +160,8 @@ def load_env(proj_dir):
     return env
 
 
-# urllib sends even 127.0.0.1 through http_proxy unless no_proxy names it, and
-# a proxy that cannot reach this machine's loopback fails every call.
-_DIRECT = urllib.request.build_opener(urllib.request.ProxyHandler({}))
-
-
-def _urlopen(req, timeout):
-    """urlopen that never proxies a loopback address."""
-    host = urllib.parse.urlsplit(req.full_url).hostname or ""
-    if host in ("localhost", "::1") or host.startswith("127."):
-        return _DIRECT.open(req, timeout=timeout)
-    return urllib.request.urlopen(req, timeout=timeout)
-
-
 def rpc(api, method, params, token):
-    body = json.dumps({"jsonrpc": "2.0", "id": 1, "method": method, "params": params}).encode()
-    req = urllib.request.Request(api, data=body, headers={
-        "Content-Type": "application/json", "Authorization": f"Bearer {token}"})
-    with _urlopen(req, 15) as r:
-        res = json.load(r)
+    res = drsg_rpc.rpc(api, token, method, params, 15)
     if "result" not in res:
         raise RuntimeError((res.get("error") or {}).get("message") or res)
     return res["result"]

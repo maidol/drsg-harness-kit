@@ -83,6 +83,7 @@ SETUP_SOURCE="${SETUP_SOURCE:-$REPO/setup.sh}"
 cp "$SETUP_SOURCE" "$BUNDLE/setup.sh"
 REGISTRY_SOURCE="${REGISTRY_SOURCE:-$REPO/tools/project_registry.py}"
 if [ -f "$REGISTRY_SOURCE" ]; then cp "$REGISTRY_SOURCE" "$BUNDLE/tools/project_registry.py"; fi
+cp "$REPO/tools/drsg_rpc.py" "$BUNDLE/tools/drsg_rpc.py"
 cat > "$BUNDLE/tools/install.sh" <<'SH'
 #!/usr/bin/env bash
 set -u

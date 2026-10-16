@@ -254,18 +254,16 @@ with tempfile.TemporaryDirectory(prefix="poller-lease-contract-") as temp:
              mock.patch.object(poller, "open_events", return_value=[]), \
              mock.patch.object(poller, "wait", side_effect=StopIteration), \
              contextlib.redirect_stderr(io.StringIO()) as wake_stderr:
-            with mock.patch.object(user_prompt, "_proc", return_value=(92, "S")), \
-                 mock.patch.object(user_prompt, "_claude_pid", return_value=902):
+            common = user_prompt._common
+            assert common is session_start._common
+            with mock.patch.object(common, "_proc", return_value=(92, "S")), \
+                 mock.patch.object(common, "_claude_pid", return_value=902):
                 before = user_prompt.event_owner(project, "delayed")
-            with mock.patch.object(session_start, "_proc", return_value=(92, "S")), \
-                 mock.patch.object(session_start, "_claude_pid", return_value=902):
                 before_session_start = session_start.event_owner(project, "delayed")
-            try:
-                poller.poll(project, str(state), "delayed")
-            except StopIteration:
-                pass
-            with mock.patch.object(user_prompt, "_proc", return_value=(92, "S")), \
-                 mock.patch.object(user_prompt, "_claude_pid", return_value=902):
+                try:
+                    poller.poll(project, str(state), "delayed")
+                except StopIteration:
+                    pass
                 after = user_prompt.event_owner(project, "delayed")
     check("no-Event acquisition creates no model wake", wake_stderr.getvalue(), "")
     check("owner is read-only before lease acquisition", "现在没有 Event owner" in before, True)
@@ -277,7 +275,7 @@ with tempfile.TemporaryDirectory(prefix="poller-lease-contract-") as temp:
           before_session_start, before)
     check("UserPromptSubmit remains read-only before the wake", "本会话只读" in before, True)
     check("delayed owner lease is written", {key: read_json(state / "lease.json").get(key) for key in ("session_id", "pid", "start", "bg")}, {"session_id": "delayed", "pid": 902, "start": 92, "bg": False})
-    check("next prompt announces newly acquired owner", after, "本会话是这个项目的 Event owner，现持有租约：可以处理本项目的待办 Event；按 Event 流程处理。")
+    check("next prompt announces newly acquired owner", after, "本会话是这个项目的 Event owner：按 Event 流程处理。")
 
     # Fresh owner wake text changes only when the poller actually acquired a lease.
     sample = [{"key": "e1", "kind": "handoff", "summary": "x"}]
