@@ -468,6 +468,38 @@ python3 ~/.drsg-memory/tools/memory-backup.py drill
 
 备份保存在 `~/.drsg-memory/backups`。`--keep N` 配置保留份数，默认 7。演练会把最新备份恢复到一次性临时库、核对后删除；不会打开生产库。
 
+### SessionStart 健康提示
+
+如果已配置的记忆 daemon 不可达，SessionStart 会在终端显示提示：本会话没有 briefing、Event 或召回；daemon 恢复前，本会话看到的 Event 列表也不可信。终端中的默认提示如下（英文原文）：
+
+```text
+⚠ DrSG memory daemon is unreachable. This session has no briefing, Events, or recall. Restore it with: ~/.drsg-memory/tools/serve.sh start
+```
+
+运行以下命令启动 daemon：
+
+```bash
+~/.drsg-memory/tools/serve.sh start
+```
+
+daemon 提示会在启动、恢复会话和 compact 时显示。如果设置了 `DRSG_MEM_DIR`，命令会改用该目录，而不是 `~/.drsg-memory`。
+
+只有新会话启动时，且 daemon 可达、`DRSG_API` 指向本机回环地址，hook 才会检查本地备份目录。如果没有有效备份，或最新有效备份超过年龄阈值，终端会显示以下英文提示（原文）：
+
+```text
+⚠ DrSG memory backup: no valid backup found. Run: python3 ~/.drsg-memory/tools/memory-backup.py backup; then python3 ~/.drsg-memory/tools/memory-backup.py drill
+⚠ DrSG memory backup: latest valid backup is 10 days ago. Run: python3 ~/.drsg-memory/tools/memory-backup.py backup; then python3 ~/.drsg-memory/tools/memory-backup.py drill
+```
+
+要消除备份提示，请手动依次运行：
+
+```bash
+python3 ~/.drsg-memory/tools/memory-backup.py backup
+python3 ~/.drsg-memory/tools/memory-backup.py drill
+```
+
+`DRSG_BACKUP_MAX_AGE_DAYS` 设置年龄阈值（默认 `7` 天）；设为 `0` 可关闭备份检查。值无效时回退为 `7`。请在 Claude Code 继承的环境中设置，例如 `export DRSG_BACKUP_MAX_AGE_DAYS=14`。如果设置了 `DRSG_MEM_DIR`，把命令里的默认 `~/.drsg-memory/tools/...` 替换为 `$DRSG_MEM_DIR/tools/...`。Hook 只检查并提示，不会自动启动 daemon，也不会替你运行 backup 或 drill。
+
 恢复前先停止 daemon；这会断开所有活跃 MCP 会话。将旧的 `memory.drsg` 目录及 `memory.drsg.bm25` / `memory.drsg.hnsw` sidecar 移到别处。恢复命令不会覆盖已有目标：
 
 ```bash

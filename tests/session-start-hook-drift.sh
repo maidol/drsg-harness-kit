@@ -168,7 +168,10 @@ down = make_project("daemon down project")
 write_env(down, "http://127.0.0.1:1/rpc", "fixture-dead-token")
 out = invoke(down, "startup", "n5-daemon-down")
 check("daemon-down-path-reports-drift", bool(out.get("systemMessage")))
-check("daemon-down-path-has-no-briefing-context", "additionalContext" not in out["hookSpecificOutput"])
+check("daemon-down-path-has-no-briefing-context",
+      out["hookSpecificOutput"].get("additionalContext") ==
+      "DrSG memory is unavailable; this session's Event list is not "
+      "trustworthy. Restore the daemon before checking open Events.")
 
 # The normal path runs against a real temporary daemon and includes a briefing.
 normal = make_project("normal project")
@@ -206,10 +209,19 @@ check("event-system-message-is-preserved-with-drift",
       "drift event sentinel" in merged and installer in merged)
 rpc("node.update", {"plane": "memory", "key": event_key, "set": {"status": "done"}})
 
-# Restoring the deployed hook makes the drift prompt disappear.
+# Restoring the deployed hook makes the drift prompt disappear. Disable the
+# independent backup reminder for this one invocation so this check stays about drift.
 shutil.copyfile(os.path.join(mem_dir, "tools", "templates", "hooks", "session_start.py"),
                 os.path.join(normal, ".claude", "hooks", "session_start.py"))
-out = invoke(normal, "startup", "n5-restored")
+old_max_age = os.environ.get("DRSG_BACKUP_MAX_AGE_DAYS")
+os.environ["DRSG_BACKUP_MAX_AGE_DAYS"] = "0"
+try:
+    out = invoke(normal, "startup", "n5-restored")
+finally:
+    if old_max_age is None:
+        os.environ.pop("DRSG_BACKUP_MAX_AGE_DAYS", None)
+    else:
+        os.environ["DRSG_BACKUP_MAX_AGE_DAYS"] = old_max_age
 check("identical-hooks-are-silent", "systemMessage" not in out)
 
 if only and ran != 1:

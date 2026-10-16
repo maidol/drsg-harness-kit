@@ -235,6 +235,148 @@ def compact_context_kwargs(source, existing=None):
     return {"additionalContext": context} if context is not None else {}
 
 
+BACKUP_RE = re.compile(r"^backup-\d{8}T\d{12}Z-[0-9a-f]{8}$")
+BACKUP_SCAN_LIMIT = 7
+BACKUP_MAX_AGE_DAYS = 7
+
+
+def join_messages(separator, *parts):
+    return separator.join(part for part in parts if part)
+
+
+def serve_start_command():
+    mem_dir = os.environ.get("DRSG_MEM_DIR")
+    if not mem_dir:
+        return "~/.drsg-memory/tools/serve.sh start"
+    path = os.path.join(os.path.expanduser(mem_dir), "tools", "serve.sh")
+    return shlex.quote(path) + " start"
+
+
+def daemon_down_messages():
+    system = ("⚠ DrSG memory daemon is unreachable. This session has no briefing, "
+              "Events, or recall. Restore it with: " + serve_start_command())
+    model = ("DrSG memory is unavailable; this session's Event list is not "
+             "trustworthy. Restore the daemon before checking open Events.")
+    return system, model
+
+
+def memory_backup_command(action):
+    mem_dir = os.environ.get("DRSG_MEM_DIR")
+    if not mem_dir:
+        tool = "~/.drsg-memory/tools/memory-backup.py"
+    else:
+        tool = shlex.quote(os.path.join(os.path.expanduser(mem_dir),
+                                        "tools", "memory-backup.py"))
+    return "python3 " + tool + " " + action
+
+
+def backup_message(status):
+    backup = memory_backup_command("backup")
+    drill = memory_backup_command("drill")
+    if status is None:
+        reason = "no valid backup found"
+    else:
+        reason = "latest valid backup is %d days ago" % status
+    return "⚠ DrSG memory backup: %s. Run: %s; then %s" % (reason, backup, drill)
+
+
+def backup_max_age_days():
+    raw = os.environ.get("DRSG_BACKUP_MAX_AGE_DAYS")
+    if raw is None:
+        return BACKUP_MAX_AGE_DAYS
+    try:
+        value = int(raw)
+    except (TypeError, ValueError):
+        return BACKUP_MAX_AGE_DAYS
+    return value if value >= 0 else BACKUP_MAX_AGE_DAYS
+
+
+def parse_backup_time(value):
+    from datetime import datetime, timezone
+
+    if not isinstance(value, str):
+        raise ValueError("backup_time is not a string")
+    if value.endswith("Z"):
+        value = value[:-1] + "+00:00"
+    parsed = datetime.fromisoformat(value)
+    if parsed.tzinfo is None or parsed.utcoffset() is None:
+        raise ValueError("backup_time has no timezone")
+    return parsed.astimezone(timezone.utc)
+
+
+def backup_expiry_days(backup_time, now=None, max_age=BACKUP_MAX_AGE_DAYS):
+    from datetime import datetime, timedelta, timezone
+
+    if now is None:
+        now = datetime.now(timezone.utc)
+    elif now.tzinfo is None or now.utcoffset() is None:
+        now = now.replace(tzinfo=timezone.utc)
+    else:
+        now = now.astimezone(timezone.utc)
+    age = now - backup_time
+    if age.total_seconds() < 0 or age <= timedelta(days=max_age):
+        return None
+    return max(0, int(age.total_seconds() // 86400))
+
+
+def backup_warning(now=None):
+    max_age = backup_max_age_days()
+    if max_age == 0:
+        return ""
+    try:
+        import ipaddress
+        from urllib.parse import urlsplit
+
+        parsed = urlsplit(API)
+        if parsed.scheme not in ("http", "https") or not parsed.hostname:
+            return ""
+        hostname = parsed.hostname
+        if hostname not in ("localhost", "localhost."):
+            try:
+                if not ipaddress.ip_address(hostname).is_loopback:
+                    return ""
+            except ValueError:
+                return ""
+
+        mem_dir = os.path.expanduser(os.environ.get("DRSG_MEM_DIR") or "~/.drsg-memory")
+        root = os.path.join(mem_dir, "backups")
+        if os.path.islink(root):
+            return backup_message(None)
+        try:
+            names = os.listdir(root)
+        except FileNotFoundError:
+            return backup_message(None)
+        except OSError:
+            return ""
+
+        candidates = sorted((name for name in names if BACKUP_RE.fullmatch(name)),
+                            reverse=True)[:BACKUP_SCAN_LIMIT]
+        for name in candidates:
+            path = os.path.join(root, name)
+            if os.path.islink(path) or not os.path.isdir(path):
+                continue
+            manifest_path = os.path.join(path, "manifest.json")
+            if os.path.islink(manifest_path) or not os.path.isfile(manifest_path):
+                continue
+            try:
+                with open(manifest_path, encoding="utf-8") as fh:
+                    manifest = json.load(fh)
+                if (not isinstance(manifest, dict) or
+                        manifest.get("tool") != "drsg-memory-backup" or
+                        manifest.get("schema_version") != 1):
+                    continue
+                backup_time = parse_backup_time(manifest.get("backup_time"))
+                expired_days = backup_expiry_days(backup_time, now, max_age)
+            except (OSError, UnicodeError, ValueError, TypeError, AttributeError):
+                continue
+            if expired_days is None:
+                return ""
+            return backup_message(expired_days)
+        return backup_message(None)
+    except Exception:
+        return ""
+
+
 def telemetry(proj_dir, record):
     """Append one JSON line to .drsg/recall.jsonl. Same file and same silence
     as user_prompt.py's: one log, so a session's startup cost and its
@@ -730,7 +872,7 @@ def orphan_facts(token):
     return sorted(everything - reachable)
 
 
-def main():
+def main(now=None):
     ts_start = time.time()
     data = json.load(sys.stdin)
     proj_dir = os.environ.get("CLAUDE_PROJECT_DIR") or os.getcwd()
@@ -753,10 +895,15 @@ def main():
     try:
         rpc("db.stats", {}, token)  # liveness probe
     except Exception:
-        hook_out(system_message=drift_message or None,
-                 **compact_context_kwargs(source))  # daemon down → don't block the session
+        system_warning, model_warning = daemon_down_messages()
+        context = compact_context_kwargs(source)
+        context["additionalContext"] = join_messages(
+            "\n\n", context.get("additionalContext", ""), model_warning)
+        hook_out(system_message=join_messages("\n", drift_message, system_warning),
+                 **context)  # daemon down → don't block the session
         return
 
+    backup_notice = backup_warning(now) if source == "startup" else ""
     sid = data.get("session_id", "")
     slug = os.path.basename(os.path.normpath(proj_dir))
     ts = int(time.time())
@@ -911,9 +1058,8 @@ def main():
                          # without the ABOUT edge again.
                          "orphan_facts": None if orphans is None else len(orphans),
                          "ms": int((time.time() - ts_start) * 1000)})
-    if drift_message:
-        user_msg = (user_msg + "\n" + drift_message) if user_msg else drift_message
-    hook_out(system_message=user_msg, additionalContext=ctx)
+    user_msg = join_messages("\n", user_msg, drift_message, backup_notice)
+    hook_out(system_message=user_msg or None, additionalContext=ctx)
 
 
 if __name__ == "__main__":

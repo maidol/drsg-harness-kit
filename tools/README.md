@@ -787,6 +787,38 @@ python3 ~/.drsg-memory/tools/memory-backup.py drill
 
 Backups live under `~/.drsg-memory/backups`. `--keep N` configures retention; the default is 7. A drill restores the newest backup to a disposable database, verifies it and removes the temporary database. It does not open the production library.
 
+### SessionStart health warnings
+
+SessionStart shows a terminal warning if the configured memory daemon is unreachable. This session then has no briefing, Events, or recall, and its Event list is not trustworthy until the daemon is restored. The default terminal message is:
+
+```text
+⚠ DrSG memory daemon is unreachable. This session has no briefing, Events, or recall. Restore it with: ~/.drsg-memory/tools/serve.sh start
+```
+
+Start it with:
+
+```bash
+~/.drsg-memory/tools/serve.sh start
+```
+
+The warning appears on startup, resume, and compact. If `DRSG_MEM_DIR` is set, the command uses that directory instead of `~/.drsg-memory`.
+
+On a new startup only, when the daemon is reachable through a loopback `DRSG_API`, the hook checks the local backup directory and warns if no valid backup exists or the newest valid backup is older than the configured age. Example terminal messages:
+
+```text
+⚠ DrSG memory backup: no valid backup found. Run: python3 ~/.drsg-memory/tools/memory-backup.py backup; then python3 ~/.drsg-memory/tools/memory-backup.py drill
+⚠ DrSG memory backup: latest valid backup is 10 days ago. Run: python3 ~/.drsg-memory/tools/memory-backup.py backup; then python3 ~/.drsg-memory/tools/memory-backup.py drill
+```
+
+Resolve either backup warning by running both commands manually:
+
+```bash
+python3 ~/.drsg-memory/tools/memory-backup.py backup
+python3 ~/.drsg-memory/tools/memory-backup.py drill
+```
+
+`DRSG_BACKUP_MAX_AGE_DAYS` sets the age threshold in days (default `7`); set it to `0` to disable the backup check. An invalid value falls back to `7`. Set the variable in the environment inherited by Claude Code, for example `export DRSG_BACKUP_MAX_AGE_DAYS=14`. If `DRSG_MEM_DIR` is set, substitute `$DRSG_MEM_DIR/tools/...` for the default `~/.drsg-memory/tools/...` paths. The hook only checks and warns; it never starts the daemon or runs backup/drill for you.
+
 To restore, stop the daemon first; this disconnects all active MCP sessions. Move the old `memory.drsg` directory and any `memory.drsg.bm25` / `memory.drsg.hnsw` sidecars aside. Restore refuses to overwrite an existing target:
 
 ```bash

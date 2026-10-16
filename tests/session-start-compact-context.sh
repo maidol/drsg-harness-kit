@@ -173,8 +173,13 @@ down = project("daemon down", drift=True,
 drift = expected_drift(down)
 out = invoke(down, "compact", "compact-daemon-down")
 check("compact-daemon-down-preserves-system-message",
-      out.get("systemMessage") == drift and
-      out["hookSpecificOutput"].get("additionalContext") == fixed_context)
+      out.get("systemMessage") == drift + "\n" +
+          ("⚠ DrSG memory daemon is unreachable. This session has no briefing, "
+           "Events, or recall. Restore it with: " +
+           os.path.join(mem_dir, "tools", "serve.sh") + " start") and
+      out["hookSpecificOutput"].get("additionalContext") == fixed_context + "\n\n" +
+          "DrSG memory is unavailable; this session's Event list is not "
+          "trustworthy. Restore the daemon before checking open Events.")
 
 # A live daemon exercises the normal return with the correction before the briefing.
 normal = project("normal drift", drift=True,
