@@ -46,6 +46,9 @@ fi
 if [ -f "$REPO/tools/forbidden-literals-guard.py" ]; then
   cp "$REPO/tools/forbidden-literals-guard.py" "$BASE/tools/forbidden-literals-guard.py"
 fi
+if [ -f "$REPO/claude/CROSS-PROJECT-REVIEW.md" ]; then
+  cp "$REPO/claude/CROSS-PROJECT-REVIEW.md" "$BASE/claude/CROSS-PROJECT-REVIEW.md"
+fi
 cp "$REPO/README.md" "$BASE/README.md"
 cp "$REPO/README.zh-CN.md" "$BASE/README.zh-CN.md"
 cp "$REPO/tools/README.md" "$BASE/tools/README.md"

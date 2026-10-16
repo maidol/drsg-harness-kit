@@ -202,7 +202,7 @@ python3 ~/.drsg-memory/tools/project_registry.py --env <daemon-env-file> --nul
 
 - **L0: 项目发现层**（`--all` 全量模式）：通过无代理连接从 memory plane 发现所有登记项目，异常时显式报错；
 - **L1: 全局运行时工具层**：将 `~/.drsg-memory/tools/` 与 git `HEAD` 对应版本对比，校验执行权限；工作区未提交草稿单独做提示，不计为漂移；
-- **L2: 全局规则与技能层**：核验 `~/.claude/AGENT-EFFICIENCY.md`、skills、主分支工作流规则状态（启用、主动关闭或漂移）、全局 hooks，并校验 `settings.json` 的 `0600` 安全权限；
+- **L2: 全局规则与技能层**：核验 `~/.claude/AGENT-EFFICIENCY.md` 和 `~/.claude/CROSS-PROJECT-REVIEW.md`、skills、主分支工作流规则状态（启用、主动关闭或漂移）、全局 hooks，并校验 `settings.json` 的 `0600` 安全权限；
 - **L3: 项目钩子层**：比对各项目 `.claude/hooks/*.py` 哈希与执行权限；
 - **L4: 项目设置与文档层**：核验各项目 `.claude/settings.local.json` 注册、`.drsg/env` 凭据、`CLAUDE.md` 跨项目 Event 引导块，以及 `~/.claude.json` 里该项目是否注册了 `drsg` 和 `drsg-events` 两个 MCP server（local 或 user 范围；设了 `$CLAUDE_CONFIG_DIR` 时读 `$CLAUDE_CONFIG_DIR/.claude.json`，给了 `--claude-dir` 时读那个目录下的）。缺哪个就报哪个，并给出补注册的命令。另外报告该项目的 pre-commit 钩子（completeness-guard 已启用、自定义钩子或没有），按 git 实际找钩子的目录查，设了 `core.hooksPath` 的也算；这一行只做提示，不会让这一层失败；
 - **L5: 代码图健康层**：检查代码图 daemon 运行健康状态与 `.mcp.json` 端口匹配，正确将按需待机识别为正常状态。
@@ -243,7 +243,7 @@ utilization 是一个 proxy，脚本也会明确说明这一点：它会把仅�
 
 ## 发待办（`event.py post` / `event_post`）
 
-执行方的阶段评审/验收流程及一次性提交授权边界见[全局分发规范](../claude/AGENT-EFFICIENCY.md#跨项目审核与验收按阶段交接不跳闸)；本 README 只说明 Event 操作机制。
+执行方的阶段评审/验收流程及一次性提交授权边界见[全局分发规范](../claude/CROSS-PROJECT-REVIEW.md)（安装为 `~/.claude/CROSS-PROJECT-REVIEW.md`，按需读取）；本 README 只说明 Event 操作机制。
 
 `event.py post` 和 MCP 工具 `event_post` 共用同一份实现。传给 `event_post`、`event_list` 和 CLI 的项目路径可以使用 symlink 别名，程序会自动解析到真实路径。MCP 工具不接受把本会话所在的项目当收件方：Event 是给别的 agent 的，要在本项目记住什么就写 Fact，要告诉用户就直接回复。待办带上代码图符号和动词，收方会在它下面看到一行 `↳ graph first:`。如果是 handoff，summary 读起来像在改一个判断（守卫、过滤、跳过、暂停这类），而动词不是 `impact`，回复末尾会多一行建议。Event 照常发出。
 

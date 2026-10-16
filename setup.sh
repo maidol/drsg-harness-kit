@@ -29,7 +29,8 @@
 #   --port N          port for this repository's code-graph daemon
 #   --tools-dir DIR   where the runtime copies go   (default ~/.drsg-memory/tools)
 #   --fetch-drsg      download a release binary if none is found (network)
-#   --no-skills       do not install the bundled skills or AGENT-EFFICIENCY.md
+#   --no-skills       do not install the bundled skills, AGENT-EFFICIENCY.md
+#                     or CROSS-PROJECT-REVIEW.md
 #   --no-main-branch-workflow  leave the managed main-branch rule disabled
 #   --no-event-poller do not register the global to-do poller hooks
 #   --no-streak-hint do not register the global single-tool reminder hook
@@ -225,6 +226,11 @@ if [ "$SKILLS" -eq 1 ] && [ -d "$HERE/skills" ]; then
     CLAUDE_DIR="${CLAUDE_CONFIG_DIR:-$HOME/.claude}"
     mkdir -p "$CLAUDE_DIR"
     cp "$HERE/claude/AGENT-EFFICIENCY.md" "$CLAUDE_DIR/AGENT-EFFICIENCY.md"
+    # The cross-project review workflow sits next to the rules but is NOT
+    # @-imported: it costs no context until a session reads it.
+    if [ -f "$HERE/claude/CROSS-PROJECT-REVIEW.md" ]; then
+      cp "$HERE/claude/CROSS-PROJECT-REVIEW.md" "$CLAUDE_DIR/CROSS-PROJECT-REVIEW.md"
+    fi
     touch "$CLAUDE_DIR/CLAUDE.md"
     if ! grep -qx '@AGENT-EFFICIENCY.md' "$CLAUDE_DIR/CLAUDE.md"; then
       printf '\n@AGENT-EFFICIENCY.md\n' >> "$CLAUDE_DIR/CLAUDE.md"

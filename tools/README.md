@@ -324,7 +324,7 @@ command yourself, adding `--bin <path>` if `drsg` is not on `PATH`.
 
 - **L0: Project Discovery** (when running `--all`): Discovers known projects from the memory plane via proxy-safe connection, failing explicitly on discovery errors.
 - **L1: Global Runtime Tools**: Compares `~/.drsg-memory/tools/` against the git `HEAD` release baseline and verifies execution permissions; uncommitted drafts are noted as advisory hints without failing audit.
-- **L2: Global Configuration & Skills**: Verifies `~/.claude/AGENT-EFFICIENCY.md`, skills, managed main-branch workflow state (enabled, intentional opt-out, or drift), global hooks, and `settings.json` permissions (`0600`).
+- **L2: Global Configuration & Skills**: Verifies `~/.claude/AGENT-EFFICIENCY.md` and `~/.claude/CROSS-PROJECT-REVIEW.md`, skills, managed main-branch workflow state (enabled, intentional opt-out, or drift), global hooks, and `settings.json` permissions (`0600`).
 - **L3: Project Memory Hooks**: Compares `.claude/hooks/*.py` in each project against canonical templates.
 - **L4: Project Settings & Docs**: Checks `.claude/settings.local.json` registrations, `.drsg/env` credentials, `CLAUDE.md` cross-agent Event documentation, and that the `drsg` and `drsg-events` MCP servers are registered for the project in `~/.claude.json` (local or user scope; `$CLAUDE_CONFIG_DIR/.claude.json` when that is set, or the `--claude-dir` directory). A missing one is reported together with the command that registers it. It also reports the project's pre-commit hook (completeness-guard active, a custom hook, or none), looked up where git looks for hooks, so a `core.hooksPath` directory counts; this line is informational and never fails the layer.
 - **L5: Code Graph Status**: Verifies code graph daemon health and `.mcp.json` port bindings, recognizing on-demand stopped daemons as normal state.
@@ -382,7 +382,7 @@ majority even with no effect at all. Read `p`, not the raw count.
 
 ## Posting a to-do (`event.py post` / `event_post`)
 
-For the execution-side review/acceptance stages and the one-time commit authorization boundary, see the [globally distributed workflow](../claude/AGENT-EFFICIENCY.md#跨项目审核与验收按阶段交接不跳闸); this README covers Event mechanics only.
+For the execution-side review/acceptance stages and the one-time commit authorization boundary, see the [globally distributed workflow](../claude/CROSS-PROJECT-REVIEW.md) (installed as `~/.claude/CROSS-PROJECT-REVIEW.md`, read on demand); this README covers Event mechanics only.
 
 `event.py post` and the `event_post` MCP tool share one implementation. Project paths passed to `event_post`, `event_list` and the CLI may use symlink aliases; they are resolved to their real paths. The MCP tool refuses the session's own project as recipient: an Event is for another agent, so write a Fact to remember something here, or tell the user directly. Give a
 to-do code-graph symbols and a verb, and the recipient gets an imperative

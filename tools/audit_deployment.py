@@ -184,6 +184,15 @@ def check_layer2(repo_dir, claude_dir):
         elif digest_file(repo_eff) != digest_file(dep_eff):
             issues.append(f"Drift in {dep_eff} vs repository source")
 
+    # 1b. CROSS-PROJECT-REVIEW.md: read on demand, never @-imported
+    repo_cross = os.path.join(repo_dir, "claude", "CROSS-PROJECT-REVIEW.md")
+    dep_cross = os.path.join(claude_dir, "CROSS-PROJECT-REVIEW.md")
+    if os.path.exists(repo_cross):
+        if not os.path.exists(dep_cross):
+            issues.append(f"Missing {dep_cross}")
+        elif digest_file(repo_cross) != digest_file(dep_cross):
+            issues.append(f"Drift in {dep_cross} vs repository source")
+
     # 2. Global CLAUDE.md imports and managed main-branch workflow state
     global_claude_md = os.path.join(claude_dir, "CLAUDE.md")
     global_bytes = b""

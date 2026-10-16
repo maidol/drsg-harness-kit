@@ -75,6 +75,9 @@ done
 cp "$REPO/setup.sh" "$BUNDLE/setup.sh"
 cp "$REPO/claude/MAIN-BRANCH-WORKFLOW.md" "$BUNDLE/claude/MAIN-BRANCH-WORKFLOW.md"
 cp "$REPO/claude/AGENT-EFFICIENCY.md" "$BUNDLE/claude/AGENT-EFFICIENCY.md"
+if [ -f "$REPO/claude/CROSS-PROJECT-REVIEW.md" ]; then
+  cp "$REPO/claude/CROSS-PROJECT-REVIEW.md" "$BUNDLE/claude/CROSS-PROJECT-REVIEW.md"
+fi
 printf 'fixture skill\n' > "$BUNDLE/skills/test-skill/SKILL.md"
 SETUP_SOURCE="${SETUP_SOURCE:-$REPO/setup.sh}"
 cp "$SETUP_SOURCE" "$BUNDLE/setup.sh"
@@ -240,6 +243,8 @@ fi
 if [ "$CASE" = all ] || [ "$CASE" = skip-no-env ]; then
   if run_setup "$T/setup-first.out" 1; then rc=0; else rc=$?; fi
   check "skills-land-under-temporary-HOME" "$( [ -d "$HOME_DIR/.claude/skills" ] && echo yes || echo no )" yes
+  check "cross-review-installed-not-imported" \
+    "$( [ -f "$CLAUDE_DIR/CROSS-PROJECT-REVIEW.md" ] && echo yes || echo no )/$(grep -c '^@CROSS-PROJECT-REVIEW.md' "$CLAUDE_DIR/CLAUDE.md" || true)" yes/0
   check "missing-dir-and-no-env-are-skipped" \
     "$(grep -Ec '^skipped .*(directory missing|no .drsg/env)' "$T/setup-first.out" || true)" 2
   check "no-env-case-does-not-call-installer" \

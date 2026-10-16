@@ -16,6 +16,7 @@ DrSG 的智能体侧工具集，集中在一个仓库中：为 Claude Code 提�
 | `skills/agent-efficiency-retro/` | 会话效率复盘 skill：统计工具调用、一轮多调用比例、单轮耗时随上下文的变化，安装到 `~/.claude/skills/`。 |
 | `skills/diagram-conventions/` | 出图约定 skill：按句子里的连接词选架构图/流程图/时序图，安装到 `~/.claude/skills/`。第三方的 `archify` 不归本仓库分发，它指向本 skill 的那段是手工追加在其 SKILL.md 末尾的 `<!-- local: diagram-conventions -->`，重装 archify 后要补回。 |
 | `claude/AGENT-EFFICIENCY.md` | Agent 执行效率规则，复制到 `~/.claude/` 并由全局 CLAUDE.md 用 `@` 引入（setup 第 2 步）。 |
+| `claude/CROSS-PROJECT-REVIEW.md` | 跨项目审核与提交授权流程，和规则一起复制到 `~/.claude/`，但**不用** `@` 引入；会话处理跨项目 Event 时才去读（setup 第 2 步）。 |
 | `claude/MAIN-BRANCH-WORKFLOW.md` | 用户级主工作区/当前分支工作流规则，默认安装，可独立开关。 |
 | `docs/{en,zh}/src/` | 使用指南，包含五张图。 |
 | `setup.sh` | 在新机器上安装；从解包后的 bundle 中运行。 |
@@ -116,7 +117,7 @@ CLAUDE_PICK_MODELS="opus fable" claude   # 手动指定选单
 
 ## 跨项目审核与验收（可选）
 
-分发的[执行方工作流](claude/AGENT-EFFICIENCY.md#跨项目审核与验收按阶段交接不跳闸)通过 Event 支持计划评审与实现验收。只有你在自己的全局 `~/.claude/CLAUDE.md` 指定了审核方项目（或当前任务明确指定审核方）才启用；kit 不会假定审核方，也不会替你写入此设置：
+分发的[执行方工作流](claude/CROSS-PROJECT-REVIEW.md)通过 Event 支持计划评审与实现验收。只有你在自己的全局 `~/.claude/CLAUDE.md` 指定了审核方项目（或当前任务明确指定审核方）才启用；kit 不会假定审核方，也不会替你写入此设置：
 
 ```text
 跨项目审核方：/审核方项目的绝对路径

@@ -10,21 +10,24 @@ check() {
   fi
   return 0
 }
+check claude/CROSS-PROJECT-REVIEW.md '验收通过并授权提交'
+check claude/CROSS-PROJECT-REVIEW.md '无用户全局例外'
+check claude/CROSS-PROJECT-REVIEW.md 'force_paths'
+check claude/CROSS-PROJECT-REVIEW.md 'target_branch'
+check claude/CROSS-PROJECT-REVIEW.md 'symbolic-ref --short HEAD'
+check claude/CROSS-PROJECT-REVIEW.md 'HEAD^'
+check claude/AGENT-EFFICIENCY.md '~/.claude/CROSS-PROJECT-REVIEW.md'
+check claude/AGENT-EFFICIENCY.md 'commit_auth_apply'
 check claude/AGENT-EFFICIENCY.md '验收通过并授权提交'
-check claude/AGENT-EFFICIENCY.md '无用户全局例外'
-check claude/AGENT-EFFICIENCY.md 'force_paths'
-check claude/AGENT-EFFICIENCY.md 'target_branch'
-check claude/AGENT-EFFICIENCY.md 'symbolic-ref --short HEAD'
-check claude/AGENT-EFFICIENCY.md 'HEAD^'
 check README.md 'autoMode.allow'
 check README.zh-CN.md 'autoMode.allow'
 check README.md '授权 <项目> 提交 tree <前12位>'
 check README.zh-CN.md '授权 <项目> 提交 tree <前12位>'
-check claude/AGENT-EFFICIENCY.md '--no-verify'
-check claude/AGENT-EFFICIENCY.md 'C 级被用户要求发给审核方时，按实际验收决定授权'
-check claude/AGENT-EFFICIENCY.md '能否授权看这次有没有真的验收，不看级别标签'
-check claude/AGENT-EFFICIENCY.md 'commit_auth_apply'
-check claude/AGENT-EFFICIENCY.md '审核方直接实现时'
+check claude/CROSS-PROJECT-REVIEW.md '--no-verify'
+check claude/CROSS-PROJECT-REVIEW.md 'C 级被用户要求发给审核方时，按实际验收决定授权'
+check claude/CROSS-PROJECT-REVIEW.md '能否授权看这次有没有真的验收，不看级别标签'
+check claude/CROSS-PROJECT-REVIEW.md 'commit_auth_apply'
+check claude/CROSS-PROJECT-REVIEW.md '审核方直接实现时'
 check claude/AGENT-EFFICIENCY.md 'old_string` 和 `new_string` 完全相同的 Edit 不要发'
 check claude/AGENT-EFFICIENCY.md '`old_string` 取能唯一定位的最短片段，一般一两行、80 个字符以内'
 check claude/AGENT-EFFICIENCY.md '文件里嵌着另一种语言时，不做细粒度 Edit'
@@ -36,7 +39,12 @@ if grep -q '^- 由来' "$REPO/claude/AGENT-EFFICIENCY.md"; then
   printf 'FAIL claude/AGENT-EFFICIENCY.md still has 由来 bullets; keep origins out of the distributed rules\n' >&2
   CONTENT_FAILS=$((CONTENT_FAILS + 1))
 fi
+check claude/CROSS-PROJECT-REVIEW.md '不适用验收授权例外'
 check claude/AGENT-EFFICIENCY.md '不适用验收授权例外'
+if grep -q '^@' "$REPO/claude/CROSS-PROJECT-REVIEW.md"; then
+  printf 'FAIL claude/CROSS-PROJECT-REVIEW.md must not contain @-imports; it is read on demand\n' >&2
+  CONTENT_FAILS=$((CONTENT_FAILS + 1))
+fi
 check README.md 'decides per task whether to implement it directly'
 check README.zh-CN.md '自己直接实现，或出完整设计、判据和实施计划交执行方实现'
 check tools/README.md 'commit_auth_post'
@@ -58,9 +66,11 @@ if [ "$CONTENT_FAILS" -ne 0 ]; then
   printf 'FAIL %d content check(s) failed\n' "$CONTENT_FAILS" >&2
   exit 1
 fi
-python3 - "$REPO/claude/AGENT-EFFICIENCY.md" <<'PY'
+python3 - "$REPO/claude/AGENT-EFFICIENCY.md" "$REPO/claude/CROSS-PROJECT-REVIEW.md" <<'PY'
 import sys
 text = open(sys.argv[1], encoding="utf-8").read()
+cross = open(sys.argv[2], encoding="utf-8").read()
+assert len(text) <= 7000, "AGENT-EFFICIENCY.md has %d chars; keep it at most 7000 and put details in CROSS-PROJECT-REVIEW.md" % len(text)
 e1 = """## Edit 失败：先看文件现状，再重发
 
 - **发之前**：`old_string` 和 `new_string` 完全相同的 Edit 不要发，它什么也不改，只会报 `No changes to make`。一批 Edit 只放这一轮真正要改的地方；本会话里已经改成功的不要再发一遍，拿不准就先 Grep 新内容在不在。锚点从最近一次 Read 的原文里抄，不凭记忆写；同一批里前一处改过的文字，后一处不要再拿来当锚点。
@@ -85,9 +95,9 @@ e7_at = text.index(e7)
 assert status < e1_at < verification
 assert verification < e7_at < context
 checklist = "改过的现有断言清单（没改过就写「无」）"
-request = text.index("- **实现验收请求**：")
-next_item = text.find("\n- ", request + 1)
-assert checklist in text[request:next_item]
+request = cross.index("- **实现验收请求**：")
+next_item = cross.find("\n- ", request + 1)
+assert checklist in cross[request:next_item]
 PY
 printf 'edit-failure rule content checks: passed\n'
 printf 'commit-auth docs: all checks passed\n'

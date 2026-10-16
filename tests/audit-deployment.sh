@@ -171,6 +171,21 @@ chmod 644 "$CLAUDE_DIR/settings.json"
 python3 "$AUDIT" --repo "$REPO" --tools-dir "$DEPLOYED_TOOLS" --claude-dir "$CLAUDE_DIR" --project "$PROJ" --json > "$T/out_n2.json" 2>&1 || true
 l2_n2_status=$(find_layer_ok "$T/out_n2.json" "L2")
 check "n2_settings_permissions_reported" "$l2_n2_status" "failed"
+
+# 6b. CROSS-PROJECT-REVIEW.md is audited like AGENT-EFFICIENCY.md: a missing or
+# modified copy fails L2, a synced copy passes.
+chmod 600 "$CLAUDE_DIR/settings.json"
+echo "cross" > "$REPO/claude/CROSS-PROJECT-REVIEW.md"
+python3 "$AUDIT" --repo "$REPO" --tools-dir "$DEPLOYED_TOOLS" --claude-dir "$CLAUDE_DIR" --project "$PROJ" --json > "$T/out_cross_missing.json" 2>&1 || true
+check "cross_review_missing_copy_is_drift" "$(find_layer_ok "$T/out_cross_missing.json" "L2")/$(find_layer_details "$T/out_cross_missing.json" "L2" | grep -c 'Missing .*CROSS-PROJECT-REVIEW.md' || true)" "failed/1"
+cp "$REPO/claude/CROSS-PROJECT-REVIEW.md" "$CLAUDE_DIR/CROSS-PROJECT-REVIEW.md"
+python3 "$AUDIT" --repo "$REPO" --tools-dir "$DEPLOYED_TOOLS" --claude-dir "$CLAUDE_DIR" --project "$PROJ" --json > "$T/out_cross_ok.json" 2>&1 || true
+check "cross_review_synced_copy_is_ok" "$(find_layer_ok "$T/out_cross_ok.json" "L2")" "ok"
+echo "local edit" >> "$CLAUDE_DIR/CROSS-PROJECT-REVIEW.md"
+python3 "$AUDIT" --repo "$REPO" --tools-dir "$DEPLOYED_TOOLS" --claude-dir "$CLAUDE_DIR" --project "$PROJ" --json > "$T/out_cross_drift.json" 2>&1 || true
+check "cross_review_modified_copy_is_drift" "$(find_layer_ok "$T/out_cross_drift.json" "L2")/$(find_layer_details "$T/out_cross_drift.json" "L2" | grep -c 'Drift in .*CROSS-PROJECT-REVIEW.md' || true)" "failed/1"
+rm -f "$REPO/claude/CROSS-PROJECT-REVIEW.md" "$CLAUDE_DIR/CROSS-PROJECT-REVIEW.md"
+chmod 644 "$CLAUDE_DIR/settings.json"
 chmod 600 "$CLAUDE_DIR/settings.json"
 
 # Main-branch workflow: enabled/disabled are healthy, partial installs are drift.

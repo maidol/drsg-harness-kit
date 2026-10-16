@@ -23,6 +23,7 @@ read it before running it.
 | `skills/agent-efficiency-retro/` | retrospective on why a session was slow: tool-call counts, calls per turn, latency vs context size — installed under `~/.claude/skills/` |
 | `skills/diagram-conventions/` | choosing architecture / workflow / sequence diagrams by the connective in the sentence — installed under `~/.claude/skills/`. The third-party `archify` skill is not ours to ship, so its pointer to this one is a hand-added `<!-- local: diagram-conventions -->` block at the end of its SKILL.md; re-add it after reinstalling archify |
 | `claude/AGENT-EFFICIENCY.md` | agent efficiency rules, copied to `~/.claude/` and `@`-imported by the global CLAUDE.md (setup step 2) |
+| `claude/CROSS-PROJECT-REVIEW.md` | cross-project review and commit-authorization workflow, copied to `~/.claude/` next to the rules but **not** `@`-imported; sessions read it when they handle cross-project Events (setup step 2) |
 | `claude/MAIN-BRANCH-WORKFLOW.md` | user-level primary-worktree/current-branch workflow, installed by default and independently toggleable |
 | `docs/{en,zh}/src/` | the guide, with five diagrams |
 | `setup.sh` | install on a fresh machine — runs from an unpacked bundle |
@@ -203,7 +204,7 @@ This does not stop or kill the old process and does not poll immediately. A live
 
 ## Cross-project review and acceptance (optional)
 
-The distributed [agent workflow](claude/AGENT-EFFICIENCY.md#跨项目审核与验收按阶段交接不跳闸) supports plan review and implementation acceptance through Events. It is inactive unless you identify a reviewer project in your own global `~/.claude/CLAUDE.md` (or explicitly name one for a task); the kit does not assume a reviewer or write this setting for you:
+The distributed [agent workflow](claude/CROSS-PROJECT-REVIEW.md) supports plan review and implementation acceptance through Events. It is inactive unless you identify a reviewer project in your own global `~/.claude/CLAUDE.md` (or explicitly name one for a task); the kit does not assume a reviewer or write this setting for you:
 
 ```text
 跨项目审核方：/absolute/path/to/reviewer-project
