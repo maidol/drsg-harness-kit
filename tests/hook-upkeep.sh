@@ -16,7 +16,9 @@ BIN="${DRSG_MEM_BIN:-$HOME/.drsg-memory/bin/drsg}"
 API=""
 if [ -n "$BIN" ] && [ -x "$BIN" ]; then
   PORT="$(python3 -c 'import socket; s=socket.socket(); s.bind(("127.0.0.1",0)); print(s.getsockname()[1])')"
-  (cd "$T" && DRSG_TOKEN=test-upkeep "$BIN" --db "$T/m.drsg" serve --addr "127.0.0.1:$PORT" >"$T/daemon.log" 2>&1) &
+  # exec: $! must be drsg itself, or the trap's kill reaches only the subshell
+  # and drsg outlives the suite.
+  (cd "$T" && DRSG_TOKEN=test-upkeep exec "$BIN" --db "$T/m.drsg" serve --addr "127.0.0.1:$PORT" >"$T/daemon.log" 2>&1) &
   DAEMON=$!
   for _ in $(seq 1 50); do
     curl -sf -m 1 "http://127.0.0.1:$PORT/health" >/dev/null 2>&1 && { API="http://127.0.0.1:$PORT/rpc"; break; }

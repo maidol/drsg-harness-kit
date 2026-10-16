@@ -18,7 +18,9 @@ fi
 T="$(mktemp -d)"
 PORT="$(python3 -c 'import socket; s=socket.socket(); s.bind(("127.0.0.1",0)); print(s.getsockname()[1])')"
 TOKEN="test-open-window-token"
-(cd "$T" && DRSG_TOKEN="$TOKEN" "$BIN" --db "$T/m.drsg" serve --addr "127.0.0.1:$PORT" >"$T/daemon.log" 2>&1) &
+# exec: $! must be drsg itself, or the trap's kill reaches only the subshell
+# and drsg outlives the suite.
+(cd "$T" && DRSG_TOKEN="$TOKEN" exec "$BIN" --db "$T/m.drsg" serve --addr "127.0.0.1:$PORT" >"$T/daemon.log" 2>&1) &
 DAEMON=$!
 trap 'kill "$DAEMON" 2>/dev/null; wait "$DAEMON" 2>/dev/null; rm -rf "$T"' EXIT
 for _ in $(seq 1 50); do
