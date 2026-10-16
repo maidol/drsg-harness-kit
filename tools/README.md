@@ -776,6 +776,42 @@ repository and then runs it — a new test script, say — is blocked as code
 from external. Have the implementer write such files with Write, and let the
 plan's script only check them (content with `cmp`, and the executable bit).
 
+## Shared memory backups
+
+Online backups export every plane while the DrSG daemon keeps running. The tool reads `DRSG_TOKEN` and `DRSG_API` from `~/.drsg-memory/env`; credentials are not command-line arguments.
+
+```bash
+python3 ~/.drsg-memory/tools/memory-backup.py backup --keep 7
+python3 ~/.drsg-memory/tools/memory-backup.py drill
+```
+
+Backups live under `~/.drsg-memory/backups`. `--keep N` configures retention; the default is 7. A drill restores the newest backup to a disposable database, verifies it and removes the temporary database. It does not open the production library.
+
+To restore, stop the daemon first; this disconnects all active MCP sessions. Move the old `memory.drsg` directory and any `memory.drsg.bm25` / `memory.drsg.hnsw` sidecars aside. Restore refuses to overwrite an existing target:
+
+```bash
+python3 ~/.drsg-memory/tools/memory-backup.py restore --latest
+~/.drsg-memory/tools/serve.sh start
+```
+
+Use the `--from` option in this code example to select an older backup:
+
+```bash
+python3 ~/.drsg-memory/tools/memory-backup.py restore --from /path/to/backup-directory
+``` Restore rechecks the manifest and file hashes, remaps node IDs while preserving edge endpoints, and verifies plane counts, properties and index declarations before publishing. BM25/HNSW sidecars are rebuildable caches; the data and index declarations are restored and the caches are recreated when DrSG opens the library.
+
+`setup.sh` does not install any scheduled task. Before upgrading DrSG or performing a large migration, manually run `backup` and then `drill`.
+
+Cold backup is separate from online backup. It stops the daemon and disconnects every session:
+
+```bash
+DB="$HOME/.drsg-memory/memory.drsg"
+SNAPSHOT="$HOME/.drsg-memory/cold-$(date -u +%Y%m%dT%H%M%SZ).drsgsnap"
+"$HOME/.drsg-memory/tools/serve.sh" stop
+"$HOME/.drsg-memory/bin/drsg" --db "$DB" snapshot "$SNAPSHOT"
+"$HOME/.drsg-memory/tools/serve.sh" start
+```
+
 ## Notes
 
 - **The LLM key never leaves the server.** `digest.run` is passed the *name* of

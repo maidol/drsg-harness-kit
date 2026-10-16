@@ -69,6 +69,8 @@ bash "$REPO/tests/secret-redaction-mutations.sh"
 bash "$REPO/tests/release.sh"
 bash "$REPO/tests/migrate.sh"
 bash "$REPO/tests/migrate-mutations.sh"
+bash "$REPO/tests/memory-backup.sh"
+bash "$REPO/tests/memory-backup-mutations.sh"
 
 echo ""
 echo "All test suites and quality gates PASSED."

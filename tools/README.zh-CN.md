@@ -457,6 +457,42 @@ python3 ~/.drsg-memory/tools/permission-guard.py apply --project /path/to/projec
 
 用户范围的规则只允许分类器把 DIR 下的其他文件当数据读。计划里如果让脚本把 DIR 里的文件拷进仓库再执行（比如新的测试脚本），会被当成外部代码拦下。这类文件要让执行方自己用 Write 写进仓库，计划里的脚本只核对它（用 `cmp` 比内容，再看可执行位）。
 
+## 共享记忆库备份
+
+在线备份会导出全部 plane，过程中 DrSG daemon 保持运行。工具从 `~/.drsg-memory/env` 读取 `DRSG_TOKEN` 和 `DRSG_API`；凭据不会放入命令行参数。
+
+```bash
+python3 ~/.drsg-memory/tools/memory-backup.py backup --keep 7
+python3 ~/.drsg-memory/tools/memory-backup.py drill
+```
+
+备份保存在 `~/.drsg-memory/backups`。`--keep N` 配置保留份数，默认 7。演练会把最新备份恢复到一次性临时库、核对后删除；不会打开生产库。
+
+恢复前先停止 daemon；这会断开所有活跃 MCP 会话。将旧的 `memory.drsg` 目录及 `memory.drsg.bm25` / `memory.drsg.hnsw` sidecar 移到别处。恢复命令不会覆盖已有目标：
+
+```bash
+python3 ~/.drsg-memory/tools/memory-backup.py restore --latest
+~/.drsg-memory/tools/serve.sh start
+```
+
+下面的 `--from` 示例用于选择较早的备份：
+
+```bash
+python3 ~/.drsg-memory/tools/memory-backup.py restore --from /path/to/backup-directory
+```恢复时会重新核对 manifest 和文件哈希、重新映射节点 ID 并保持边端点连通；发布前会核对各 plane 的数量、属性和索引声明。BM25/HNSW sidecar 是可重建缓存；数据和索引声明会恢复，DrSG 打开库时会重建缓存。
+
+`setup.sh` 不会安装任何定时任务。建议在升级 DrSG 之前或进行大批迁移之前，手动运行一次 `backup`，再运行一次 `drill`。
+
+冷备是在线备份之外的另一条路径；停止 daemon 会断开所有活跃会话：
+
+```bash
+DB="$HOME/.drsg-memory/memory.drsg"
+SNAPSHOT="$HOME/.drsg-memory/cold-$(date -u +%Y%m%dT%H%M%SZ).drsgsnap"
+"$HOME/.drsg-memory/tools/serve.sh" stop
+"$HOME/.drsg-memory/bin/drsg" --db "$DB" snapshot "$SNAPSHOT"
+"$HOME/.drsg-memory/tools/serve.sh" start
+```
+
 ## 说明
 
 - **LLM key 永远不会离开 server。** 传给 `digest.run` 的是环境变量的*名称*；daemon 从自己的进程环境读取值。项目的 `.drsg/env` 只保存名称，不保存值。
