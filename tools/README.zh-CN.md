@@ -6,7 +6,7 @@
 
 只需一条命令，即可把 Dr Strange 变成 Claude Code 项目的持久化跨会话记忆层：图会记住之前的会话结论，每个新会话都会从摘要而不是空白上下文开始。
 
-运行时包含七个 Python hook 模板、一个安装器和一个 daemon 控制脚本。`drsg_hook_common.py` 与 SessionStart、UserPromptSubmit 一起部署；`tools/drsg_rpc.py` 是六个工具共用的回环 RPC 客户端。`memory-backup.py` 保留独立 transport。不需要插件、不需要注册服务，也不会有数据离开本机。
+运行时包含七个 Python hook 模板、一个安装器和一个 daemon 控制脚本。`drsg_hook_common.py` 与 SessionStart、UserPromptSubmit、SessionEnd 和 detached L3 digest hook 一起部署；`tools/drsg_rpc.py` 是六个工具共用的回环 RPC 客户端。`memory-backup.py` 保留独立 transport。不需要插件、不需要注册服务，也不会有数据离开本机。
 
 `tools/claude-model-picker.sh` 是一个 Bash 函数，会在交互式 `claude` 启动前询问模型。未设置 `CLAUDE_PICK_MODELS` 时，它通过 `tools/claude-model-discovery.py` 查询配置的网关，失败时退回静态选单。程序文件随 tools 部署，但全新安装默认不启用。可在安装时用 `setup.sh --model-picker` 显式启用，也可之后运行 `~/.drsg-memory/tools/claude-model-picker-config.sh enable`；传 `disable` 可关闭。普通安装/更新会保留当前选择。详细说明见仓库根目录 README 的「启动前选模型」一节。
 
@@ -41,7 +41,7 @@
   ```bash
   echo 'DRSG_BRIEFING_MAX_CHARS=3000' >> .drsg/env
   ```
-- **压缩会重新注入。** SessionStart 也会在 `compact` 时运行，因为压缩会从上下文中移除摘要和协议，但会话本身仍在继续。这条路径会给现有 Session 节点加戳，而不是创建第二个节点。压缩后，SessionStart 还会向模型注入一段纠正上下文，说明压缩指令已经失效。
+- **压缩后保留必需上下文，但不重复低价值内容。** SessionStart 仍会在 `compact` 时运行，并给现有 Session 节点加戳。压缩后会保留纠正上下文 `COMPACT_CONTEXT`、未关闭的 Event 和写记忆协议，但省略 `Briefing:` 与 `Recent sessions:`。startup、resume 和 clear 仍保留现有摘要及 recent-session 行为。
 
 ## 前置条件
 
@@ -157,11 +157,13 @@ DRSG_PROJECT_DIR=/path/to/project python3 ~/.drsg-memory/tools/repair_project_ke
 ## 安装实际做了什么
 
 1. 确保共享 daemon 正在运行，生成或复用 token。启用 L3 时，会在 daemon 启动**之前**把 key 的**值**写入 `~/.drsg-memory/env`，这样 `start` 才能导出它。
-2. 把七个 Python hook 模板复制到 `<project>/.claude/hooks/`，包括由 SessionStart 和 UserPromptSubmit 共用的 `drsg_hook_common.py`。全局 `event-poller.py` 则由 `setup.sh` 单独部署。
+2. 把七个 Python hook 模板复制到 `<project>/.claude/hooks/`，包括由 SessionStart、UserPromptSubmit、SessionEnd 和 L3 digest 共用的 `drsg_hook_common.py`。全局 `event-poller.py` 则由 `setup.sh` 单独部署。
 3. 写入 `<project>/.drsg/env`（`chmod 600`）——daemon 地址、token 和 L3 设置只包含 key 的**名称**。
 4. 把 SessionStart / UserPromptSubmit / SessionEnd 条目合并到 `<project>/.claude/settings.local.json`，保留已有内容。
 5. 注册两个 MCP server（项目级）：`drsg` 指向 daemon 的 `/mcp`，以及 `drsg-events`——本目录中的 stdio server，提供 `event_post` / `event_list` / `event_done` / `event_take`。第二个 server 有意独立：`Event` 和 `NOTIFY` 是本层建立在软 schema 图之上的约定，而不了解 Fact 的 engine 不应学习 Event 是什么。
 6. **自检**：daemon 可访问、plane 存在、项目 key 能解析为 `Project` 节点，并且能通过 hook 自己的 recall query 读到临时 Fact。任何一步失败都会以非零状态退出并说明原因，而不是报告一个实际上什么都不会做的“成功安装”。
+
+部署命令用途不同：`setup.sh` 部署全局 `event-poller.py`；`setup.sh --all-projects` 将 hook 模板（包括 `session_start.py`、`session_end.py`、`l3_digest.py` 及其同目录共享模块 `drsg_hook_common.py`）复制到已登记项目。
 
 将 `.drsg/` 加入目标项目的 `.gitignore`。
 
@@ -278,6 +280,12 @@ advice: this reads like a change to a judgment ('判断') — verb=impact lists 
 
 改动要落到所有做同一个判断的路径上时，用 `--verb impact` 重发。
 
+## MCP Event 列表（`event_list`）
+
+`event_list` 可选整数参数 `limit` 范围为 1–200。`status="all"` 默认返回最新 20 条 Event：先按相同收件方过滤条件执行有界计数查询，再最多取 `limit` 条。计数可用且有更多记录时，追加 `另有 N 条未列出，传 limit 看更多`。计数查询报错或返回非整数时，改取 `limit+1` 条；确实超出时追加不带数量的 `还有更多未列出，传 limit 看更多`。daemon 支持的计数投影为 `count(*)`。
+
+`limit` 只对 MCP 的 `status="all"` 生效。`open` 和 `done` 仍使用原有按状态过滤、过滤后再 LIMIT 的 `STATUS_CAP` 行为，传入的 `limit` 会被忽略。`event.py list` CLI 行为不变。
+
 ### 提交授权工具（`commit_auth_post` / `commit_auth_apply`）
 
 候选 MCP 工具 `commit_auth_post` 接收 `recipient`、40 位 `tree` 和
@@ -330,7 +338,7 @@ Bash 的 `git commit` 仍保留 `ask` 规则，照样会问你：
 
 `setup.sh` 会把它注册成 `~/.claude/settings.json` 里的四个**全局** hook（`--no-event-poller` 可跳过）。之后每个会话每 15 分钟查一次本项目的待办 Event，**轮询本身不调用模型**；只有出现本会话还没通知过的待办时，才唤醒模型。
 
-- **为什么不调用模型。** `SessionStart`、`Stop` 和 `StopFailure`（这一轮因 API 错误结束）用 `asyncRewake` 方式运行它：Claude Code 让它在后台跑，只有退出码是 2 时才唤醒模型。没有新待办的轮次只是睡眠、通过 RPC 问 daemon，什么都不输出。唤醒时的提示会列出这些 Event，并重申 commit、push、开 PR 仍要等用户确认。
+- **为什么不调用模型。** `SessionStart`、`Stop` 和 `StopFailure`（这一轮因 API 错误结束）用 `asyncRewake` 方式运行它：Claude Code 让它在后台跑，只有退出码是 2 时才唤醒模型。没有新待办的轮次只是睡眠、通过 RPC 问 daemon，什么都不输出。固定唤醒指引压成一行（少于 80 字符）：`按 Event 流程处理：handoff 直接开工；判定只 event_done；commit/push/PR 等先等用户确认。` 它保留 handoff、判定和等待用户确认三条规则；Event 字段、owner/lease 提示、graph hint 和再提醒内容仍单独渲染。
 - **每个项目只有一个轮询，靠租约保证。** 同一目录开两个会话时，两边都会去处理同一条 Event。所以轮询权是一份租约，记的是会话和它的 Claude Code 进程（pid 加启动时间），而不是轮询进程持有的文件锁。原因是：轮询进程要退出才能唤醒模型，锁如果随进程一起释放，就会在第一个会话刚开始干活时把项目交给另一个会话。持有者的进程消失后，等待中的会话一分钟内接管；不论持有者是正常退出（`SessionEnd` 会释放租约），还是被强行结束。被挂起（`Ctrl+Z`，状态 `T`）或成了僵尸进程的持有者也算已经不在：它已经处理不了唤醒。持有者进程还活着、但它的轮询进程死了（被杀或崩溃：`<会话>.<pid>.pid` 里记的进程已经不在）时，租约超过 `EVENT_POLL_LEASE_STALE` 秒（默认是 5 个 `EVENT_POLL_TICK`，即 300 秒）没刷新就会被接管。轮询进程为唤醒模型而退出时会先删掉这个文件，所以正在处理唤醒的会话不管做多久都不会被抢。持有者只是空闲、轮询还活着时，不会自动接管，要用 `event_take` 或 `--take`。
 - **后台会话让给前台会话。** 后台会话（`claude --bg`，挂在 `claude bg-pty-host` 下）里 `/exit` 只是 detach，进程还活着，租约也就一直占着。Claude Code 不对外暴露「有没有客户端连着」，所以只要持有者是后台会话，同项目的前台会话一分钟内就会接管——你正 attach 着的后台会话也一样。后台会话之间不互相抢。`claude stop <id>` 仍会立即释放。
 - **由 `Stop` 重新拉起。** 唤醒后轮询进程就退出了，下一次 `Stop` 会再把它启动起来；如果它已经在运行，这次 `Stop` 拉起的进程会立刻退出。

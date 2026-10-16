@@ -740,33 +740,34 @@ def main(now=None):
         orphans = None
         print(f"[drsg-memory] orphan_facts failed: {e}", file=sys.stderr)
 
-    # 2. Inject: the compressed briefing + recent sessions (NOT full Facts).
+    # 2. Inject the compressed briefing and recent sessions except after compaction.
     parts = []
     brief, n_facts = ensure_briefing(proj_dir, pid, token) if pid else ("", None)
-    if brief:
+    if source != "compact" and brief:
         parts.append("Briefing:\n" + brief)
-    try:
-        res = rpc("plane.cypher", {"plane": PLANE,
-            "query": ("MATCH (p:Project)<-[:BELONGS_TO]-(s:Session) "
-                      "WHERE p.path = $path "
-                      "RETURN s ORDER BY s.started_at DESC LIMIT 3"),
-            "params": {"path": proj_dir}}, token)
-        # Only sessions that actually say something. Nothing writes
-        # Session.summary today, so listing every recent session spent ~10% of
-        # the startup injection on three lines of bare timestamps — context the
-        # model cannot act on. When a summary does get written the line earns
-        # its place again, and the block comes back on its own.
-        sess_lines = []
-        for n in res.get("nodes", []):
-            pr = n.get("properties", {})
-            if not pr.get("summary"):
-                continue
-            sess_lines.append(f"- session {pr.get('started_at')} "
-                              f"[{pr.get('source', '?')}]: {pr['summary']}")
-        if sess_lines:
-            parts.append("Recent sessions:\n" + "\n".join(sess_lines))
-    except Exception as e:
-        print(f"[drsg-memory] recall sessions: {e}", file=sys.stderr)
+    if source != "compact":
+        try:
+            res = rpc("plane.cypher", {"plane": PLANE,
+                "query": ("MATCH (p:Project)<-[:BELONGS_TO]-(s:Session) "
+                          "WHERE p.path = $path "
+                          "RETURN s ORDER BY s.started_at DESC LIMIT 3"),
+                "params": {"path": proj_dir}}, token)
+            # Only sessions that actually say something. Nothing writes
+            # Session.summary today, so listing every recent session spent ~10% of
+            # the startup injection on three lines of bare timestamps — context the
+            # model cannot act on. When a summary does get written the line earns
+            # its place again, and the block comes back on its own.
+            sess_lines = []
+            for n in res.get("nodes", []):
+                pr = n.get("properties", {})
+                if not pr.get("summary"):
+                    continue
+                sess_lines.append(f"- session {pr.get('started_at')} "
+                                  f"[{pr.get('source', '?')}]: {pr['summary']}")
+            if sess_lines:
+                parts.append("Recent sessions:\n" + "\n".join(sess_lines))
+        except Exception as e:
+            print(f"[drsg-memory] recall sessions: {e}", file=sys.stderr)
 
     # Coordination events left for this project by another agent. Bounded and
     # self-clearing: once the Event is closed the block is gone. Closing is

@@ -55,7 +55,7 @@ proj = os.path.join(tmp, "proj")
 hook_dir = os.path.join(proj, ".claude", "hooks")
 os.makedirs(hook_dir)
 os.makedirs(os.path.join(proj, ".drsg"))
-for name in ("l3_digest.py", "secret_redact.py"):
+for name in ("l3_digest.py", "secret_redact.py", "drsg_hook_common.py"):
     shutil.copy(os.path.join(hooks, name), hook_dir)
 with open(os.path.join(proj, ".drsg", "env"), "w") as f:
     f.write("DRSG_L3_MODEL=from-project-env\n")

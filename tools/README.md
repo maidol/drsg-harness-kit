@@ -15,9 +15,9 @@ remembers what earlier sessions concluded, and every new session starts with a
 briefing instead of a blank slate.
 
 The runtime has seven Python hook templates, an installer, and a daemon control
-script. `drsg_hook_common.py` is deployed beside the SessionStart and
-UserPromptSubmit hooks; `tools/drsg_rpc.py` is the shared loopback-aware RPC
-client for six tools. `memory-backup.py` keeps its separate transport. No plugin,
+script. `drsg_hook_common.py` is deployed beside SessionStart, UserPromptSubmit,
+SessionEnd and the detached L3 digest hook; `tools/drsg_rpc.py` is the shared
+loopback-aware RPC client for six tools. `memory-backup.py` keeps its separate transport. No plugin,
 no service to sign up for, no data leaving the machine.
 
 The `tools/claude-model-picker.sh` Bash function asks which model to use before
@@ -88,11 +88,12 @@ any Claude Code project                one shared daemon (~/.drsg-memory/)
   ```bash
   echo 'DRSG_BRIEFING_MAX_CHARS=3000' >> .drsg/env
   ```
-- **A compaction re-injects.** SessionStart also runs on `compact`, because a
-  compaction drops the briefing and the protocol out of context while the
-  session keeps going. That path stamps the existing Session node instead of
-  creating a second one. After compact, SessionStart also injects model-only corrective
-  context explaining that the compaction instructions are no longer active.
+- **Compaction keeps required context without repeating low-value sections.**
+  SessionStart still runs on `compact` and stamps the existing Session node.
+  After compaction it keeps the corrective `COMPACT_CONTEXT`, open Events, and
+  write-memory protocol, while omitting `Briefing:` and `Recent sessions:`. On
+  startup, resume, and clear, the current briefing and recent-session behavior
+  remains unchanged.
 
 ## Prerequisites
 
@@ -255,7 +256,7 @@ running under the old environment will keep sending an empty key and
 1. Ensures the shared daemon is running, generating or reusing a token. With
    L3 enabled, the key's **value** is written to `~/.drsg-memory/env` *before*
    the daemon starts, so `start` can export it.
-2. Copies all seven Python hook templates into `<project>/.claude/hooks/`, including `drsg_hook_common.py`, which is shared by SessionStart and UserPromptSubmit. `setup.sh` separately deploys the global `event-poller.py`.
+2. Copies all seven Python hook templates into `<project>/.claude/hooks/`, including `drsg_hook_common.py`, shared by SessionStart, UserPromptSubmit, SessionEnd, and L3 digest. `setup.sh` separately deploys the global `event-poller.py`.
 3. Writes `<project>/.drsg/env` (`chmod 600`) — daemon address, token, and the
    L3 settings, with the key's **name** only.
 4. Merges the SessionStart / UserPromptSubmit / SessionEnd entries into
@@ -270,6 +271,8 @@ running under the old environment will keep sending an empty key and
    to a `Project` node, and a temporary Fact readable through the hooks' own
    recall query. Any failure exits non-zero and says so, rather than reporting
    a successful install of something that will silently do nothing.
+
+Deployment commands are distinct: `setup.sh` deploys the global `event-poller.py`; `setup.sh --all-projects` copies the hook templates, including `session_start.py`, `session_end.py`, `l3_digest.py`, and their sibling `drsg_hook_common.py`, into registered projects.
 
 Add `.drsg/` to the target project's `.gitignore`.
 
@@ -444,6 +447,12 @@ advice: this reads like a change to a judgment ('判断') — verb=impact lists 
 Re-post with `--verb impact` when the change has to reach every path that makes
 the same decision.
 
+## MCP Event listing (`event_list`)
+
+`event_list` accepts an optional integer `limit` from 1 to 200. For `status="all"`, the default is 20 newest Events. It first runs a bounded count query with the same recipient filter, then fetches at most `limit` rows. When the count is available and more rows exist, it appends `另有 N 条未列出，传 limit 看更多`. If the count query fails or returns a non-integer, it fetches `limit+1` rows and, when truncated, appends `还有更多未列出，传 limit 看更多` without a number. The count uses the daemon's supported `count(*)` projection.
+
+`limit` applies only to MCP `status="all"`. `open` and `done` keep their existing status-filtered `STATUS_CAP` and filter-before-LIMIT behavior, regardless of `limit`. The `event.py list` CLI remains unchanged.
+
 ### Commit authorization tools (`commit_auth_post` / `commit_auth_apply`)
 
 The candidate `commit_auth_post` MCP tool takes `recipient`, 40-character
@@ -525,8 +534,10 @@ there is one this session has not been told about yet.
   that ended in an API error) run it as an
   `asyncRewake` hook: Claude Code keeps it in the background and wakes the model
   only on exit code 2. Idle rounds sleep, ask the daemon over RPC, and print
-  nothing. The wake-up text lists the Events and repeats that commit / push / PR
-  still wait for the user.
+  nothing. The fixed wake guidance is one line (under 80 characters):
+  `按 Event 流程处理：handoff 直接开工；判定只 event_done；commit/push/PR 等先等用户确认。`
+  It preserves the handoff, verdict, and user-confirmation rules; Event fields,
+  owner/lease notices, graph hints, and re-nudge content are rendered separately.
 - **One poller per project, held by a lease.** Two sessions in the same
   directory would both act on the same Event. The right to poll is a lease
   naming a session and its Claude Code process (pid + start time), not a lock

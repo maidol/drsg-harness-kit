@@ -203,6 +203,9 @@ TOOLS = [
                             "Absolute directory. Defaults to this session's."},
                 "status": {"type": "string", "enum": ["open", "done", "all"],
                            "default": "open"},
+                "limit": {"type": "integer", "default": 20, "minimum": 1,
+                          "maximum": 200, "description":
+                          "Maximum number of recent Events for status=all."},
             },
         },
     },
@@ -765,10 +768,27 @@ def call_tool(name, args, token):
         path = ev.canon_path(args.get("project") or proj)
         want = args.get("status") or "open"
         rows = []
-        # Open and done are both filtered in the query: an old Event of either
-        # status must not hide behind newer ones of the other (NEW-C1). Only
-        # "all" keeps the recent LIST_CAP window.
-        events = ev.fetch(path, token, status=None if want == "all" else want)
+        more_line = ""
+        if want == "all":
+            requested = args.get("limit", 20)
+            if isinstance(requested, bool) or not isinstance(requested, int) or not 1 <= requested <= 200:
+                raise ValueError("limit must be an integer from 1 to 200")
+            try:
+                total = ev.count_events(path, token)
+                if isinstance(total, bool) or not isinstance(total, int):
+                    raise ValueError("event count query returned a non-integer")
+            except Exception:
+                events = ev.fetch(path, token, limit=requested + 1)
+                if len(events) > requested:
+                    events = events[:requested]
+                    more_line = "还有更多未列出，传 limit 看更多"
+            else:
+                events = ev.fetch(path, token, limit=requested)
+                if total > requested:
+                    more_line = "另有 %d 条未列出，传 limit 看更多" % (total - requested)
+        else:
+            # Open and done are filtered before LIMIT; MCP limit applies only to all.
+            events = ev.fetch(path, token, status=want)
         for n in events:
             pr = n.get("properties", {})
             if want != "all" and pr.get("status") != want:
@@ -786,6 +806,8 @@ def call_tool(name, args, token):
         line = ev.stale_open_line(events) if want in ("open", "all") else ""
         if line:
             rows.append(line)
+        if more_line:
+            rows.append(more_line)
         return "\n".join(rows) if rows else "no %s events for %s" % (want, path)
 
     if name == "event_done":

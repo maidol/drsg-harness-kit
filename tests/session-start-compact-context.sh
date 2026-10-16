@@ -26,6 +26,7 @@ MEM_DIR="$T/memory"
 API="http://127.0.0.1:$PORT/rpc"
 mkdir -p "$MEM_DIR/tools/templates/hooks"
 cp "$HOOK_SOURCE" "$MEM_DIR/tools/templates/hooks/session_start.py"
+cp "$REPO/tools/templates/hooks/drsg_hook_common.py" "$MEM_DIR/tools/templates/hooks/drsg_hook_common.py"
 DRSG_TOKEN="$TOKEN" "$BIN" --db "$T/memory.drsg" serve --addr "127.0.0.1:$PORT" >"$T/daemon.log" 2>&1 &
 DAEMON=$!
 cleanup() {
@@ -195,23 +196,51 @@ rpc("node.create", {"plane": "memory", "key": fact_key, "labels": ["Fact"],
                                    "created_at": int(time.time())}})
 rpc("edge.create", {"plane": "memory", "src": fact_key,
                      "dst": project_node["id"], "type": "ABOUT"})
+session_key = "compact-recent-session"
+rpc("node.create", {"plane": "memory", "key": session_key, "labels": ["Session"],
+                    "properties": {"started_at": 4102444800, "source": "startup",
+                                   "summary": "recent fixture summary"}})
+rpc("edge.create", {"plane": "memory", "src": session_key,
+                     "dst": project_node["id"], "type": "BELONGS_TO"})
+event_key = "compact-open-event"
+rpc("node.create", {"plane": "memory", "key": event_key, "labels": ["Event"],
+                    "properties": {"status": "open", "kind": "notice",
+                                   "from_project": "example-project",
+                                   "summary": "open fixture event",
+                                   "created_at": int(time.time())}})
+rpc("edge.create", {"plane": "memory", "src": event_key,
+                     "dst": project_node["id"], "type": "NOTIFY"})
 out = invoke(normal, "compact", "compact-normal")
 context = out["hookSpecificOutput"].get("additionalContext", "")
 check("compact-normal-preserves-system-message",
-      out.get("systemMessage") == normal_drift)
-check("compact-normal-prefixes-briefing",
+      event_key in out.get("systemMessage", "") and normal_drift in out.get("systemMessage", ""))
+check("compact-excludes-briefing",
+      "Briefing:" not in context and "Recent sessions:" not in context and
+      "compact fixture" not in context and "recent fixture summary" not in context)
+check("compact-keeps-required-context",
       context.startswith(fixed_context + "\n\n") and
-      "Briefing:" in context[len(fixed_context):] and
-      "compact fixture" in context)
+      event_key in context and "open fixture event" in context and
+      "[write-memory protocol]" in context)
+recent_section = "Recent sessions:\n- session 4102444800 [startup]: recent fixture summary"
+print("RECENT_SESSIONS_CHARS=%d" % len(recent_section))
 
-# If concatenation fails, the pre-existing normal context still reaches the model.
+# Other SessionStart sources keep the briefing, recent summary, Event and protocol.
+for source in ("startup", "resume", "clear"):
+    out = invoke(normal, source, "context-growth-" + source)
+    context = out["hookSpecificOutput"].get("additionalContext", "")
+    check(source + "-retains-current-context",
+          "Briefing:" in context and "recent fixture summary" in context and
+          event_key in context and "[write-memory protocol]" in context)
+
+# If concatenation fails, the compact output still keeps the required Event and protocol.
 out = invoke(normal, "compact", "compact-concat-failure", break_composition=True)
 context = out["hookSpecificOutput"].get("additionalContext", "")
 check("compact-concat-failure-preserves-system-message",
-      out.get("systemMessage") == normal_drift)
-check("compact-concat-failure-keeps-original-context",
+      event_key in out.get("systemMessage", "") and normal_drift in out.get("systemMessage", ""))
+check("compact-concat-failure-keeps-required-context",
       context.startswith("# dr-strange memory (") and
-      "Briefing:" in context and "compact fixture" in context and
+      event_key in context and "[write-memory protocol]" in context and
+      "Briefing:" not in context and "Recent sessions:" not in context and
       not context.startswith(fixed_context))
 
 if only and ran == 0:

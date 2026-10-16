@@ -11,7 +11,7 @@ API = "http://127.0.0.1:7700/rpc"
 PLANE = "memory"
 
 
-def rpc(method, params, token):
+def rpc(method, params, token, timeout=3):
     """Call the configured daemon; callers degrade on every failure."""
     api = os.environ.get("DRSG_API", API)
     body = json.dumps({"jsonrpc": "2.0", "id": 1, "method": method, "params": params}).encode()
@@ -23,7 +23,7 @@ def rpc(method, params, token):
             api, data=body,
             headers={"Content-Type": "application/json", "Authorization": f"Bearer {token}"},
         )
-        with urllib.request.urlopen(req, timeout=3) as response:
+        with urllib.request.urlopen(req, timeout=timeout) as response:
             return json.load(response)["result"]
     host, _, port = hostport.partition(":")
     head = (
@@ -31,7 +31,7 @@ def rpc(method, params, token):
         f"Content-Type: application/json\r\nAuthorization: Bearer {token}\r\n"
         f"Content-Length: {len(body)}\r\nConnection: close\r\n\r\n"
     ).encode()
-    with socket.create_connection((host, int(port or 80)), timeout=3) as sock:
+    with socket.create_connection((host, int(port or 80)), timeout=timeout) as sock:
         sock.sendall(head + body)
         buf = b""
         while b"\r\n\r\n" not in buf:

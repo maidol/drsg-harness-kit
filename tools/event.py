@@ -108,14 +108,43 @@ def project_id(path, token):
     return None
 
 
-def fetch(path, token, status=None):
+def count_events(path, token, status=None):
+    """Count Events addressed to `path`, optionally filtering by status."""
+    query = "MATCH (p:Project)<-[:NOTIFY]-(e:Event) WHERE p.path = $path"
+    params = {"path": path}
+    if status is not None:
+        query += " AND e.status = $status"
+        params["status"] = status
+    res = rpc("plane.cypher", {"plane": PLANE,
+                               "query": query + " RETURN count(*) AS total",
+                               "params": params}, token)
+    rows = res.get("rows")
+    if not isinstance(rows, list) or not rows:
+        raise ValueError("event count query returned no rows")
+    row = rows[0]
+    if isinstance(row, dict):
+        total = row.get("total")
+    elif isinstance(row, (list, tuple)) and row:
+        total = row[0]
+    else:
+        total = None
+    if isinstance(total, bool) or not isinstance(total, int):
+        raise ValueError("event count query returned a non-integer")
+    return total
+
+
+def fetch(path, token, status=None, limit=None):
     """Events addressed to `path`, newest first: the latest LIST_CAP of any
     status, or with `status` every one of that status up to STATUS_CAP. The
     status predicate must sit in the query, before LIMIT, or newer Events of
     other statuses crowd the ones asked for out of the window."""
     if status is None:
+        if limit is None:
+            limit = LIST_CAP
+        if isinstance(limit, bool) or not isinstance(limit, int) or not 1 <= limit <= STATUS_CAP + 1:
+            raise ValueError("event fetch limit must be an integer from 1 to %d" % (STATUS_CAP + 1))
         query = ("MATCH (p:Project)<-[:NOTIFY]-(e:Event) WHERE p.path = $path "
-                 "RETURN e ORDER BY e.created_at DESC LIMIT %d" % LIST_CAP)
+                 "RETURN e ORDER BY e.created_at DESC LIMIT %d" % limit)
         params = {"path": path}
     else:
         query = ("MATCH (p:Project)<-[:NOTIFY]-(e:Event) "

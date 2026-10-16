@@ -142,15 +142,15 @@ PY
 }
 check "setup registers StopFailure as asyncRewake" "$(stopfailure_hook)" asyncRewake
 
-# 8. the wake-up text tells a verdict apart from work: "验收通过：" gets event_done, no reply
+# 8. the compact wake guidance keeps the verdict and handoff rules.
 reset; fg_owner; A=$OWNER
-check "wake text says verdicts need no reply" "$(echo '{"session_id":"A","hook_event_name":"Stop"}' \
-  | EVENT_POLL_OWNER_PID=$A timeout 5 python3 "$POLLER" 2>&1 >/dev/null | grep -c '验收通过：」开头的判定只需 event_done')" 1
+check "wake text says verdicts use event_done" "$(echo '{"session_id":"A","hook_event_name":"Stop"}' \
+  | EVENT_POLL_OWNER_PID=$A timeout 5 python3 "$POLLER" 2>&1 >/dev/null | grep -c '判定只 event_done')" 1
 
-# 9. the wake-up text says a handoff needs no "read it" reply before the work
+# 9. handoffs start directly, without a read receipt.
 reset; fg_owner; A=$OWNER
-check "wake text says handoffs need no read receipt" "$(echo '{"session_id":"A","hook_event_name":"Stop"}' \
-  | EVENT_POLL_OWNER_PID=$A timeout 5 python3 "$POLLER" 2>&1 >/dev/null | grep -c '收到 handoff 直接开工，不要先回「已读」')" 1
+check "wake text says handoffs start directly" "$(echo '{"session_id":"A","hook_event_name":"Stop"}' \
+  | EVENT_POLL_OWNER_PID=$A timeout 5 python3 "$POLLER" 2>&1 >/dev/null | grep -c 'handoff 直接开工')" 1
 
 # 10. two processes on one session id (two terminals resuming it): one owner, and the
 #     first to exit neither kills the other's poller nor hides an Event from it

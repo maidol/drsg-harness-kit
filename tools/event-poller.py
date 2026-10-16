@@ -444,13 +444,7 @@ def wake_text(new, fresh=False, renudged=None):
             lines.append("- %s [handoff] %s" % (e["key"], e["summary"]))
             lines.append("  ↻ 再提醒（已等待 %d 分钟）" % e["re_nudge_minutes"])
         lines.append("如果你已经在处理这条，继续做完就行，不要重做；如果你把它挂起了，现在继续，或者给发件方发一条 notice，写明在等什么。")
-    lines += [
-        "按 CLAUDE.md 的 Event 流程处理：读 ref 指的文档，照做；做完发回执（notice）并 event_done。",
-        "例外：summary 以「验收通过：」开头的判定只需 event_done，不要为它回 notice；回执的回执只会让对方多关一次单。",
-        "收到 handoff 直接开工，不要先回「已读」「已收到，准备先写计划」这类 notice；回给发件方的第一条应是回执，或卡住时要问的问题。",
-        "照旧要先停下等用户确认的：git commit、push、开 PR、改锁文件、任何不可逆操作。",
-        "动手前先看工作区和 git 状态：另一个会话可能做过一半（本条可能是接管后重发），已做过的不要重复改。",
-    ]
+    lines.append("按 Event 流程处理：handoff 直接开工；判定只 event_done；commit/push/PR 等先等用户确认。")
     return "\n".join(lines)
 
 
