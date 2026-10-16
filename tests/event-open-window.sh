@@ -124,6 +124,27 @@ mcp.ev.API = api
 out = mcp.call_tool("event_list", {"project": proj}, token) if should_run("event_list shows the open Event") else ""
 check("event_list shows the open Event", OLD in out)
 
+# 3b. event_list status=done shows every done Event, not only those inside the
+# newest LIST_CAP window (NEW-C1): the fixture has 25 done Events, LIST_CAP is 20.
+if should_run("event_list status=done shows all 25 done Events"):
+    done_out = mcp.call_tool("event_list", {"project": proj, "status": "done"}, token)
+    check("event_list status=done shows all 25 done Events",
+          all(("evt-done-%02d" % i) in done_out for i in range(25)))
+
+# 3c. stale_open skips an open Event whose created_at is missing or not a
+# number instead of failing to sort it (NEW-1).
+if should_run("stale_open skips a missing or non-numeric created_at"):
+    import time
+    now = int(time.time())
+    nodes = [{"external_key": k, "properties": {"status": "open", "created_at": c}}
+             for k, c in [("no-time", None), ("old-open", now - 8 * 86400),
+                          ("text-time", "yesterday")]]
+    try:
+        got = ev.stale_open(nodes, now)
+    except Exception as error:
+        got = "raised %s" % type(error).__name__
+    check("stale_open skips a missing or non-numeric created_at", got == ["old-open"])
+
 # 4. The poller's view.
 if should_run("event-poller open_events sees the open Event"):
     poller = load("event_poller", os.path.join(repo, "tools", "event-poller.py"))

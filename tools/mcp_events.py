@@ -765,9 +765,10 @@ def call_tool(name, args, token):
         path = ev.canon_path(args.get("project") or proj)
         want = args.get("status") or "open"
         rows = []
-        # Open Events are filtered in the query (an old one must not hide
-        # behind newer closed ones); history keeps the recent LIST_CAP window.
-        events = ev.fetch(path, token, status="open" if want == "open" else None)
+        # Open and done are both filtered in the query: an old Event of either
+        # status must not hide behind newer ones of the other (NEW-C1). Only
+        # "all" keeps the recent LIST_CAP window.
+        events = ev.fetch(path, token, status=None if want == "all" else want)
         for n in events:
             pr = n.get("properties", {})
             if want != "all" and pr.get("status") != want:

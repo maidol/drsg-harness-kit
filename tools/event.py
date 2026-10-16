@@ -691,10 +691,16 @@ def stale_open(events, now=None):
     """Keys of the open Events among `events` created more than
     STALE_OPEN_DAYS ago, oldest first."""
     cutoff = (now if now is not None else time.time()) - STALE_OPEN_DAYS * 86400
-    old = [((n.get("properties") or {}).get("created_at"), n.get("external_key"))
-           for n in events if (n.get("properties") or {}).get("status") == "open"]
-    return [k for c, k in sorted(old, key=lambda x: x[0])
-            if isinstance(c, (int, float)) and c < cutoff]
+    # Filter before sorting: an Event whose created_at is missing or not a
+    # number cannot be ordered against one that has it, and sorting the two
+    # together raised TypeError and took the whole listing down (NEW-1).
+    old = []
+    for n in events:
+        pr = n.get("properties") or {}
+        c = pr.get("created_at")
+        if pr.get("status") == "open" and isinstance(c, (int, float)) and c < cutoff:
+            old.append((c, n.get("external_key")))
+    return [k for c, k in sorted(old, key=lambda x: x[0])]
 
 
 def stale_seen_handoffs(events, now=None):
