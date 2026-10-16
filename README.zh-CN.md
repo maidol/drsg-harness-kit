@@ -196,6 +196,8 @@ FAILED /path/to/project-c (log: <per-project log path>)
 summary: 1 ok, 1 failed, 2 skipped
 ```
 
+不带 `--addr`（也没设 `DRSG_MEM_ADDR`）时，项目清单取自 `~/.drsg-memory/env` 里 `DRSG_API` 指向的 daemon；`serve.sh` 每次启动都会重写这一行。该文件里没有这一行时，才回落到 `127.0.0.1:7700`。
+
 router 和 usage report 虽然会随 bundle 提供，但项目配置默认是可选的：使用 `--router DIR`、`--usage-report DIR`，或者使用显式的 `--hub DIR` 同时启用两者；只使用 `--project` 和 `--repo` 不会安装其中任何一个。
 
 ## 文本化工具调用防护（`textual-tool-call-guard.py`）

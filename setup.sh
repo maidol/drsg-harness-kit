@@ -292,10 +292,19 @@ elif [ "$ALL_PROJECTS" -eq 1 ]; then
   echo "== 4/6: memory layer -> all registered projects"
   MEMORY_DIR="${DRSG_MEM_DIR:-$HOME/.drsg-memory}"
   DAEMON_ENV="$MEMORY_DIR/env"
-  REGISTRY_ADDR="${ADDR:-${DRSG_MEM_ADDR:-127.0.0.1:7700}}"
-  REGISTRY_ADDR="${REGISTRY_ADDR#http://}"
-  REGISTRY_ADDR="${REGISTRY_ADDR#https://}"
-  REGISTRY_API="http://$REGISTRY_ADDR/rpc"
+  # Without --addr or DRSG_MEM_ADDR, list projects from the daemon this
+  # machine's env file names (serve.sh rewrites DRSG_API there on every start),
+  # not from whatever answers on the default port.
+  REGISTRY_API=""
+  if [ -z "$ADDR" ] && [ -z "${DRSG_MEM_ADDR:-}" ] && [ -f "$DAEMON_ENV" ]; then
+    REGISTRY_API="$(sed -n 's/^DRSG_API=//p' "$DAEMON_ENV" | head -1 || true)"
+  fi
+  if [ -z "$REGISTRY_API" ]; then
+    REGISTRY_ADDR="${ADDR:-${DRSG_MEM_ADDR:-127.0.0.1:7700}}"
+    REGISTRY_ADDR="${REGISTRY_ADDR#http://}"
+    REGISTRY_ADDR="${REGISTRY_ADDR#https://}"
+    REGISTRY_API="http://$REGISTRY_ADDR/rpc"
+  fi
   PROJECTS_FILE="$(mktemp "${TMPDIR:-/tmp}/setup-all-projects.XXXXXX")"
   QUERY_ERROR="$PROJECTS_FILE.err"
   if ! "$TOOLS/project_registry.py" --env "$DAEMON_ENV" --api "$REGISTRY_API" \

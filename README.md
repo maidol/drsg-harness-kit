@@ -295,6 +295,10 @@ FAILED /path/to/project-c (log: <per-project log path>)
 summary: 1 ok, 1 failed, 2 skipped
 ```
 
+Without `--addr` (or `DRSG_MEM_ADDR`), the project list comes from the daemon
+that `DRSG_API` in `~/.drsg-memory/env` names — `serve.sh` rewrites that line on
+every start. Only when the file has none does it fall back to `127.0.0.1:7700`.
+
 The router and usage report are bundled but their project configuration is opt-in:
 use `--router DIR`, `--usage-report DIR`, or explicit `--hub DIR` for both;
 `--project` and `--repo` alone install neither.

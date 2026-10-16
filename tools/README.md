@@ -819,7 +819,7 @@ python3 ~/.drsg-memory/tools/memory-backup.py drill
 
 `DRSG_BACKUP_MAX_AGE_DAYS` sets the age threshold in days (default `7`); set it to `0` to disable the backup check. An invalid value falls back to `7`. Set the variable in the environment inherited by Claude Code, for example `export DRSG_BACKUP_MAX_AGE_DAYS=14`. If `DRSG_MEM_DIR` is set, substitute `$DRSG_MEM_DIR/tools/...` for the default `~/.drsg-memory/tools/...` paths. The hook only checks and warns; it never starts the daemon or runs backup/drill for you.
 
-To restore, stop the daemon first; this disconnects all active MCP sessions. Move the old `memory.drsg` directory and any `memory.drsg.bm25` / `memory.drsg.hnsw` sidecars aside. Restore refuses to overwrite an existing target:
+To restore, stop the daemon first; this disconnects all active MCP sessions. Move the old `memory.drsg` directory and any `memory.drsg.bm25` / `memory.drsg.hnsw` sidecars aside. Restore refuses to overwrite an existing target, and refuses with `daemon still running` while anything still answers at `DRSG_API` — a daemon left running keeps writing to the directory you moved, and those writes would be lost:
 
 ```bash
 python3 ~/.drsg-memory/tools/memory-backup.py restore --latest
@@ -843,6 +843,35 @@ SNAPSHOT="$HOME/.drsg-memory/cold-$(date -u +%Y%m%dT%H%M%SZ).drsgsnap"
 "$HOME/.drsg-memory/bin/drsg" --db "$DB" snapshot "$SNAPSHOT"
 "$HOME/.drsg-memory/tools/serve.sh" start
 ```
+
+Backups live on the same disk as the library: they protect against logical damage, not against losing that disk. Copy the newest backup to another disk from time to time:
+
+```bash
+cp -a "$(ls -d ~/.drsg-memory/backups/backup-* | tail -1)" /path/on/another/disk/
+```
+
+## Operations checklist
+
+What keeps a single-machine install healthy:
+
+| When | Command | Healthy result |
+|---|---|---|
+| Daily, and before an upgrade or a large migration | `python3 ~/.drsg-memory/tools/memory-backup.py backup --keep 7` | `backup created` |
+| Weekly | `python3 ~/.drsg-memory/tools/memory-backup.py drill` | `drill passed` |
+| Weekly | copy the newest backup to another disk (command above) | the copy exists |
+| After every kit upgrade | `python3 ~/.drsg-memory/tools/audit_deployment.py --all` | `Audit Result: PASSED` |
+| A session warns the daemon is unreachable | `~/.drsg-memory/tools/serve.sh status`, then `~/.drsg-memory/tools/serve.sh start` | `running (pid …)` |
+
+Upgrade: run `backup` and `drill`, then the new bundle's `setup.sh` and `setup.sh --all-projects --bin <path to drsg>`, restart the Claude Code sessions, and run the audit. Roll back the same way from the previous release's bundle; restore a backup only when the library itself is damaged.
+
+Daemon warnings that are not routine — the idempotent creates (`already exists`, `conflict: external key`) are filtered out:
+
+```bash
+grep WARN ~/.drsg-memory/logs/drsg.log.$(date -u +%F) \
+  | grep -v -e 'already exists' -e 'conflict: external key'
+```
+
+An `unauthorized` line means some client sent a token the daemon does not accept: compare the projects' `.drsg/env` with `~/.drsg-memory/env`, and look for a test or script that talks to the default address.
 
 ## Notes
 

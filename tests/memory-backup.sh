@@ -197,7 +197,8 @@ def setup_restore_root():
     restore_root = root / "restore-root"
     restore_root.mkdir(mode=0o700, exist_ok=True)
     restore_token = "restore-env-" + secrets.token_hex(16)
-    (restore_root / "env").write_text("DRSG_TOKEN="+restore_token+"\nDRSG_API="+api+"\n", encoding="utf-8")
+    # A stopped daemon: restore refuses while anything answers at DRSG_API.
+    (restore_root / "env").write_text("DRSG_TOKEN="+restore_token+"\nDRSG_API=http://127.0.0.1:1/rpc\n", encoding="utf-8")
     os.chmod(restore_root / "env", 0o600)
     backup_root = restore_root / "backups"
     backup_root.mkdir(mode=0o700)
@@ -537,6 +538,31 @@ def case_target_conflicts():
     collision.unlink()
 
 
+def case_restore_daemon_running():
+    source_root=root/"source-root"
+    if not backup_dirs(source_root):
+        fixture()
+        rc,_,_,_=run_cli(["backup","--keep","7"],source_root)
+        if rc!=0:
+            check(False,"running-daemon fixture backup succeeds")
+            return
+    running=root/"running-root"
+    running.mkdir(mode=0o700,exist_ok=True)
+    # DRSG_API names the source daemon, which is running: the library may have
+    # been moved aside while the daemon still writes to it.
+    (running/"env").write_text("DRSG_TOKEN=running-test-token\nDRSG_API="+api+"\n",encoding="utf-8")
+    os.chmod(running/"env",0o600)
+    (running/"backups").mkdir(mode=0o700,exist_ok=True)
+    newest=backup_dirs(source_root)[-1]
+    if not (running/"backups"/newest.name).exists():
+        shutil.copytree(newest,running/"backups"/newest.name)
+    rc,out,err,_=run_cli(["restore","--latest"],running)
+    check(rc!=0 and "daemon still running" in err.lower() and not (running/"memory.drsg").exists()
+          and not list(running.glob(".memory-restore-*")),
+          "restore refuses while the daemon in env still answers",
+          "rc=%d stdout=%s stderr=%s"%(rc,out,err))
+
+
 def case_docs():
     readme=(script.parent/"README.md").read_text(encoding="utf-8")
     zh=(script.parent/"README.zh-CN.md").read_text(encoding="utf-8")
@@ -554,6 +580,7 @@ cases={"main":case_main,"temporary-daemon":case_temp_daemon_boundary,
        "rpc-failure":case_rpc_failure,"count-mismatch":case_count_mismatch,
        "env-read-failure":case_env_read_failure,"changed-once":case_changed_once,
        "changed-always":case_changed_always,"target-conflicts":case_target_conflicts,
+       "restore-daemon-running":case_restore_daemon_running,
        "docs":case_docs}
 try:
     if not script.is_file():
@@ -572,6 +599,7 @@ try:
             case_changed_once()
             case_changed_always()
             case_target_conflicts()
+            case_restore_daemon_running()
             case_permissions()
             case_retention_boundary()
             case_docs()

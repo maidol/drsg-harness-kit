@@ -500,7 +500,7 @@ python3 ~/.drsg-memory/tools/memory-backup.py drill
 
 `DRSG_BACKUP_MAX_AGE_DAYS` 设置年龄阈值（默认 `7` 天）；设为 `0` 可关闭备份检查。值无效时回退为 `7`。请在 Claude Code 继承的环境中设置，例如 `export DRSG_BACKUP_MAX_AGE_DAYS=14`。如果设置了 `DRSG_MEM_DIR`，把命令里的默认 `~/.drsg-memory/tools/...` 替换为 `$DRSG_MEM_DIR/tools/...`。Hook 只检查并提示，不会自动启动 daemon，也不会替你运行 backup 或 drill。
 
-恢复前先停止 daemon；这会断开所有活跃 MCP 会话。将旧的 `memory.drsg` 目录及 `memory.drsg.bm25` / `memory.drsg.hnsw` sidecar 移到别处。恢复命令不会覆盖已有目标：
+恢复前先停止 daemon；这会断开所有活跃 MCP 会话。将旧的 `memory.drsg` 目录及 `memory.drsg.bm25` / `memory.drsg.hnsw` sidecar 移到别处。恢复命令不会覆盖已有目标；`DRSG_API` 上还有东西在应答时，也会以 `daemon still running` 拒绝——没停的 daemon 会继续往你挪走的目录里写，这些写入会丢：
 
 ```bash
 python3 ~/.drsg-memory/tools/memory-backup.py restore --latest
@@ -524,6 +524,35 @@ SNAPSHOT="$HOME/.drsg-memory/cold-$(date -u +%Y%m%dT%H%M%SZ).drsgsnap"
 "$HOME/.drsg-memory/bin/drsg" --db "$DB" snapshot "$SNAPSHOT"
 "$HOME/.drsg-memory/tools/serve.sh" start
 ```
+
+备份和库在同一块盘上：它防的是逻辑损坏，防不了这块盘坏掉。请定期把最新一份备份拷到别的盘：
+
+```bash
+cp -a "$(ls -d ~/.drsg-memory/backups/backup-* | tail -1)" /path/on/another/disk/
+```
+
+## 运维清单
+
+单机安装保持健康要做的事：
+
+| 什么时候 | 命令 | 正常结果 |
+|---|---|---|
+| 每天；升级或大批迁移之前 | `python3 ~/.drsg-memory/tools/memory-backup.py backup --keep 7` | `backup created` |
+| 每周 | `python3 ~/.drsg-memory/tools/memory-backup.py drill` | `drill passed` |
+| 每周 | 把最新备份拷到别的盘（命令见上） | 拷贝存在 |
+| 每次升级 kit 之后 | `python3 ~/.drsg-memory/tools/audit_deployment.py --all` | `Audit Result: PASSED` |
+| 会话提示 daemon 不可达 | `~/.drsg-memory/tools/serve.sh status`，再 `~/.drsg-memory/tools/serve.sh start` | `running (pid …)` |
+
+升级：先 `backup`、`drill`，再运行新 bundle 的 `setup.sh` 和 `setup.sh --all-projects --bin <drsg 路径>`，重启 Claude Code 会话，最后跑一次审计。回滚用上一版的 bundle 按同样步骤做；只有库本身损坏时才需要从备份恢复。
+
+查看不属于例行的 daemon 警告（幂等创建产生的 `already exists`、`conflict: external key` 已滤掉）：
+
+```bash
+grep WARN ~/.drsg-memory/logs/drsg.log.$(date -u +%F) \
+  | grep -v -e 'already exists' -e 'conflict: external key'
+```
+
+出现 `unauthorized` 说明有客户端发了 daemon 不认的 token：对照各项目的 `.drsg/env` 和 `~/.drsg-memory/env`，再找有没有测试或脚本在连默认地址。
 
 ## 说明
 

@@ -150,7 +150,7 @@ run_setup() {
 }
 
 case "$CASE" in
-  all|skip-no-env|failure-continues|mutual-exclusion|query-failure|empty-project-list) ;;
+  all|skip-no-env|failure-continues|mutual-exclusion|query-failure|empty-project-list|registry-from-env) ;;
   *) echo "FAIL setup-all-projects: unknown case '$CASE'"; exit 2 ;;
 esac
 
@@ -328,6 +328,19 @@ PY
     "$(tail -1 "$T/setup-alias.out")/$alias_rc" "summary: 2 ok, 0 failed, 3 skipped/0"
   check "global-main-branch-step-once-per-run" \
     "$(wc -l < "$MAIN_BRANCH_CALLS" | tr -d ' ')" 3
+fi
+
+# Without --addr, the project list comes from the daemon that DRSG_API in the
+# memory dir's env file names, never from whatever answers on 127.0.0.1:7700.
+if [ "$CASE" = all ] || [ "$CASE" = registry-from-env ]; then
+  : > "$FAKE_INSTALL_LOG"
+  env -u DRSG_MEM_ADDR HOME="$HOME_DIR" CLAUDE_CONFIG_DIR="$CLAUDE_DIR" DRSG_MEM_DIR="$MEM_DIR" \
+    FAKE_INSTALL_LOG="$FAKE_INSTALL_LOG" MAIN_BRANCH_CALLS="$MAIN_BRANCH_CALLS" \
+    PATH="$T/bin:$PATH" bash "$BUNDLE/setup.sh" --all-projects --bin /bin/true \
+    > "$T/registry-from-env.out" 2>&1
+  rc=$?
+  check "registry-from-env-lists-projects-from-env-api" \
+    "$rc/$(grep -c '^ok ' "$T/registry-from-env.out" || true)" 0/2
 fi
 
 if [ -n "${ONLY:-}" ] && [ "$RAN" -eq 0 ]; then

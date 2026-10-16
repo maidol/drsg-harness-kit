@@ -556,6 +556,22 @@ def create_and_verify(db_path, loaded, binary):
                 proc.wait(timeout=10)
 
 
+def daemon_answers(api):
+    """True when something accepts connections at the env file's daemon address.
+
+    Restore runs only against a stopped daemon. If the library was moved aside
+    while the daemon kept running, the daemon still holds the moved directory
+    open and keeps writing there; publishing a restored library beside it loses
+    every one of those writes without an error."""
+    parts = urlsplit(api)
+    port = parts.port or (443 if parts.scheme == "https" else 80)
+    try:
+        with socket.create_connection((parts.hostname, port), timeout=2):
+            return True
+    except OSError:
+        return False
+
+
 def lexists(path):
     return os.path.lexists(path)
 
@@ -566,7 +582,9 @@ def restore(args, drill=False):
     if not drill and any(lexists(Path(str(target) + suffix))
                          for suffix in ("", ".bm25", ".hnsw")):
         raise BackupError("target already exists")
-    token, _ = credentials(root)
+    token, api = credentials(root)
+    if not drill and daemon_answers(api):
+        raise BackupError("daemon still running")
     backup_root = root / "backups"
     if args.latest:
         choices = formal_dirs(backup_root)
