@@ -524,6 +524,58 @@ def _reply_to_source(reply_to, target, sender_path, token):
         raise ValueError("reply_to 发件方与 recipient 不匹配；请核对 key，或去掉 reply_to 重发。")
 
 
+def _supersedes_target(supersedes, target, sender_path, token):
+    """Validate that `supersedes` is an open Event this project sent to `target`.
+
+    Checked before anything is written, like reply_to: a refused post must
+    leave no node behind. Only the sender's own open Event to the same
+    recipient qualifies, so a follow-up can never close someone else's work."""
+    if not isinstance(supersedes, str) or not supersedes:
+        raise ValueError("supersedes must be a non-empty Event key")
+    check_secrets(supersedes, "")
+    res = rpc("plane.cypher", {"plane": PLANE,
+        "query": ("MATCH (p:Project)<-[:NOTIFY]-(e:Event) "
+                  "WHERE p.path = $path AND key(e) = $key RETURN e"),
+        "params": {"key": supersedes, "path": target}}, token)
+    matches = res.get("nodes", [])
+    if not matches:
+        res = rpc("plane.cypher", {"plane": PLANE,
+            "query": "MATCH (e:Event) WHERE key(e) = $key RETURN e",
+            "params": {"key": supersedes}}, token)
+        events = res.get("nodes", [])
+        if not events or any("Event" not in (e.get("labels") or []) for e in events):
+            raise ValueError("supersedes 目标 Event 不存在或不是 Event；请核对 key，或去掉 supersedes 重发。")
+        raise ValueError("supersedes 目标 Event 不是发给 recipient 的；只能取代发给同一收件方的单。")
+    if len(matches) != 1 or "Event" not in (matches[0].get("labels") or []):
+        raise ValueError("supersedes 目标 Event 不唯一或不是 Event；请核对 key，或去掉 supersedes 重发。")
+    props = matches[0].get("properties") or {}
+    source_path = props.get("from_path")
+    if not isinstance(source_path, str) or not source_path:
+        raise ValueError("supersedes 指向的 Event 是旧格式（没有 from_path），无法核对是不是本项目发的；请去掉 supersedes 重发，旧单请收件方手动关。")
+    if canon_path(source_path) != sender_path:
+        raise ValueError("supersedes 目标 Event 不是本项目发出的；只能取代自己发出的单。")
+    if props.get("status") != "open":
+        raise ValueError("supersedes 目标 Event 已经是 %r，不需要取代；请去掉 supersedes 重发。"
+                         % props.get("status"))
+
+
+def _close_superseded(old, new, token):
+    """Close `old` now that `new` is posted, and read the result back.
+
+    The sender withdrawing its own Event is not the recipient handling it, so
+    the recipient's owner lease is not consulted. A failure here never undoes
+    `new`: the follow-up is already delivered, and the error names both keys."""
+    try:
+        node = rpc("node.update", {"plane": PLANE, "key": old,
+                                   "set": {"status": "done", "done_at": int(time.time()),
+                                           "superseded_by": new}}, token) or {}
+    except Exception as e:
+        raise RuntimeError(f"新单 {new} 已发出；旧单 {old} 没关上（{e}），请收件方手动关。") from e
+    status = (node.get("properties") or {}).get("status")
+    if "Event" not in (node.get("labels") or []) or status != "done":
+        raise RuntimeError(f"新单 {new} 已发出；旧单 {old} 没关上（读回 status={status!r}），请收件方手动关。")
+
+
 def canon_path(path):
     """Resolve a project path, including symlink aliases, to its real path."""
     return os.path.realpath(os.path.abspath(os.path.normpath(path)))
@@ -531,7 +583,7 @@ def canon_path(path):
 
 def post(target, pid, summary, kind, ref, from_project, token,
          symbols=None, verb=None, plane=None, from_path=None, reply_to=None,
-         commit_authorization=None):
+         commit_authorization=None, supersedes=None):
     """Create the Event and its NOTIFY edge.
 
     Returns `{key, symbols, plane, hint, unverified, advice}` — the outcome, not just
@@ -563,6 +615,8 @@ def post(target, pid, summary, kind, ref, from_project, token,
             raise
     if reply_to is not None:
         _reply_to_source(reply_to, target, sender_path, token)
+    if supersedes is not None:
+        _supersedes_target(supersedes, target, sender_path, token)
     ts = int(time.time())
     h = hashlib.sha1(summary.encode("utf-8")).hexdigest()[:6]
     key = f"evt-{os.path.basename(target)}-{ts}-{h}"
@@ -582,6 +636,8 @@ def post(target, pid, summary, kind, ref, from_project, token,
         props["ref"] = ref
     if reply_to is not None:
         props["reply_to"] = reply_to
+    if supersedes is not None:
+        props["supersedes"] = supersedes
     if symbols:
         props["symbols"] = symbols
         props["verb"] = verb
@@ -630,9 +686,14 @@ def post(target, pid, summary, kind, ref, from_project, token,
             f"{key} 没发出去：NOTIFY 边建立失败（{edge_error}），"
             f"已删除刚建的节点，可以直接重发。")
     kick(target)
+    # New first, old second: if closing the old one fails, the recipient still
+    # has the follow-up, rather than neither.
+    if supersedes is not None:
+        _close_superseded(supersedes, key, token)
     return {"key": key, "symbols": symbols, "plane": plane,
             "hint": props.get("graph_hint", ""), "unverified": unverified,
-            "advice": verb_advice(kind, summary, symbols, verb)}
+            "advice": verb_advice(kind, summary, symbols, verb),
+            "superseded": supersedes}
 
 
 def kick(target):
@@ -663,6 +724,8 @@ def report(res, target):
                    "  ⚠ NOT checked against the graph: %s" % res["unverified"])
     if res.get("advice"):
         out.append(res["advice"])
+    if res.get("superseded"):
+        out.append("superseded %s: done" % res["superseded"])
     return "\n".join(out)
 
 
@@ -676,7 +739,8 @@ def cmd_post(args, token):
     print(report(post(target, pid, args.summary, args.kind, args.ref,
                       os.path.basename(here), token, symbols=args.symbol,
                       verb=args.verb, plane=args.plane, from_path=here,
-                      reply_to=args.reply_to),
+                      reply_to=args.reply_to,
+                      supersedes=getattr(args, "supersedes", None)),
                  target))
 
 
@@ -761,6 +825,8 @@ def cmd_list(args, token):
             line = reply_line(pr["reply_to"], events, token)
             if line:
                 print("%-9s %s" % ("", line))
+        if pr.get("supersedes"):
+            print("%-9s ↳ 取代 %s" % ("", pr["supersedes"]))
         # The sender's only view of what the recipient is actually shown.
         if pr.get("graph_hint"):
             print("%-9s %s" % ("", pr["graph_hint"]))
@@ -995,6 +1061,9 @@ def main():
     p.add_argument("--ref", default="")
     p.add_argument("--reply-to", default=None, metavar="KEY",
                    help="Event key this post is replying to")
+    p.add_argument("--supersedes", default=None, metavar="KEY",
+                   help="your own earlier open Event to the same recipient; "
+                        "closed after this one is posted")
     p.add_argument("--symbol", action="append", default=[], metavar="KEY",
                    help="code-graph symbol key the recipient should start "
                         "from; repeatable, at most %d" % MAX_SYMBOLS)

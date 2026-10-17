@@ -109,6 +109,12 @@ TOOLS = [
                         "Optional pointer — a doc path, commit or issue."},
                 "reply_to": {"type": "string", "description":
                              "Event key this post is replying to."},
+                "supersedes": {"type": "string", "description":
+                               "Key of an earlier Event THIS project sent to "
+                               "the same recipient that is still open. It is "
+                               "closed (status done, superseded_by=<new key>) "
+                               "after the new Event is posted; anything else "
+                               "is refused before writing."},
                 "symbols": {
                     "type": "array", "items": {"type": "string"},
                     "description":
@@ -761,7 +767,8 @@ def call_tool(name, args, token):
                     os.path.basename(proj), token,
                     symbols=args.get("symbols"), verb=args.get("verb"),
                     plane=args.get("plane"), from_path=proj,
-                    reply_to=args.get("reply_to")),
+                    reply_to=args.get("reply_to"),
+                    supersedes=args.get("supersedes")),
             target)
 
     if name == "event_list":
@@ -800,6 +807,8 @@ def call_tool(name, args, token):
                 line = ev.reply_line(pr["reply_to"], events, token)
                 if line:
                     rows.append("%-6s %s" % ("", line))
+            if pr.get("supersedes"):
+                rows.append("%-6s ↳ 取代 %s" % ("", pr["supersedes"]))
             # The sender's only view of the second line the recipient gets.
             if pr.get("graph_hint"):
                 rows.append("%-6s %s" % ("", pr["graph_hint"]))

@@ -420,6 +420,32 @@ text and `event_list`; it does not authorize actions or close the original Event
 restart Claude Code before using `reply_to`; if you deploy manually, run the
 setup command from your own shell with the `!` prefix.
 
+A follow-up can replace an earlier to-do the sender itself posted: pass MCP
+field `supersedes` or CLI option `--supersedes <event-key>`. The new Event is
+posted first; only then is the old one set to `done` with
+`superseded_by=<new key>`, and the reply ends with `superseded <old key>: done`.
+Typical use is a "continue now" message after the recipient got stuck, which
+otherwise leaves two open to-dos for the same work:
+
+```text
+event_post recipient=/path/to/other-repo summary="现在继续：…" kind=handoff
+           reply_to=<their blocked notice> supersedes=<your first dispatch>
+```
+
+```bash
+python3 ~/.drsg-memory/tools/event.py post /path/to/other-repo \
+    "现在继续：按新计划做" --supersedes evt-other-repo-1791620000-a1b2c3
+```
+
+Only an Event that is still `open`, was sent by this project (its stored
+`from_path` is this project) and is addressed to the same recipient can be
+superseded; anything else, including old Events without `from_path`, is
+refused before anything is written. The recipient's owner lease is not
+consulted, because the sender is withdrawing its own to-do rather than handling
+it. If closing the old Event fails, the new one stays posted and the error
+names both keys, so the recipient can close the old one by hand. `event_list`
+shows `↳ 取代 <old key>` under the new Event.
+
 These invariants prevent silent failures: Event recipients are matched through
 `Project.path` rather than a potentially shadowed key; the Event node and its
 `NOTIFY` edge are written together; and close operations use `key(e)` because

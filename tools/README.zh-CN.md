@@ -264,6 +264,20 @@ reply_to 指向的 Event 是旧格式（没有 from_path），无法核对来源
 
 目标不存在或关联路径不符时会提示核对 key，或去掉 `reply_to` 重发。该字段只在唤醒提示和 `event_list` 中添加关联信息，不授权任何操作，也不会关闭原 Event；原 Event 仍由 owner 调用 `event_done` 关闭。双方都需部署新版 `drsg-events` runtime 并重启 Claude Code 后再使用 `reply_to`。手动部署时请在自己的 shell 用 `!` 前缀运行 setup 命令。
 
+发续单时可以顺带关掉自己之前发的那条单：MCP 参数传 `supersedes`，或在 CLI 中用 `--supersedes <event-key>`。工具先发新单，成功后才把旧单置为 `done` 并记下 `superseded_by=<新 key>`，回复末尾多一行 `superseded <旧 key>: done`。典型用法是对方卡住后发的「现在继续」：不带它的话，同一件事会同时挂着两条单。
+
+```text
+event_post recipient=/path/to/other-repo summary="现在继续：…" kind=handoff
+           reply_to=<对方报告被拦的 notice> supersedes=<你最早发的派活单>
+```
+
+```bash
+python3 ~/.drsg-memory/tools/event.py post /path/to/other-repo \
+    "现在继续：按新计划做" --supersedes evt-other-repo-1791620000-a1b2c3
+```
+
+只能取代仍是 `open`、由本项目发出（保存的 `from_path` 就是本项目）、并且发给同一收件方的单；其他情况（包括没有 `from_path` 的旧单）一律在写入前拒绝。取代不检查收件方的 owner 租约：发件方是在撤回自己的单，不是在处理它。关旧单失败时新单照样保留，报错里写出两个 key，由收件方手动关旧单。`event_list` 会在新单下面显示 `↳ 取代 <旧 key>`。
+
 这些约束用于避免静默失败：收件方按 `Project.path` 匹配，不依赖可能被重复 key 遮蔽的节点；Event 节点与 `NOTIFY` 边必须一起写入；关闭时使用 `key(e)`，因为 `e.key` 可能不报错但一条也匹配不到。时间戳用 Unix 整数秒，ISO 字符串可能静默比较为 false。Event 与 Fact 分开，是因为召回会排序并丢弃内容，而待办必须完整送达。使用 MCP 工具而非手写 Cypher，才能把 Event 节点和 `NOTIFY` 边一起创建。代码图的 `symbols` 和 `verb` 要放在对应字段：`summary` 会截到 80 字符，符号 key 放进去可能丢掉识别所需的尾部。接收不需要调用工具；agent 会话也不能通过 Bash 运行 `event.py`，Event 由 hook 和 poller 的既定路径送达。
 
 ```bash
