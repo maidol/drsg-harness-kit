@@ -37,6 +37,13 @@ RULES = [
     ("jwt", re.compile(r"\beyJ[A-Za-z0-9_-]{8,}\.[A-Za-z0-9_-]{8,}\.[A-Za-z0-9_-]{8,}")),
     ("bearer", re.compile(r"(?i)\bbearer\s+(?P<v>[A-Za-z0-9._~+/=-]{16,})")),
     ("url-password", re.compile(r"(?i)\b[a-z][a-z0-9+.-]*://[^/\s:@]+:(?P<v>[^@\s/<$*{]+)(?=@)")),
+    # Presigned URLs (S3, MinIO, OSS): the signature, and the key id beside it.
+    ("url-signature", re.compile(
+        r"[?&](?:Signature|X-Amz-Signature)=(?P<v>(?![<$*{])[^&\s\"'#]{8,})")),
+    ("url-access-key", re.compile(
+        r"[?&](?:AWSAccessKeyId|X-Amz-Credential)=(?P<v>(?![<$*{])[^&\s\"'#]{8,})")),
+    ("authorization-header", re.compile(
+        r"(?i)\bauthorization:\s*(?:basic|token)\s+(?P<v>(?![<$*{])[A-Za-z0-9._~+/=-]{8,})")),
     # A value must mix letters and digits: that is what keeps code such as
     # `token = os.environ.get(...)` and examples such as `DRSG_TOKEN=change-me`
     # out, at the price of missing an all-letter password.

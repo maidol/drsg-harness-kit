@@ -234,11 +234,29 @@ If `allow` is absent, the command retains the built-in rules via `"$defaults"`. 
 
 ## Secrets
 
-`tools/templates/hooks/secret_redact.py` masks secret-shaped values (API keys such as `sk-…`, GitHub and Slack tokens, AWS access keys, JWTs, private-key blocks, `Bearer …`, URL passwords, and `password=` / `token=` / `api_key=` style assignments) at the three places text leaves a session:
+`tools/templates/hooks/secret_redact.py` masks secret-shaped values (API keys such as `sk-…`, GitHub and Slack tokens, AWS access keys, JWTs, private-key blocks, `Bearer …` and `Authorization: Basic|Token …`, URL passwords, presigned-URL signatures and access key ids, and `password=` / `token=` / `api_key=` style assignments) at the three places text leaves a session, and keeps it out of commands and settings in the first place:
 
 - **L3 digest** masks the transcript tail before `digest.run` sends it to the LLM provider; if the redactor is missing, nothing is sent.
 - **SessionEnd** masks each Bash command before keeping its first 40 characters in `commands_run`; if the redactor is missing, no commands are kept.
 - **`event.py post` / `event_post`** refuses a to-do whose summary or ref carries one; if the redactor is missing, every post is refused.
+- **PreToolUse** denies a Bash command that carries one. A command's text is kept in the transcript, and choosing "don't ask again" stores the whole command in `permissions.allow`, so the value would outlive the command. The reason names the kinds only. Put the value in a 0600 env file and refer to it as a variable:
+
+  ```text
+  This command carries a plaintext secret (kinds: bearer). ... Put the value in a 0600 env file, load it with `set -a; . <file>; set +a`, and refer to it as $VAR.
+  ```
+
+  ```bash
+  set -a; . ~/.config/secrets/ccr.env; set +a
+  curl -H "Authorization: Bearer $CCR_KEY" http://127.0.0.1:3456/v1/models
+  ```
+
+- **SessionStart** warns in the terminal (never in model context) when the project's `.claude/settings.local.json` or `settings.json` has permission rules carrying one, or env entries such as `ANTHROPIC_API_KEY` with a literal value. It counts and names, never shows a value, and does not edit the file:
+
+  ```text
+  drsg: .claude settings hold secrets (values not shown): 2 permission rule(s) carry a plaintext secret; delete them; env ANTHROPIC_API_KEY hold(s) a plaintext value; move it to apiKeyHelper or a 0600 env file.
+  ```
+
+  For `ANTHROPIC_API_KEY`, set `"apiKeyHelper"` in that settings file to a script that prints the key from a 0600 file, then delete the `env` entry. Without `secret_redact.py` next to the hooks both checks are skipped and nothing else changes.
 
 Within agent sessions, always use the `drsg-events` MCP tools (`event_post`, `event_list`, `event_done`). Command-line invocations of `event.py` (`post`, `list`, `done`) via Bash inside sessions are actively denied by the `pre_tool_use.py` hook, reminding the agent to use MCP tools instead. The CLI is reserved exclusively for humans in their terminal (if a user wishes to run the CLI directly inside an interactive Claude Code session, prepend `!`, e.g. `! python3 ~/.drsg-memory/tools/event.py list`, which runs the command in the user shell without triggering the hook). To inspect events from outside an agent session or see CLI usage:
 
@@ -266,6 +284,7 @@ The path & token gate checks the same shapes, so a fake key committed to the kit
 ```bash
 python3 tools/check-no-machine-paths.py tools tests skills claude
 bash tests/secret-redaction.sh
+bash tests/secret-command-guard.sh            # PreToolUse deny and SessionStart warning
 ```
 
 Masking goes by shape: a secret that looks like none of these passes. Facts are not checked at all — the write-memory protocol and `claude/AGENT-EFFICIENCY.md` tell the model not to write values. Two boundaries to know: every project shares one daemon token, so any project's session can read every project's Facts, Events and Sessions; and turning on L3 (`DRSG_L3_CHAT`) sends the masked conversation tail to that provider. Projects installed before this change pick up `secret_redact.py` on the next `./setup.sh --project DIR`; until then `tools/install.sh --audit` reports their hooks as drifted.

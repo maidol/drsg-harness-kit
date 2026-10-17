@@ -100,6 +100,20 @@ secret_shape("pypi-min", pypi_prefix + pypi_min, "pypi-token")
 long_shape("pypi", pypi_prefix + pypi_min + "C3" * 5, "pypi-token")
 short_shape("pypi", pypi_prefix + ("A1" * 42))
 
+# Presigned URLs and non-Bearer Authorization headers: only the value is masked.
+sig = "S1g" * 6
+masked, kinds = sr.redact("curl 'http://h.test/b/o?X-Amz-Signature=" + sig + "&Expires=1'")
+check("url-signature", masked == "curl 'http://h.test/b/o?X-Amz-Signature=<hidden>&Expires=1'"
+      and kinds == ["url-signature"])
+akid = "AK" + "F4" * 7
+masked, kinds = sr.redact("http://h.test/o?AWSAccessKeyId=" + akid + "&Signature=" + sig)
+check("url-access-key", masked == "http://h.test/o?AWSAccessKeyId=<hidden>&Signature=<hidden>"
+      and kinds == ["url-access-key", "url-signature"])
+masked, kinds = sr.redact("-H 'Authorization: Basic " + sig + "'")
+check("authorization-basic", masked == "-H 'Authorization: Basic <hidden>'"
+      and kinds == ["authorization-header"])
+short_shape("url-signature", "?Signature=" + "S1g" * 2 + "a")
+
 # These are intentionally not secrets; every value and kind must remain unchanged.
 keep = [
     'token = os.environ.get("DRSG_TOKEN")',
@@ -113,6 +127,9 @@ keep = [
     "DRSG_L3_KEY_ENV=OPENAI_API_KEY",
     "942b4c807d9d86fe0a4f90933ba16c5c5905a874",
     "MONKEY=abc123",
+    "?X-Amz-Signature=$SIG&Expires=1",
+    "?Signature=${SIG}",
+    "Authorization: Basic <token>",
 ]
 for index, value in enumerate(keep):
     check("keep-%02d" % index, sr.redact(value) == (value, []))

@@ -117,6 +117,53 @@ def protocol(slug, plane, path):
 
 
 
+SECRET_ENV_NAME = re.compile(r"(?:^|_)(?:API_?KEY|TOKEN|SECRET|PASSWORD|PASSWD)(?:_|$)", re.I)
+
+
+def settings_secret_message(proj_dir):
+    """Terminal-only warning when this project's settings hold a plaintext secret.
+
+    Counts permission rules that match secret_redact.RULES (an "always allow"
+    on a command with a key in it stores the whole command) and names env
+    entries that look like secrets. Never shows a value; without
+    secret_redact.py next to this hook there is no warning.
+    """
+    try:
+        from secret_redact import RULES
+    except Exception:
+        return ""
+    rules, names = 0, set()
+    for name in ("settings.local.json", "settings.json"):
+        try:
+            with open(os.path.join(proj_dir, ".claude", name), encoding="utf-8") as fh:
+                data = json.load(fh)
+        except Exception:
+            continue
+        if not isinstance(data, dict):
+            continue
+        perms = data.get("permissions")
+        if isinstance(perms, dict):
+            for key in ("allow", "deny", "ask"):
+                entries = perms.get(key)
+                if not isinstance(entries, list):
+                    continue
+                rules += sum(1 for rule in entries if isinstance(rule, str)
+                             and any(p.search(rule) for _, p in RULES))
+        env = data.get("env")
+        if isinstance(env, dict):
+            names.update(k for k, v in env.items() if SECRET_ENV_NAME.search(k)
+                         and isinstance(v, str) and len(v) >= 8 and not v.startswith("$"))
+    parts = []
+    if rules:
+        parts.append("%d permission rule(s) carry a plaintext secret; delete them" % rules)
+    if names:
+        parts.append("env %s hold(s) a plaintext value; move it to apiKeyHelper "
+                     "or a 0600 env file" % ", ".join(sorted(names)))
+    if not parts:
+        return ""
+    return "drsg: .claude settings hold secrets (values not shown): " + "; ".join(parts) + "."
+
+
 def hook_drift_message(proj_dir):
     """Human-visible refresh command when installed project hooks differ."""
     try:
@@ -647,7 +694,8 @@ def main(now=None):
     data = json.load(sys.stdin)
     proj_dir = os.environ.get("CLAUDE_PROJECT_DIR") or os.getcwd()
     load_env(proj_dir)
-    drift_message = hook_drift_message(proj_dir)
+    drift_message = join_messages("\n", hook_drift_message(proj_dir),
+                                  settings_secret_message(proj_dir))
     source = data.get("source", "startup")
     # Re-read config after load_env populated os.environ (install.sh's .drsg/env).
     global API, PLANE, BRIEFING_MAX_CHARS

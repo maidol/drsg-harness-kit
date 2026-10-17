@@ -1,10 +1,22 @@
 #!/usr/bin/env python3
-"""PreToolUse guard for event CLI and user-only lease transfer commands."""
+"""PreToolUse guard for event CLI, user-only lease transfer commands, and
+Bash commands that carry a plaintext secret."""
 import json
 import os
 import re
 import shlex
 import sys
+
+# Loaded by path (tests use importlib) the hook's own directory is not on
+# sys.path; put it there so the shared module next to it is found.
+_HERE = os.path.dirname(os.path.abspath(__file__))
+if _HERE not in sys.path:
+    sys.path.insert(0, _HERE)
+# Without the redactor the secret check is skipped, not the whole hook.
+try:
+    from secret_redact import RULES as SECRET_RULES
+except Exception:
+    SECRET_RULES = []
 
 
 TARGET_TEXT = re.compile(r"event\.py|event-poller\.py")
@@ -471,6 +483,25 @@ def _denial(take):
     print(json.dumps(out))
 
 
+def _secret_kinds(cmd):
+    return sorted({kind for kind, pattern in SECRET_RULES if pattern.search(cmd)})
+
+
+def _secret_denial(kinds):
+    # Names the kinds only: the reason is shown and stored, the value never is.
+    reason = (
+        "This command carries a plaintext secret (kinds: %s). The command text "
+        "is kept in the transcript and, if allowed permanently, in settings. "
+        "Put the value in a 0600 env file, load it with "
+        "`set -a; . <file>; set +a`, and refer to it as $VAR." % ", ".join(kinds)
+    )
+    print(json.dumps({"hookSpecificOutput": {
+        "hookEventName": "PreToolUse",
+        "permissionDecision": "deny",
+        "permissionDecisionReason": reason,
+    }}))
+
+
 def main():
     try:
         data = json.load(sys.stdin)
@@ -483,6 +514,10 @@ def main():
         sys.exit(0)
     cmd = tool_input.get("command")
     if not isinstance(cmd, str) or not cmd:
+        sys.exit(0)
+    kinds = _secret_kinds(cmd)
+    if kinds:
+        _secret_denial(kinds)
         sys.exit(0)
     try:
         take, deny = _analyze(cmd)

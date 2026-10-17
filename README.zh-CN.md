@@ -147,11 +147,29 @@ CLAUDE_PICK_MODELS="opus fable" claude   # 手动指定选单
 
 ## 密钥
 
-`tools/templates/hooks/secret_redact.py` 按形状给密钥打码（`sk-…` 这类 API key、GitHub 和 Slack token、AWS access key、JWT、私钥块、`Bearer …`、URL 里的口令，以及 `password=` / `token=` / `api_key=` 这类赋值），用在文本离开会话的三个地方：
+`tools/templates/hooks/secret_redact.py` 按形状给密钥打码（`sk-…` 这类 API key、GitHub 和 Slack token、AWS access key、JWT、私钥块、`Bearer …` 和 `Authorization: Basic|Token …`、URL 里的口令、预签名 URL 的签名和 access key id，以及 `password=` / `token=` / `api_key=` 这类赋值），用在文本离开会话的三个地方，并且从源头上不让它进命令和 settings：
 
 - **L3 蒸馏**：`digest.run` 把会话末尾发给 LLM 服务商之前先打码；找不到脱敏模块时什么都不发。
 - **SessionEnd**：每条 Bash 命令先打码，再取前 40 个字符存进 `commands_run`；找不到脱敏模块时不存命令。
 - **`event.py post` / `event_post`**：summary 或 ref 里带密钥就拒发；找不到脱敏模块时所有待办都拒发。
+- **PreToolUse**：Bash 命令里带明文密钥就拒绝。命令原文会留在会话记录里，选了「不再询问」还会把整条命令写进 `permissions.allow`，值就比命令活得久。拒绝理由只写密钥种类，不写值。把值放进权限 0600 的 env 文件，用变量引用：
+
+  ```text
+  This command carries a plaintext secret (kinds: bearer). ... Put the value in a 0600 env file, load it with `set -a; . <file>; set +a`, and refer to it as $VAR.
+  ```
+
+  ```bash
+  set -a; . ~/.config/secrets/ccr.env; set +a
+  curl -H "Authorization: Bearer $CCR_KEY" http://127.0.0.1:3456/v1/models
+  ```
+
+- **SessionStart**：项目的 `.claude/settings.local.json` 或 `settings.json` 里有带密钥的权限规则，或者 `ANTHROPIC_API_KEY` 这类 env 写着明文值时，在终端提示（不进模型上下文）。只报条数和变量名，不显示值，也不改文件：
+
+  ```text
+  drsg: .claude settings hold secrets (values not shown): 2 permission rule(s) carry a plaintext secret; delete them; env ANTHROPIC_API_KEY hold(s) a plaintext value; move it to apiKeyHelper or a 0600 env file.
+  ```
+
+  `ANTHROPIC_API_KEY` 的改法：在那个 settings 文件里把 `"apiKeyHelper"` 指向一个从 0600 文件读出 key 并打印的脚本，再删掉 `env` 里那一项。钩子旁边没有 `secret_redact.py` 时这两项检查都跳过，其他行为不变。
 
 在 agent 会话内，一律使用 `drsg-events` MCP 工具（`event_post`、`event_list`、`event_done`）。会话内通过 Bash 运行 `event.py`（`post`、`list`、`done`）会被 `pre_tool_use.py` 钩子主动拦截拒绝，并提示改用 MCP 工具。CLI 仅供人类在终端中独立使用（若用户本人要在交互式 Claude Code 会话中运行 CLI，使用 `!` 前缀，例如 `! python3 ~/.drsg-memory/tools/event.py list`，即可在用户 shell 中执行而不触发钩子）。要在会话外查看待办或帮助：
 
@@ -177,6 +195,7 @@ drsg: refused: summary/ref looks like it carries a secret (github-token). Write 
 ```bash
 python3 tools/check-no-machine-paths.py tools tests skills claude
 bash tests/secret-redaction.sh
+bash tests/secret-command-guard.sh            # PreToolUse 拒绝与 SessionStart 提示
 ```
 
 打码只认形状，长得不像这些的密钥会漏过去。Fact 写入完全不检查，靠写记忆约定和 `claude/AGENT-EFFICIENCY.md` 要求模型不写值。另有两条边界：所有项目共用一个 daemon token，任何项目的会话都能读到全部项目的 Fact、Event 和 Session；开启 L3（`DRSG_L3_CHAT`）就会把打过码的会话末尾发给服务商。这次改动之前安装的项目，要再跑一次 `./setup.sh --project DIR` 才会装上 `secret_redact.py`，在那之前 `tools/install.sh --audit` 会报它们的 hooks 有漂移。
