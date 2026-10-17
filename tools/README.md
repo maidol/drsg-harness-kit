@@ -992,6 +992,10 @@ How it selects:
   dependencies include a changed package runs. A non-Go file inside a package
   (testdata, `//go:embed`) counts as a change to that package. A file the build
   tags exclude is listed as ignored.
+- **Rust**: crate level, from `cargo metadata --no-deps --offline`. A changed
+  file selects its owning crate and every crate that path-depends on it,
+  including dependencies across workspaces; Cargo lockfiles and workspace-root
+  manifests select their workspace members.
 - **Python**: test functions that reach a changed function or class through
   recorded `CALLS` edges in the repository's code graph (up to 6 hops), plus
   every test file whose text names a changed symbol or module. A change outside
@@ -1025,10 +1029,13 @@ Per-repository settings live in `.drsg/affected-tests.json` (all keys optional;
  "full_triggers": ["tests/lib/*"],
  "ignore": ["frontend/*", "deploy/*"],
  "go": {"tags": "unit"},
+ "rust": {"args": "--all-features", "exclude": ["plugins/*/component"]},
  "python": {"runner": ".venv/bin/python -m pytest"},
  "shell": {"tests": "tests/*.sh", "exclude": ["tests/test-all.sh"], "runner": "bash"}}
 ```
 
+`rust.args` appends Cargo options before the selected `-p` packages; `rust.exclude`
+contains glob patterns matching crate directories relative to the repository.
 `always` commands run before every selection, `full_triggers` adds paths that
 force the full suite, and `ignore` drops paths whose tests are outside this tool
 (they are still printed as `ignored:`). When a first run reports many

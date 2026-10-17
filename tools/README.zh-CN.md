@@ -624,6 +624,7 @@ python3 ~/.drsg-memory/tools/affected-tests.py --config /tmp/at.json --graph-rep
 怎么选：
 
 - **Go**：按包选，依据是 `go list -test`。依赖里含有改动包的测试都会跑。包目录里的非 Go 文件（testdata、`//go:embed`）算作这个包的改动。被构建标签排除的文件列为 ignored。
+- **Rust**：按 crate 选，依据是 `cargo metadata --no-deps --offline`。改动文件归属的 crate，以及所有通过 path 依赖它的 crate 都会选中，依赖关系也会跨 workspace 计算；`Cargo.lock` 和 workspace 根 manifest 改动会选中对应 workspace 的成员。
 - **Python**：在仓库的代码图里，沿记录的 `CALLS` 边（最多 6 跳）能走到改动函数或类的测试函数；再加上文本里提到改动符号或模块名的测试文件。函数之外的改动（常量、import）算作这个模块里每个函数都改了。代码图经 `codegraph-router.py` 查询，仓库要先用 `codegraph.sh install` 注册；worktree 用 `--graph-repo <主检出的名字>`。
 - **Shell**（只在配置了时启用）：先把 import 了改动模块的 Python 模块也算进来，再选文本里提到这些文件的测试脚本。
 
@@ -639,11 +640,12 @@ python3 ~/.drsg-memory/tools/affected-tests.py --config /tmp/at.json --graph-rep
  "full_triggers": ["tests/lib/*"],
  "ignore": ["frontend/*", "deploy/*"],
  "go": {"tags": "unit"},
+ "rust": {"args": "--all-features", "exclude": ["plugins/*/component"]},
  "python": {"runner": ".venv/bin/python -m pytest"},
  "shell": {"tests": "tests/*.sh", "exclude": ["tests/test-all.sh"], "runner": "bash"}}
 ```
 
-`always` 里的命令每次选择都先跑；`full_triggers` 追加会强制整包的路径；`ignore` 里的路径不归这个工具管（仍然打印成 `ignored:`）。第一次运行报出很多 `full: no rule covers …`，而这些文件没有单元测试会读（部署文件、CI 配置），就把它们加进 `ignore`。
+`rust.args` 会在选中的 `-p` crate 参数前追加 Cargo 选项；`rust.exclude` 是匹配相对仓库目录的 crate 路径 glob 列表。`always` 里的命令每次选择都先跑；`full_triggers` 追加会强制整包的路径；`ignore` 里的路径不归这个工具管（仍然打印成 `ignored:`）。第一次运行报出很多 `full: no rule covers …`，而这些文件没有单元测试会读（部署文件、CI 配置），就把它们加进 `ignore`。
 
 代码图是下界：解析不了的调用不会成为边。文本匹配补上了大部分缺口，发版前（`release.sh check`）照旧跑整包。`DRSG_AFFECTED_ROUTER` 让工具改用另一个路由模块，契约测试用它接一个桩代码图。
 

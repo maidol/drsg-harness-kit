@@ -37,6 +37,195 @@ at() {
 line() { printf '%s\n' "$OUT" | grep -c -F -x -- "$1"; }
 has() { printf '%s\n' "$OUT" | grep -c -F -- "$1" | sed 's/^[1-9][0-9]*$/1/'; }
 
+# ------------------------------------------------------------- Rust fixtures
+cargo_repo() {
+  REPO="$T/rs-$1"
+  rm -rf "$REPO"
+  mkdir -p "$REPO/crates/core/src" "$REPO/crates/app/src" "$REPO/crates/other/src"
+  git init -q "$REPO"
+  printf '[workspace]\nmembers = ["crates/core", "crates/app", "crates/other"]\nresolver = "2"\n' > "$REPO/Cargo.toml"
+  printf '[package]\nname = "core-fixture"\nversion = "0.1.0"\nedition = "2021"\n' > "$REPO/crates/core/Cargo.toml"
+  printf 'pub fn value() -> u8 { 1 }\n' > "$REPO/crates/core/src/lib.rs"
+  printf '[package]\nname = "app-fixture"\nversion = "0.1.0"\nedition = "2021"\n[dependencies]\ncore-fixture = { path = "../core" }\n' > "$REPO/crates/app/Cargo.toml"
+  printf 'pub fn app() -> u8 { core_fixture::value() }\n' > "$REPO/crates/app/src/lib.rs"
+  printf '[package]\nname = "other-fixture"\nversion = "0.1.0"\nedition = "2021"\n' > "$REPO/crates/other/Cargo.toml"
+  printf 'pub fn other() {}\n' > "$REPO/crates/other/src/lib.rs"
+  commit_all "$REPO"
+}
+
+if command -v cargo >/dev/null 2>&1; then
+  if want rs-ownership-deepest; then
+    cargo_repo deepest
+    mkdir -p "$REPO/crates/core/nested/src"
+    printf '[package]\nname = "nested-fixture"\nversion = "0.1.0"\nedition = "2021"\n' > "$REPO/crates/core/nested/Cargo.toml"
+    printf 'pub fn nested() {}\n' > "$REPO/crates/core/nested/src/lib.rs"
+    printf '[workspace]\nmembers = ["crates/core", "crates/app", "crates/other", "crates/core/nested"]\nresolver = "2"\n' > "$REPO/Cargo.toml"
+    commit_all "$REPO"
+    printf 'pub fn nested() { }\n' > "$REPO/crates/core/nested/src/lib.rs"
+    at
+    check "rs: deepest crate owns files in nested package" \
+      "$(line 'run: cargo test -p nested-fixture')" 1
+    check "rs: deepest ownership reports why" \
+      "$(has 'why: nested-fixture (.)  <- depends on nested-fixture')" 1
+  fi
+  if want rs-unowned-rs; then
+    cargo_repo unowned-rs
+    printf 'pub fn outside() {}\n' > "$REPO/outside.rs"
+    at
+    check "rs: unowned Rust source requires full suite" "$RC" 3
+    check "rs: unowned Rust reason names the path" \
+      "$(has 'full: outside.rs belongs to no Rust crate')" 1
+  fi
+  if want rs-metadata-failure; then
+    cargo_repo metadata-failure
+    printf '[package\ninvalid\n' > "$REPO/crates/core/Cargo.toml"
+    at
+    check "rs: invalid manifest requires full suite" "$RC" 3
+    check "rs: metadata failure names its manifest" \
+      "$(has 'full: cargo metadata failed for crates/core:')" 1
+  fi
+  if want rs-toolchain-full; then
+    for trigger in rust-toolchain rust-toolchain.toml .cargo/config .cargo/config.toml; do
+      cargo_repo "toolchain-${trigger//\//-}"
+      mkdir -p "$(dirname "$REPO/$trigger")"
+      printf 'stable\n' > "$REPO/$trigger"
+      at
+      check "rs: $trigger forces full suite" "$RC" 3
+    done
+  fi
+  if want rs-dependents-workspace; then
+    cargo_repo dependents-workspace
+    printf 'pub fn value() -> u8 { 2 }\n' > "$REPO/crates/core/src/lib.rs"
+    at
+    check "rs: changed crate selects itself and path-dependent member" \
+      "$(line 'run: cargo test -p app-fixture -p core-fixture')" 1
+    check "rs: unrelated member is not selected" "$(has 'other-fixture')" 0
+    printf 'pub fn value() -> u8 { 1 }\n' > "$REPO/crates/core/src/lib.rs"
+    printf 'fixture data\n' > "$REPO/crates/core/input.dat"
+    at
+    check "rs: non-source file in crate directory selects crate" \
+      "$(line 'run: cargo test -p app-fixture -p core-fixture')" 1
+  fi
+  if want rs-cargo-lock-workspace; then
+    cargo_repo cargo-lock
+    printf '# lock changed\n' > "$REPO/Cargo.lock"
+    at
+    check "rs: Cargo.lock selects workspace members" \
+      "$(line 'run: cargo test -p app-fixture -p core-fixture -p other-fixture')" 1
+  fi
+  if want rs-virtual-workspace-manifest; then
+    cargo_repo virtual-manifest
+    printf '\n# workspace changed\n' >> "$REPO/Cargo.toml"
+    at
+    check "rs: virtual workspace Cargo.toml selects all members" \
+      "$(line 'run: cargo test -p app-fixture -p core-fixture -p other-fixture')" 1
+  fi
+  if want rs-root-package-manifest; then
+    REPO="$T/rs-root-package"
+    mkdir -p "$REPO/src" "$REPO/b/src"
+    git init -q "$REPO"
+    printf '[package]\nname = "root-fixture"\nversion = "0.1.0"\nedition = "2021"\n[workspace]\nmembers = ["b"]\nresolver = "2"\n' > "$REPO/Cargo.toml"
+    printf 'pub fn root() {}\n' > "$REPO/src/lib.rs"
+    printf '[package]\nname = "b-fixture"\nversion = "0.1.0"\nedition = "2021"\n' > "$REPO/b/Cargo.toml"
+    printf 'pub fn b() {}\n' > "$REPO/b/src/lib.rs"
+    commit_all "$REPO"
+    printf '\n# root package workspace changed\n' >> "$REPO/Cargo.toml"
+    at
+    check "rs: root package manifest selects every workspace member" \
+      "$(line 'run: cargo test -p b-fixture -p root-fixture')" 1
+  fi
+  if want rs-ownership-nested-workspace; then
+    cargo_repo nested-workspace
+    mkdir -p "$REPO/crates/core/tests/fixtures/guest/src"
+    printf '[package]\nname = "guest-fixture"\nversion = "0.1.0"\nedition = "2021"\n[workspace]\n' > "$REPO/crates/core/tests/fixtures/guest/Cargo.toml"
+    printf 'pub fn guest() {}\n' > "$REPO/crates/core/tests/fixtures/guest/src/lib.rs"
+    printf '# guest lock\n' > "$REPO/crates/core/tests/fixtures/guest/Cargo.lock"
+    commit_all "$REPO"
+    printf '\n# guest lock changed\n' >> "$REPO/crates/core/tests/fixtures/guest/Cargo.lock"
+    at
+    check "rs: nested workspace lock change folds back to outer crate" \
+      "$(line 'run: cargo test -p app-fixture -p core-fixture')" 1
+    check "rs: nested guest package is not selected" "$(has 'guest-fixture')" 0
+    printf '# guest lock\n' > "$REPO/crates/core/tests/fixtures/guest/Cargo.lock"
+    printf 'pub fn guest() { }\n' > "$REPO/crates/core/tests/fixtures/guest/src/lib.rs"
+    at
+    check "rs: nested workspace source change folds to outer crate" \
+      "$(line 'run: cargo test -p app-fixture -p core-fixture')" 1
+    check "rs: nested source does not test fixture crate" "$(has 'guest-fixture')" 0
+  fi
+  if want rs-args-exclude; then
+    cargo_repo args-exclude
+    printf 'pub fn value() -> u8 { 2 }\n' > "$REPO/crates/core/src/lib.rs"
+    printf '{"rust":{"args":"--all-features","exclude":["crates/core"]}}\n' > "$T/rust-config.json"
+    at --config "$T/rust-config.json"
+    check "rs: rust.args precedes sorted package flags" \
+      "$(line 'run: cargo test --all-features -p app-fixture')" 1
+    check "rs: rust.exclude is reported and keeps dependents" \
+      "$(line 'ignored: crates/core (config rust.exclude)')" 1
+  fi
+  if want rs-exclude-only; then
+    cargo_repo exclude-only
+    printf 'pub fn value() -> u8 { 2 }\n' > "$REPO/crates/core/src/lib.rs"
+    printf '{"rust":{"exclude":["crates/*"]}}\n' > "$T/rust-config.json"
+    at --config "$T/rust-config.json"
+    check "rs: excluding all reached crates falls back to full" "$RC" 3
+    check "rs: exclude-only uses generic no-test reason" \
+      "$(has 'the change reaches no test')" 1
+  fi
+  if want rs-json; then
+    cargo_repo json
+    printf 'pub fn value() -> u8 { 2 }\n' > "$REPO/crates/core/src/lib.rs"
+    at --json
+    check "rs: JSON contains selected Rust command" "$(printf '%s' "$OUT" | python3 -c 'import json,sys; d=json.load(sys.stdin); print(d["mode"], d["commands"][0])')" \
+      "selected cargo test -p app-fixture -p core-fixture"
+    check "rs: JSON exposes Rust crate selection" "$(printf '%s' "$OUT" | python3 -c 'import json,sys; d=json.load(sys.stdin); print(bool(d.get("rust")))')" True
+  fi
+  if want rs-dependents-cross-workspace; then
+    cargo_repo cross-workspace
+    mkdir -p "$REPO/plugins/component/src"
+    printf '[package]\nname = "plugin-fixture"\nversion = "0.1.0"\nedition = "2021"\n[workspace]\n[dependencies]\ncore-fixture = { path = "../../crates/core" }\n' > "$REPO/plugins/component/Cargo.toml"
+    printf 'pub fn plugin() { core_fixture::value(); }\n' > "$REPO/plugins/component/src/lib.rs"
+    commit_all "$REPO"
+    printf 'pub fn value() -> u8 { 2 }\n' > "$REPO/crates/core/src/lib.rs"
+    at
+    check "rs: path dependents across workspaces are selected" \
+      "$(line 'run: cargo test -p app-fixture -p core-fixture')" 1
+    check "rs: external-workspace dependent is selected separately" \
+      "$(line 'run: (cd plugins/component && cargo test -p plugin-fixture)')" 1
+  fi
+else
+  SKIPPED="$SKIPPED (rs cases skipped: no cargo toolchain)"
+fi
+
+if want rs-no-cargo || want rs-no-cargo-irrelevant; then
+  cargo_repo no-cargo
+  mkdir -p "$T/no-cargo-bin"
+  ln -sf "$(command -v python3)" "$T/no-cargo-bin/python3"
+  ln -sf "$(command -v git)" "$T/no-cargo-bin/git"
+  if want rs-no-cargo; then
+    printf 'pub fn value() -> u8 { 2 }\n' > "$REPO/crates/core/src/lib.rs"
+    PATH="$T/no-cargo-bin" at
+    check "rs: Rust changes without cargo require full suite" "$RC" 3
+    check "rs: missing cargo reason is explicit" \
+      "$(has 'full: cargo is unavailable for Rust/Cargo changes')" 1
+    printf 'pub fn value() -> u8 { 1 }\n' > "$REPO/crates/core/src/lib.rs"
+    printf '# lock changed\n' > "$REPO/Cargo.lock"
+    PATH="$T/no-cargo-bin" at
+    check "rs: Cargo.lock without cargo requires full suite" "$RC" 3
+    check "rs: missing cargo reason covers Cargo.* changes" \
+      "$(has 'full: cargo is unavailable for Rust/Cargo changes')" 1
+  fi
+  if want rs-no-cargo-irrelevant; then
+    printf 'pub fn value() -> u8 { 1 }\n' > "$REPO/crates/core/src/lib.rs"
+    rm "$REPO/Cargo.lock"
+    printf '# documentation only\n' > "$REPO/README.md"
+    PATH="$T/no-cargo-bin" at
+    check "rs: irrelevant doc changes do not invoke cargo" "$(line 'mode: none')" 1
+    check "rs: irrelevant doc changes have no cargo full reason" \
+      "$(has 'cargo')" 0
+  fi
+fi
+
 # ---------------------------------------------------------------- Go fixture
 go_repo() {
   REPO="$T/go-$1"

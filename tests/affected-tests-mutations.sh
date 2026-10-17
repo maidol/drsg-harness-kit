@@ -26,10 +26,12 @@ fi
 
 mutants=(go-deps graph-callers graph-error stale-node conftest unknown-file
          shell-import reaches-no-test module-level blank-lines unmodeled
-         go-tags nested)
+         go-tags nested rs-cross-workspace rs-nested-fold rs-cargo-lock-full
+         rs-exclude rs-no-cargo rs-unconditional-cargo)
 pairs=(go-dependents py-graph py-graph-down py-graph-missing py-conftest py-unknown
        sh-import py-untested py-module-level py-untested py-unmodeled
-       go-tags py-nested)
+       go-tags py-nested rs-dependents-cross-workspace rs-ownership-nested-workspace
+       rs-cargo-lock-workspace rs-args-exclude rs-no-cargo rs-no-cargo-irrelevant)
 
 if ! command -v go >/dev/null 2>&1; then
   printf 'no go toolchain: the go-deps and go-tags mutants cannot run\n'
@@ -95,6 +97,24 @@ mutants = {
         "                if isinstance(child, ast.ClassDef):\n"
         "                    walk(child, name)\n",
         "                walk(child, name)\n"),
+    "rs-cross-workspace": (
+        "            if target:\n                dependents.setdefault(target, set()).add(manifest)\n",
+        "            if target and packages[target][0] == ws_root:\n                dependents.setdefault(target, set()).add(manifest)\n"),
+    "rs-nested-fold": (
+        "        return max(outer, key=lambda m: len(os.path.dirname(m))) if outer else deepest\n",
+        "        return deepest\n"),
+    "rs-cargo-lock-full": (
+        "            if ws_root:\n                seeds.update(workspace_members[ws_root])\n            continue\n",
+        "            reasons.append(\"Cargo.lock changed (dependency or test setup)\")\n            continue\n"),
+    "rs-exclude": (
+        "        if matches(crate_dir, excludes):\n",
+        "        if False:\n"),
+    "rs-no-cargo": (
+        "        reasons.append(\"cargo is unavailable for Rust/Cargo changes\")\n",
+        "        pass\n"),
+    "rs-unconditional-cargo": (
+        "    if not relevant:\n        return handled, reasons\n",
+        "    if False:\n        return handled, reasons\n"),
 }
 old, new = mutants[os.environ["MUTANT"]]
 if source.count(old) != 1:

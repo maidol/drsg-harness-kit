@@ -39,12 +39,14 @@ import json
 import os
 import re
 import shlex
+import shutil
 import subprocess
 import sys
 
 GRAPH_DEPTH = 6
 FULL_TRIGGER_NAMES = (
     "go.mod", "go.sum", "go.work", "go.work.sum",
+    "rust-toolchain", "rust-toolchain.toml",
     "conftest.py", "pytest.ini", "tox.ini", "setup.cfg", "setup.py",
     "pyproject.toml", "Pipfile", "Pipfile.lock", "poetry.lock", "uv.lock",
 )
@@ -346,6 +348,152 @@ def excluded_by_tags(root, path, tags):
     return os.path.basename(path) in proc.stdout.split("\n")
 
 
+def rust_select(root, changes, cfg, out):
+    """Fill out['rust'] and return handled paths and fallback reasons."""
+    reasons, handled = [], set()
+    tracked = [p for p in git(root, "ls-files", "-z").split("\0") if p]
+    manifests = {os.path.dirname(p) for p in tracked + [p for _, p in changes]
+                 if os.path.basename(p) == "Cargo.toml"}
+    manifests = sorted(manifests, key=lambda p: (p.count(os.sep), p))
+    changed_paths = [p for _, p in changes]
+    relevant = any(
+        p.endswith(".rs")
+        or os.path.basename(p).startswith("Cargo.")
+        or os.path.basename(p).startswith("rust-toolchain")
+        or p.endswith(("/.cargo/config", "/.cargo/config.toml"))
+        or p in (".cargo/config", ".cargo/config.toml")
+        or any(p == d or p.startswith(d + "/") for d in manifests)
+        for p in changed_paths)
+    if not relevant:
+        return handled, reasons
+    handled.update(p for p in changed_paths
+                   if any(p == d or p.startswith(d + "/") for d in manifests))
+    if not manifests:
+        if any(p.endswith(".rs") or os.path.basename(p).startswith("Cargo.")
+               for p in changed_paths):
+            reasons.append("cargo metadata unavailable: repository has no Cargo.toml")
+        return handled, reasons
+    if not shutil.which("cargo"):
+        reasons.append("cargo is unavailable for Rust/Cargo changes")
+        return handled, reasons
+
+    workspaces = {}
+    for manifest_dir in manifests:
+        manifest = os.path.join(root, manifest_dir, "Cargo.toml")
+        proc = subprocess.run(
+            ["cargo", "metadata", "--no-deps", "--offline", "--format-version", "1",
+             "--manifest-path", manifest], cwd=root, capture_output=True, text=True)
+        if proc.returncode:
+            stderr = proc.stderr[:200].replace("\n", " ")
+            reasons.append("cargo metadata failed for %s: %s" %
+                           (manifest_dir or ".", stderr))
+            continue
+        try:
+            data = json.loads(proc.stdout)
+        except ValueError as e:
+            reasons.append("cargo metadata returned invalid JSON for %s: %s" %
+                           (manifest_dir or ".", str(e)[:200]))
+            continue
+        ws_root = os.path.realpath(data["workspace_root"])
+        ws = workspaces.setdefault(ws_root, {"packages": {}, "members": set()})
+        for package in data.get("packages", []):
+            pkg_manifest = os.path.realpath(package["manifest_path"])
+            pkg_dir = os.path.dirname(pkg_manifest)
+            ws["packages"][pkg_manifest] = package
+            ws["members"].add(pkg_manifest)
+
+    packages = {}
+    by_dir = {}
+    workspace_members = {}
+    workspace_rel = {}
+    for ws_root, ws in workspaces.items():
+        workspace_members[ws_root] = set(ws["members"])
+        workspace_rel[ws_root] = os.path.relpath(ws_root, root)
+        for manifest, package in ws["packages"].items():
+            packages[manifest] = (ws_root, package)
+            by_dir[os.path.dirname(manifest)] = manifest
+
+    # A package's path dependencies point from the dependent package to the
+    # dependency package; selection walks these edges in reverse.
+    dependents = {}
+    for manifest, (ws_root, package) in packages.items():
+        for dep in package.get("dependencies", []):
+            dep_path = dep.get("path")
+            if not dep_path:
+                continue
+            dep_dir = os.path.realpath(dep_path)
+            target = by_dir.get(dep_dir)
+            if target:
+                dependents.setdefault(target, set()).add(manifest)
+
+    def owner(path):
+        absolute = os.path.realpath(os.path.join(root, path))
+        candidates = [m for m in packages
+                      if absolute == os.path.dirname(m)
+                      or absolute.startswith(os.path.dirname(m) + os.sep)]
+        if not candidates:
+            return None
+        deepest = max(candidates, key=lambda m: len(os.path.dirname(m)))
+        ws_root = packages[deepest][0]
+        outer = [m for m in packages
+                 if os.path.dirname(m) != os.path.dirname(deepest)
+                 and absolute.startswith(os.path.dirname(m) + os.sep)
+                 and packages[m][0] != ws_root]
+        return max(outer, key=lambda m: len(os.path.dirname(m))) if outer else deepest
+
+    seeds = set()
+    for path in changed_paths:
+        basename = os.path.basename(path)
+        if basename == "Cargo.lock":
+            lock_dir = os.path.realpath(os.path.join(root, os.path.dirname(path)))
+            ws_root = max((w for w in workspaces
+                           if lock_dir == w or lock_dir.startswith(w + os.sep)),
+                          key=len, default=None)
+            if ws_root:
+                seeds.update(workspace_members[ws_root])
+            continue
+        if basename == "Cargo.toml":
+            manifest = os.path.realpath(os.path.join(root, path))
+            ws_root = next((w for w in workspaces
+                            if os.path.dirname(manifest) == w), None)
+            if ws_root:
+                seeds.update(workspace_members[ws_root])
+                continue
+        crate = owner(path)
+        if crate:
+            seeds.add(crate)
+        elif path.endswith(".rs"):
+            reasons.append("%s belongs to no Rust crate" % path)
+
+    seeds = {owner(os.path.join(os.path.relpath(os.path.dirname(m), root), "Cargo.toml")) or m
+             for m in seeds}
+    reached = set(seeds)
+    causes = {m: {packages[m][1]["name"]} for m in seeds}
+    todo = list(seeds)
+    while todo:
+        dependency = todo.pop()
+        for dependent in dependents.get(dependency, ()):
+            if dependent not in reached:
+                reached.add(dependent)
+                todo.append(dependent)
+            causes.setdefault(dependent, set()).update(causes[dependency])
+
+    rust_cfg = cfg.get("rust") or {}
+    excludes = rust_cfg.get("exclude", [])
+    for manifest in sorted(reached):
+        ws_root, package = packages[manifest]
+        crate_dir = os.path.relpath(os.path.dirname(manifest), root)
+        if matches(crate_dir, excludes):
+            out["ignored"].append("%s (config rust.exclude)" % crate_dir)
+            continue
+        ws_dir = workspace_rel[ws_root]
+        out["rust"].setdefault(ws_dir, set()).add(package["name"])
+        out["why"].append("%s (%s)  <- depends on %s" %
+                           (package["name"], ws_dir or ".",
+                            ", ".join(sorted(causes.get(manifest, set())))))
+    return handled, reasons
+
+
 def go_select(root, go_changes, tags, out):
     """Fill out['go'] {module_dir: set(pkg_rel)}; return (handled_paths, reasons)."""
     reasons, handled = [], set()
@@ -466,7 +614,7 @@ def shell_select(root, cfg, changes, py_files, out):
 # --------------------------------------------------------------------------
 def select(root, base, cfg, graph_factory):
     changes = changed_files(root, base)
-    out = {"go": {}, "python": set(), "shell": set(), "why": [],
+    out = {"go": {}, "rust": {}, "python": set(), "shell": set(), "why": [],
            "ignored": [], "full": [], "skip": set()}
     if not changes:
         return changes, out
@@ -477,6 +625,8 @@ def select(root, base, cfg, graph_factory):
         if matches(path, ignore):
             out["ignored"].append(path + " (config ignore)")
         elif (os.path.basename(path) in FULL_TRIGGER_NAMES
+              or path.endswith(("/.cargo/config", "/.cargo/config.toml"))
+              or path in (".cargo/config", ".cargo/config.toml")
               or matches(os.path.basename(path), FULL_TRIGGER_GLOBS)
               or matches(path, triggers)):
             out["full"].append("%s changed (dependency or test setup)" % path)
@@ -487,6 +637,8 @@ def select(root, base, cfg, graph_factory):
 
     go_handled, reasons = go_select(
         root, [p for s, p in live], (cfg.get("go") or {}).get("tags", ""), out)
+    out["full"] += reasons
+    rust_handled, reasons = rust_select(root, live, cfg, out)
     out["full"] += reasons
     tracked = [p for p in git(root, "ls-files").split("\n") if p]
     untracked = [p for s, p in changes if s == "A"]
@@ -509,7 +661,10 @@ def select(root, base, cfg, graph_factory):
 
     py_texts = None
     for status, path in live:
-        if path in go_handled or path.endswith((".py", ".go")) or path in shell_covered:
+        if (path in go_handled or path in rust_handled
+                or path.endswith((".py", ".go", ".rs"))
+                or os.path.basename(path) in ("Cargo.toml", "Cargo.lock")
+                or path in shell_covered):
             continue
         if py_texts is None:
             py_texts = {}
@@ -525,7 +680,7 @@ def select(root, base, cfg, graph_factory):
             out["full"].append("no rule covers %s" % path)
 
     code = [p for s, p in live if not is_doc(p) and p not in out["skip"]]
-    picked = out["go"] or out["python"] or out["shell"]
+    picked = out["go"] or out["rust"] or out["python"] or out["shell"]
     if code and not picked and not out["full"]:
         out["full"].append("the change reaches no test: %s" % ", ".join(code[:5]))
     return changes, out
@@ -542,6 +697,13 @@ def commands(root, cfg, out):
         cmd = "go test%s -count=1 %s" % (" -tags=" + tags if tags else "",
                                          " ".join(sorted(pkgs)))
         cmds.append("(cd %s && %s)" % (shlex.quote(mod), cmd) if mod else cmd)
+    rust_args = (cfg.get("rust") or {}).get("args", "")
+    for workspace, packages in sorted(out["rust"].items()):
+        cmd = "cargo test%s %s" % (" " + rust_args if rust_args else "",
+                                    " ".join("-p " + shlex.quote(p)
+                                             for p in sorted(packages)))
+        cmds.append("(cd %s && %s)" % (shlex.quote(workspace), cmd)
+                    if workspace not in (".", "") else cmd)
     if out["python"]:
         files = {p for p in out["python"] if "::" not in p}
         nodes = {p for p in out["python"] if "::" in p and p.split("::")[0] not in files}
@@ -584,6 +746,7 @@ def main(argv=None):
         print(json.dumps({
             "mode": mode, "base": args.base, "changed": [p for s, p in changes],
             "full_reasons": out["full"], "ignored": out["ignored"],
+            "rust": {k: sorted(v) for k, v in sorted(out["rust"].items())},
             "commands": cmds, "why": out["why"],
         }, indent=1, ensure_ascii=False))
     else:
