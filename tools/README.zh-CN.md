@@ -610,6 +610,43 @@ python3 completeness-guard.py --json                  # 结构化输出
 
 它看哪些文件：名字只从 `.sh`、`.bash`、`.yml`、`.yaml`、`.py`、`.go` 和没有扩展名的脚本里抽，测试文件（`tests/`、`*_test.go`、`test_*.py` 等）一律不看；shell 的选项只认 `case` 分支标签。没写 `docs` 列表时，搜 `README*`、`*/README*.md` 和 `docs/**/*.md`。
 
+## 受影响的测试（`affected-tests.py`）
+
+按工作区的改动选出它能影响到的测试，回归时不必每次跑整包。它读 `git diff <base>` 和未跟踪的文件，打印要跑的命令：
+
+```bash
+python3 ~/.drsg-memory/tools/affected-tests.py                     # 工作区对比 HEAD
+python3 ~/.drsg-memory/tools/affected-tests.py --base <tree 或提交> --run
+python3 ~/.drsg-memory/tools/affected-tests.py --repo /path/to/project --json
+python3 ~/.drsg-memory/tools/affected-tests.py --config /tmp/at.json --graph-repo my-repo
+```
+
+怎么选：
+
+- **Go**：按包选，依据是 `go list -test`。依赖里含有改动包的测试都会跑。包目录里的非 Go 文件（testdata、`//go:embed`）算作这个包的改动。被构建标签排除的文件列为 ignored。
+- **Python**：在仓库的代码图里，沿记录的 `CALLS` 边（最多 6 跳）能走到改动函数或类的测试函数；再加上文本里提到改动符号或模块名的测试文件。函数之外的改动（常量、import）算作这个模块里每个函数都改了。代码图经 `codegraph-router.py` 查询，仓库要先用 `codegraph.sh install` 注册；worktree 用 `--graph-repo <主检出的名字>`。
+- **Shell**（只在配置了时启用）：先把 import 了改动模块的 Python 模块也算进来，再选文本里提到这些文件的测试脚本。
+
+遇到它判断不了的改动，它回答 `mode: full` 并给出理由、退出码 3，绝不缩小选择：依赖清单或 `conftest.py` 改了、没有规则覆盖的文件、代码图连不上、某个符号在起点存在但图里没有（图过期）、图里没有这个文件的定义、改了代码却选不出任何测试。加 `--run` 时，这种情况会跑配置里的 `full` 命令。不加 `--run` 时，有选择退出 0，要整包退出 3，用法或 git 出错退出 2；加 `--run` 时有命令失败退出 1。
+
+输出每项一行：`mode:`（`selected`、`full` 或 `none`）、`full:` 理由、`ignored:` 路径、`run:` 命令，以及 `why:`（每个测试是因为什么被选中）。验收请求里把全部输出贴上，审核方按 `why:` 核对选择。
+
+每个仓库的设置写在 `.drsg/affected-tests.json`（键都可省略；`--config` 可以指向别处）：
+
+```json
+{"full": "bash tests/test-all.sh",
+ "always": ["make lint"],
+ "full_triggers": ["tests/lib/*"],
+ "ignore": ["frontend/*", "deploy/*"],
+ "go": {"tags": "unit"},
+ "python": {"runner": ".venv/bin/python -m pytest"},
+ "shell": {"tests": "tests/*.sh", "exclude": ["tests/test-all.sh"], "runner": "bash"}}
+```
+
+`always` 里的命令每次选择都先跑；`full_triggers` 追加会强制整包的路径；`ignore` 里的路径不归这个工具管（仍然打印成 `ignored:`）。第一次运行报出很多 `full: no rule covers …`，而这些文件没有单元测试会读（部署文件、CI 配置），就把它们加进 `ignore`。
+
+代码图是下界：解析不了的调用不会成为边。文本匹配补上了大部分缺口，发版前（`release.sh check`）照旧跑整包。`DRSG_AFFECTED_ROUTER` 让工具改用另一个路由模块，契约测试用它接一个桩代码图。
+
 ## 敏感字面量提交守卫（`forbidden-literals-guard.py`）
 
 检查暂存区、提交信息或全部 git 历史中的敏感标识。违规时仅报告 `文件:行号 matches #序号`，绝不回显字面量本身。二进制文件自动跳过。

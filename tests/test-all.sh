@@ -84,6 +84,8 @@ bash "$REPO/tests/migrate.sh"
 bash "$REPO/tests/migrate-mutations.sh"
 bash "$REPO/tests/memory-backup.sh"
 bash "$REPO/tests/memory-backup-mutations.sh"
+bash "$REPO/tests/affected-tests.sh"
+bash "$REPO/tests/affected-tests-mutations.sh"
 
 echo ""
 echo "All test suites and quality gates PASSED."

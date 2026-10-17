@@ -973,6 +973,73 @@ What it reads: names are taken from `.sh`, `.bash`, `.yml`, `.yaml`, `.py`,
 Without a `docs` list it searches `README*`, `*/README*.md` and
 `docs/**/*.md`.
 
+## Affected tests (`affected-tests.py`)
+
+Selects the tests a working-tree change can reach, so a regression run does not
+have to be the whole suite. It reads `git diff <base>` plus untracked files and
+prints the commands to run:
+
+```bash
+python3 ~/.drsg-memory/tools/affected-tests.py                     # working tree vs HEAD
+python3 ~/.drsg-memory/tools/affected-tests.py --base <tree-or-commit> --run
+python3 ~/.drsg-memory/tools/affected-tests.py --repo /path/to/project --json
+python3 ~/.drsg-memory/tools/affected-tests.py --config /tmp/at.json --graph-repo my-repo
+```
+
+How it selects:
+
+- **Go**: package level, from `go list -test`. Every test binary whose
+  dependencies include a changed package runs. A non-Go file inside a package
+  (testdata, `//go:embed`) counts as a change to that package. A file the build
+  tags exclude is listed as ignored.
+- **Python**: test functions that reach a changed function or class through
+  recorded `CALLS` edges in the repository's code graph (up to 6 hops), plus
+  every test file whose text names a changed symbol or module. A change outside
+  any function (a constant, an import) counts as a change to every function in
+  that module. The graph is asked through `codegraph-router.py`, so the
+  repository must be registered with `codegraph.sh install`; a
+  worktree passes `--graph-repo <main checkout name>`.
+- **Shell** (only when configured): test scripts whose text names a changed
+  file, after adding the Python modules that import a changed module.
+
+It answers `mode: full` with the reasons, and exits 3, instead of a smaller
+selection whenever it cannot reason about the change: a dependency manifest or
+`conftest.py` changed, a file no rule covers, a graph that cannot be reached, a
+symbol that exists at the base but not in the graph (a stale graph), a file the
+graph has no definitions for, or a code change that reaches no test at all. With
+`--run` it runs the configured `full` command in that case. Without `--run` the
+exit code is 0 for a selection, 3 for full and 2 for a usage or git error; with
+`--run` it is 1 when a command fails.
+
+Output, one line per item: `mode:` (`selected`, `full` or `none`), `full:`
+reasons, `ignored:` paths, `run:` commands, and `why:` lines naming what
+selected each test. Paste all of it into an acceptance request; the reviewer
+checks the selection against the `why:` lines.
+
+Per-repository settings live in `.drsg/affected-tests.json` (all keys optional;
+`--config` points elsewhere):
+
+```json
+{"full": "bash tests/test-all.sh",
+ "always": ["make lint"],
+ "full_triggers": ["tests/lib/*"],
+ "ignore": ["frontend/*", "deploy/*"],
+ "go": {"tags": "unit"},
+ "python": {"runner": ".venv/bin/python -m pytest"},
+ "shell": {"tests": "tests/*.sh", "exclude": ["tests/test-all.sh"], "runner": "bash"}}
+```
+
+`always` commands run before every selection, `full_triggers` adds paths that
+force the full suite, and `ignore` drops paths whose tests are outside this tool
+(they are still printed as `ignored:`). When a first run reports many
+`full: no rule covers …` lines for files no unit test reads (deployment files,
+CI config), add them to `ignore`.
+
+The graph is a lower bound: calls it could not resolve are not edges. The text
+match covers most of that gap, and the full suite still runs before a release
+(`release.sh check`). `DRSG_AFFECTED_ROUTER` points the tool at another router
+module; the contract tests use it for a stub graph.
+
 ## Forbidden literals guard (`forbidden-literals-guard.py`)
 
 Checks staged changes, commit messages, or git history for forbidden sensitive identifiers.
