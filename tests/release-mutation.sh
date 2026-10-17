@@ -14,6 +14,19 @@ PENDING=()
 
 mutate_and_check() {
   local name="$1" expected="$2" output="$TMP/$1.out" mutant="$TMP/release-$1.sh" rc=0
+  if ! cp "$SOURCE" "$mutant"; then
+    NO_RUN=$((NO_RUN + 1))
+    printf 'NOT RUN %s (source copy failed)\n' "$name"
+    return
+  fi
+  local control_output="$TMP/$name.control.out" control_rc=0
+  RELEASE_TEST_SCRIPT="$mutant" bash "$HERE/release.sh" >"$control_output" 2>&1 || control_rc=$?
+  if [ "$control_rc" -ne 0 ] ||
+     grep -Eq 'SKIP |not ok|No module named|Traceback|RUNNER FAILED' "$control_output"; then
+    NO_RUN=$((NO_RUN + 1))
+    printf 'NOT RUN %s (unmutated paired case did not pass; exit %s)\n' "$name" "$control_rc"
+    return
+  fi
   if ! python3 - "$SOURCE" "$mutant" "$name" <<'PY'
 import pathlib
 import sys
@@ -93,5 +106,12 @@ for entry in "${PENDING[@]}"; do
   judge "${entry%%|*}" "${entry#*|}"
 done
 
-printf 'mutants: %d killed, %d survived, %d no-run\n' "$KILLED" "$SURVIVED" "$NO_RUN"
-[ "$RAN" -eq 12 ] && [ "$SURVIVED" -eq 0 ] && [ "$NO_RUN" -eq 0 ]
+if [ "$NO_RUN" -gt 0 ] || [ "$RAN" -ne 12 ]; then
+  printf 'MUTATION RESULT: NOT RUN (%d; ran %d/12)\n' "$NO_RUN" "$RAN"
+  exit 2
+fi
+if [ "$SURVIVED" -gt 0 ]; then
+  printf 'MUTATION RESULT: SURVIVED (%d)\n' "$SURVIVED"
+  exit 1
+fi
+printf 'MUTATION RESULT: ALL KILLED (%d)\n' "$KILLED"

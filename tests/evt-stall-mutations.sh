@@ -15,6 +15,18 @@ run_mutation() {
   cp "$REPO/tools/event.py" "$T/event.py"
   cp "$REPO/tools/drsg_rpc.py" "$T/drsg_rpc.py"
   cp "$source" "$copy"
+  local control="$T/$name.control.out" control_rc=0
+  if [ "$only" = fresh-wake ]; then
+    ONLY=fresh-wake POLLER="$copy" bash "$HERE/poller-lease-takeover.sh" >"$control" 2>&1 || control_rc=$?
+  else
+    ONLY="$only" POLLER="$copy" bash "$HERE/event-renudge.sh" >"$control" 2>&1 || control_rc=$?
+  fi
+  if [ "$control_rc" -ne 0 ] ||
+     grep -Eq '^(SKIP|FAIL )|No module named|Traceback' "$control"; then
+    printf 'MUTATION NOT RUN %s (unmutated paired case did not pass; exit %s)\n' "$name" "$control_rc"
+    NOT_RUN=$((NOT_RUN + 1))
+    return
+  fi
   if [ "$variant" != no-op ]; then
     if ! python3 - "$copy" "$variant" <<'PY'
 import sys
@@ -78,12 +90,12 @@ if [ "${MUTATION_SELF_TEST:-0}" = 1 ]; then
   run_mutation self-test-noop one-shot "$REPO/tools/event-poller.py" no-op
 fi
 
-if [ "$NOT_RUN" -gt 0 ]; then
-  printf 'MUTATION NOT RUN (%d)\n' "$NOT_RUN"
-  exit 1
+if [ "$NOT_RUN" -gt 0 ] || [ "$KILLED" -ne 4 ]; then
+  printf 'MUTATION RESULT: NOT RUN (%d; killed %d/4)\n' "$NOT_RUN" "$KILLED"
+  exit 2
 fi
 if [ "$SURVIVED" -gt 0 ]; then
-  printf 'MUTATION SURVIVED (%d)\n' "$SURVIVED"
+  printf 'MUTATION RESULT: SURVIVED (%d)\n' "$SURVIVED"
   exit 1
 fi
-printf 'ALL MUTATIONS KILLED (%d)\n' "$KILLED"
+printf 'MUTATION RESULT: ALL KILLED (%d)\n' "$KILLED"

@@ -54,7 +54,7 @@ def report_summary(survivors, runner_errors):
 # sentinel survives and the same summary classifier must return non-zero.
 self_test = run_case(source_path, "missing-token-silent")
 if self_test.returncode != 0 or "PASS missing-token-silent" not in output_of(self_test):
-    print("MUTATION RUNNER FAILED: survivor self-test could not run its passing case")
+    print("MUTATION RESULT: NOT RUN (survivor self-test could not run its passing case)")
     raise SystemExit(2)
 self_output = io.StringIO()
 with redirect_stdout(self_output):
@@ -94,6 +94,12 @@ for index, (label, case, old, new, cause) in enumerate(mutations, 1):
     if source.count(old) != 1:
         runner_errors.append("%s: expected one unique mutation anchor, got %d" %
                              (label, source.count(old)))
+        continue
+    control = run_case(source_path, case)
+    if control.returncode != 0 or any(line.startswith(("FAIL ", "SKIP "))
+                                      for line in output_of(control).splitlines()):
+        runner_errors.append("%s: unmutated paired case did not pass (exit %d)" %
+                             (label, control.returncode))
         continue
     mutant = pathlib.Path(tmp, "session-start-mutant-%d.py" % index)
     mutant.write_text(source.replace(old, new, 1), encoding="utf-8")

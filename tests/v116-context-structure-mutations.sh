@@ -56,6 +56,12 @@ def mutate_local_transport(source):
 def run_mutant(name, case, mutate, expected):
     with tempfile.TemporaryDirectory(prefix="v116-mutant-") as td:
         source = fixture(pathlib.Path(td))
+        control = run_case(source, case)
+        control_output = control.stdout + control.stderr
+        if control.returncode != 0 or "FAIL " in control_output or "SKIP " in control_output:
+            print(f"NOT RUN {name}: unmutated paired case failed (exit {control.returncode})")
+            print(control_output.rstrip())
+            return "error"
         mutate(source)
         result = run_case(source, case)
     output = result.stdout + result.stderr
@@ -114,11 +120,11 @@ else:
     print("PASS survivor self-test: runner returned non-zero and named sentinel")
 
 if errors:
-    print("MUTATION RUNNER ERROR: " + ", ".join(errors))
+    print("MUTATION RESULT: NOT RUN (" + ", ".join(errors) + ")")
     sys.exit(2)
 if survivors:
-    print("MUTANT SURVIVED: " + ", ".join(survivors))
+    print("MUTATION RESULT: SURVIVED (" + ", ".join(survivors) + ")")
     sys.exit(1)
-print("ALL MUTANTS KILLED; SURVIVOR SELF-TEST PASSED")
+print("MUTATION RESULT: ALL KILLED; SURVIVOR SELF-TEST PASSED")
 sys.exit(0)
 PY

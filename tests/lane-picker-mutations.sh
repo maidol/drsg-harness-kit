@@ -26,6 +26,18 @@ run_mutation() {
   mkdir -p "$T/tools/templates/hooks"
   cp "$TOOLS/templates/hooks/session_start.py" "$TOOLS/templates/hooks/drsg_hook_common.py" \
     "$T/tools/templates/hooks/"
+  local control="$T/$name.control.out" control_rc=0
+  if PICKER="$T/tools/claude-model-picker.sh" ONLY="$case_name" bash "$SCRIPT" >"$control" 2>&1; then
+    control_rc=0
+  else
+    control_rc=$?
+  fi
+  if [ "$control_rc" -ne 0 ] ||
+     grep -Eq '^(SKIP|FAIL )|No module named|Traceback' "$control"; then
+    failures=$((failures + 1))
+    printf 'NOT RUN %s: unmutated paired case did not pass (exit %s)\n' "$name" "$control_rc"
+    return
+  fi
   if ! python3 - "$target" "$needle" "$replacement" <<'PY'
 import sys
 path, old, new = sys.argv[1:]
@@ -66,12 +78,12 @@ run_mutation child-only-lanes child-only-lanes claude-model-picker.sh \
   'DRSG_EVENT_LANES="$lane_selection" command claude "$@"' \
   'export DRSG_EVENT_LANES="$lane_selection"; command claude "$@"'
 
-if [ "$failures" -gt 0 ]; then
-  printf 'MUTATION SELF-CHECK DID NOT RUN (%s setup failure(s))\n' "$failures"
+if [ "$failures" -gt 0 ] || [ "$ran" -ne 3 ]; then
+  printf 'MUTATION RESULT: NOT RUN (%s setup/control failure(s); ran %s/3)\n' "$failures" "$ran"
   exit 2
 fi
 if [ "$survivors" -gt 0 ]; then
-  printf 'MUTATION SURVIVORS: %s/%s\n' "$survivors" "$ran"
+  printf 'MUTATION RESULT: SURVIVED (%s/%s)\n' "$survivors" "$ran"
   exit 1
 fi
 if MUTATION_SELF_TEST=1 bash "$0" >"$T/self-test.out" 2>&1; then
@@ -84,5 +96,4 @@ if ! grep -qx 'SURVIVED deliberate self-test' "$T/self-test.out" || \
   exit 2
 fi
 printf 'SELF-CHECK VERIFIED: a surviving mutant exits nonzero\n'
-printf 'ALL MUTATIONS KILLED: %s/%s\n' "$ran" "$ran"
-[ "$ran" -eq 3 ]
+printf 'ALL KILLED: %s/%s\n' "$ran" "$ran"

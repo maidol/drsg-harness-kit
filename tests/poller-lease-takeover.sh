@@ -289,10 +289,10 @@ with tempfile.TemporaryDirectory(prefix="poller-lease-contract-") as temp:
     check("fresh wake states current owner permission", "本会话现在持有本项目的 Event owner 租约" in fresh, True)
     supersession = "启动时的“没有 Event owner / 本会话只读”快照已过时；以本次唤醒为准。"
     if os.environ.get("ONLY") == "fresh-wake":
-        ran = ok = 0
+        ran = failed = 0
         check("fresh wake supersedes the startup snapshot", supersession in fresh, True)
-        print("\nPASS %d/%d" % (ok, ran))
-        sys.exit(1 if ok != ran else 0)
+        print("\nPASS %d/%d" % (ran - failed, ran))
+        sys.exit(1 if failed else 0)
     check("fresh wake supersedes the startup snapshot", supersession in fresh, True)
     check("ordinary wake does not claim fresh ownership", supersession not in legacy, True)
 

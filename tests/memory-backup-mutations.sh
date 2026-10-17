@@ -19,17 +19,30 @@ DID_NOT_START=""
 run_case() {
   local name="$1" case_name="$2" expected="$3" old="$4" new="$5"
   local candidate="$TMP/$name.py" log="$TMP/$name.out" rc=0
-  if [ "$name" = "$LEAVE_ALIVE" ]; then
-    candidate="$SOURCE"
-  else
-    if ! python3 - "$SOURCE" "$candidate" "$old" "$new" <<'PY'
+  if ! cp "$SOURCE" "$candidate"; then
+    DID_NOT_START="$name source copy failed"
+    return
+  fi
+  local control="$TMP/$name.control.out" control_rc=0
+  S1_ONLY_CASE="$case_name" MEMORY_BACKUP_SCRIPT="$candidate" \
+    bash "$HERE/memory-backup.sh" >"$control" 2>&1 || control_rc=$?
+  if [ "$control_rc" -ne 0 ] || grep -Eq '^(SKIP|FAIL )|No module named|Traceback' "$control" ||
+     ! grep -q '^SUMMARY memory-backup:' "$control"; then
+    DID_NOT_START="$name unmutated paired case did not pass (exit $control_rc)"
+    return
+  fi
+  if [ "$name" != "$LEAVE_ALIVE" ]; then
+    if ! python3 - "$candidate" "$old" "$new" <<'PY'
 from pathlib import Path
 import sys
-source = Path(sys.argv[1]).read_text(encoding="utf-8")
-old, new = sys.argv[3], sys.argv[4]
-if old not in source:
+path = Path(sys.argv[1])
+source = path.read_text(encoding="utf-8")
+old, new = sys.argv[2], sys.argv[3]
+old = old.replace("\\n", "\n")
+new = new.replace("\\n", "\n")
+if source.count(old) != 1:
     raise SystemExit(2)
-Path(sys.argv[2]).write_text(source.replace(old, new, 1), encoding="utf-8")
+path.write_text(source.replace(old, new, 1), encoding="utf-8")
 PY
     then
       DID_NOT_START="$name mutation did not apply uniquely"
@@ -68,19 +81,19 @@ run_case truncated truncated \
   'if False and seed.get("truncated"): '
 run_case permissions permissions \
   'FAIL permission case: backup directory 0700 and files 0600' \
-  'os.chmod(path, 0o600)' \
-  'pass # mutation: file mode is left to the caller umask'
+  '            os.chmod(path, 0o600)\n            for record in records:' \
+  '            pass # mutation: file mode is left to the caller umask\n            for record in records:'
 run_case retention-boundary retention-boundary \
   'FAIL retention only removes strict-name ordinary backup directories' \
-  'if path.is_symlink() or not path.is_dir() or not BACKUP_RE.fullmatch(path.name):' \
-  'if not path.is_dir() or not path.name.startswith("backup-"): '
+  'for path in root.iterdir():\n        if path.is_symlink() or not path.is_dir() or not BACKUP_RE.fullmatch(path.name):' \
+  'for path in root.iterdir():\n        if not path.is_dir() or not path.name.startswith("backup-"): '
 
-if [ -n "$DID_NOT_START" ]; then
-  printf 'MUTATION RUNNER DID NOT START: %s\n' "$DID_NOT_START"
+if [ -n "$DID_NOT_START" ] || [ "${#KILLED[@]}" -ne 3 ]; then
+  printf 'MUTATION RESULT: NOT RUN (%s; killed %d/3)\n' "${DID_NOT_START:-incomplete mutation count}" "${#KILLED[@]}"
   exit 2
 fi
 if [ "${#SURVIVED[@]}" -gt 0 ]; then
-  printf 'SURVIVING MUTATIONS: %s\n' "${SURVIVED[*]}"
+  printf 'MUTATION RESULT: SURVIVED (%s)\n' "${SURVIVED[*]}"
   exit 1
 fi
-printf 'ALL MUTATIONS KILLED (%d)\n' "${#KILLED[@]}"
+printf 'MUTATION RESULT: ALL KILLED (%d)\n' "${#KILLED[@]}"

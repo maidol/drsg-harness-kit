@@ -36,6 +36,18 @@ run_mutation() {
   cp "$REPO/tools/event.py" "$event"
   cp "$REPO/tools/drsg_rpc.py" "$dir/drsg_rpc.py"
 
+  local control="$T/$name.control.out" control_rc=0
+  ONLY="$only" PYTHONPATH="$dir${PYTHONPATH:+:$PYTHONPATH}" \
+    SOURCE_POLLER="$poller" SOURCE_SESSION_START="$session_start" \
+    SOURCE_USER_PROMPT="$user_prompt" SOURCE_EVENT="$event" \
+    bash "$TEST" >"$control" 2>&1 || control_rc=$?
+  if [ "$control_rc" -ne 0 ] ||
+     grep -Eq '^(SKIP|FAIL )|No module named|Traceback' "$control"; then
+    printf 'MUTATION NOT RUN %s (unmutated paired case did not pass; exit %s)\n' "$name" "$control_rc"
+    NOT_RUN=$((NOT_RUN + 1))
+    return
+  fi
+
   if [ "$variant" != no-op ]; then
     local target_path
     case "$target" in
@@ -118,12 +130,12 @@ if [ "${MUTATION_SELF_TEST:-0}" = 1 ]; then
   run_mutation self-test-noop npm-event no-op all
 fi
 
-if [ "$NOT_RUN" -gt 0 ]; then
-  printf 'MUTATION NOT RUN (%d)\n' "$NOT_RUN"
-  exit 1
+if [ "$NOT_RUN" -gt 0 ] || [ "$KILLED" -ne 5 ]; then
+  printf 'MUTATION RESULT: NOT RUN (%d; killed %d/5)\n' "$NOT_RUN" "$KILLED"
+  exit 2
 fi
 if [ "$SURVIVED" -gt 0 ]; then
-  printf 'MUTATION SURVIVED (%d)\n' "$SURVIVED"
+  printf 'MUTATION RESULT: SURVIVED (%d)\n' "$SURVIVED"
   exit 1
 fi
-printf 'ALL MUTATIONS KILLED (%d)\n' "$KILLED"
+printf 'MUTATION RESULT: ALL KILLED (%d)\n' "$KILLED"
