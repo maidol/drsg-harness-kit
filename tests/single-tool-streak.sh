@@ -97,6 +97,125 @@ expect_kind() {
   check "$label" "$kind" "$want"
 }
 
+write_extra_case() {
+  python3 - "$1" "$2" "$3" <<'PY'
+import json
+import os
+import sys
+
+transcript, target, case = sys.argv[1:]
+rows = []
+fail_id = f"failed-edit-{case}"
+old_string = "\t\treturn 1\n\t\treturn 2\n"
+normalized = "\treturn 1\n\treturn 2\n"
+
+if case == "hit-makefile":
+    old_string = "\t\tbuild:\n\t\t@printf 'marker-private'\n"
+    normalized = "\tbuild:\n\t@printf 'marker-private'\n"
+
+def assistant(mid, tool, tool_id, tool_input):
+    rows.append({"type": "assistant", "message": {"id": mid, "content": [{
+        "type": "tool_use", "id": tool_id, "name": tool, "input": tool_input
+    }]}})
+
+def result(tool_id, text, is_error):
+    rows.append({"type": "user", "message": {"content": [{
+        "type": "tool_result", "tool_use_id": tool_id,
+        "content": [{"type": "text", "text": text}], "is_error": is_error
+    }]}})
+
+if case != "independent":
+    assistant("before", "Read", "before-read", {"file_path": target})
+assistant("edit", "Edit", fail_id, {"file_path": target, "old_string": old_string,
+                                      "new_string": normalized + "changed\n"})
+error = "String to replace not found in file."
+if case == "no-changes":
+    error = "No changes to make"
+elif case == "found-matches":
+    error = "Found 2 matches"
+result(fail_id, f"<tool_use_error>{error}</tool_use_error>", True)
+
+if case in ("repaired-edit", "repaired-write"):
+    tool = "Edit" if case == "repaired-edit" else "Write"
+    assistant("repair", tool, "repair-success", {"file_path": target})
+    result("repair-success", "success", False)
+
+next_tool = "Bash" if case == "independent" else "Read"
+assistant("next", next_tool, "next-call", {"file_path": target})
+result("next-call", "success", False)
+if case == "partial":
+    rows.append({"type": "assistant", "message": {"id": "partial", "content": [
+        {"type": "tool_use", "id": "cut-off", "name": "Read"}
+    ]}})
+
+with open(transcript, "w", encoding="utf-8") as fh:
+    for row in rows:
+        fh.write(json.dumps(row) + "\n")
+    if case == "partial":
+        fh.write('{"type":"assistant","message":')
+PY
+}
+
+extra_phrase="每行少一个前导 tab"
+expect_extra() {
+  local label="$1" case="$2" path="$3" want="$4" session="${5:-extra-$2}"
+  local transcript="$T/$session-extra.jsonl" out kind
+  write_extra_case "$transcript" "$path" "$case"
+  if [ "$case" = "missing" ]; then rm -f "$path"; fi
+  if [ "$case" = "multiple" ]; then
+    printf '\treturn 1\n\treturn 2\n\treturn 1\n\treturn 2\n' > "$path"
+  elif [ "$case" = "absent" ]; then
+    printf '\tnot-the-anchor\n' > "$path"
+  elif [ "$case" = "hit-makefile" ]; then
+    printf "\tbuild:\n\t@printf 'marker-private'\n" > "$path"
+  elif [ "$case" != "missing" ]; then
+    printf '\treturn 1\n\treturn 2\n' > "$path"
+  fi
+  if [ "$case" = "unreadable" ]; then rm -f "$path"; mkdir "$path"; fi
+  out="$(run_hook "$transcript" "$session" 2>"$T/extra-stderr")"
+  kind="$(printf '%s' "$out" | python3 -c 'import json,sys; d=json.load(sys.stdin); print(d.get("hookSpecificOutput", {}).get("additionalContext", ""))' 2>/dev/null || true)"
+  if [ "$want" = "yes" ]; then
+    check "$label" "$(printf '%s' "$kind" | python3 -c 'import sys; print("yes" if sys.argv[1] in sys.stdin.read() else "no")' "$extra_phrase")" yes
+    check "$label file path included" "$(printf '%s' "$kind" | python3 -c 'import sys; print("yes" if sys.argv[1] in sys.stdin.read() else "no")' "$path")" yes
+    check "$label explains separator tab" "$(printf '%s' "$kind" | python3 -c 'import sys; print("yes" if "行号后的分隔 tab 不是缩进" in sys.stdin.read() else "no")')" yes
+    check "$label does not expose anchor" "$(printf '%s' "$kind" | python3 -c 'import sys; print("no" if "marker-private" in sys.stdin.read() else "yes")')" yes
+  else
+    check "$label" "$(printf '%s' "$kind" | python3 -c 'import sys; print("no" if sys.argv[1] in sys.stdin.read() else "yes")' "$extra_phrase")" yes
+  fi
+}
+
+run_extra_test() {
+  local label="$1" case="$2" path="$3" want="$4" session="${5:-extra-$2}"
+  if [ -n "${EXTRA_ONLY:-}" ] && [ "$case" != "$EXTRA_ONLY" ]; then return; fi
+  expect_extra "$label" "$case" "$path" "$want" "$session"
+}
+
+GO_FILE="$T/x.go"
+MAKE_FILE="$T/Makefile"
+run_extra_test "extra tab detected for Go file" hit-go "$GO_FILE" yes
+run_extra_test "extra tab detected for tab-indented Makefile" hit-makefile "$MAKE_FILE" yes
+run_extra_test "detection independent of streak and successful tool name" independent "$T/independent.go" yes
+run_extra_test "normalized anchor absent is silent" absent "$T/absent.go" no
+run_extra_test "normalized anchor must occur exactly once" multiple "$T/multiple.go" no
+run_extra_test "successful Edit supersedes failed Edit" repaired-edit "$T/repaired-edit.go" no
+run_extra_test "successful Write supersedes failed Edit" repaired-write "$T/repaired-write.go" no
+run_extra_test "No changes to make is not a candidate" no-changes "$T/no-changes.go" no
+run_extra_test "Found N matches is not a candidate" found-matches "$T/found-matches.go" no
+run_extra_test "missing target file is silent" missing "$T/missing.go" no
+run_extra_test "unreadable target file is silent" unreadable "$T/unreadable.go" no
+run_extra_test "partial JSONL tail is ignored" partial "$T/partial.go" yes
+
+if [ -z "${EXTRA_ONLY:-}" ] || [ "${EXTRA_ONLY:-}" = "combined" ]; then
+  combined_transcript="$T/combined.jsonl"
+  printf '\treturn 1\n\treturn 2\n' > "$GO_FILE"
+  write_extra_case "$combined_transcript" "$GO_FILE" hit-go
+  context="$(run_hook "$combined_transcript" combined-session | python3 -c 'import json,sys; print(json.load(sys.stdin)["hookSpecificOutput"]["additionalContext"])')"
+  check "both hints coexist" "$(printf '%s' "$context" | python3 -c 'import sys; s=sys.stdin.read(); print("yes" if "最近几轮" in s and "每行少一个前导 tab" in s else "no")')" yes
+  context="$(run_hook "$combined_transcript" combined-session | python3 -c 'import json,sys; print(json.load(sys.stdin).get("hookSpecificOutput", {}).get("additionalContext", ""))' 2>/dev/null || true)"
+  check "streak state write does not erase extra-tab dedup" "$(printf '%s' "$context" | python3 -c 'import sys; print("no" if "每行少一个前导 tab" in sys.stdin.read() else "yes")')" yes
+fi
+
+if [ -z "${EXTRA_ONLY:-}" ]; then
 # Basic classification and deduplication.
 expect_kind "three allowed single calls trigger" three reminder
 expect_kind "multi-tool message blocks streak" multi silent
@@ -230,6 +349,7 @@ ms=$(( (end - start) / 1000000 ))
 if [ "$ms" -lt 200 ]; then timing=pass; else timing="${ms}ms"; fi
 check "20 MiB tail read under 200ms" "$timing" pass
 printf '20 MiB invocation: %d ms\n' "$ms"
+fi
 
 printf 'PASS %d/%d\n' "$OK" "$RAN"
 [ "$OK" -eq "$RAN" ]

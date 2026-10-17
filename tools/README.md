@@ -753,12 +753,25 @@ one line to the model's context:
 最近几轮都只发了一个调用。下一步如果有几处互不依赖的修改或读取，在同一轮里一起发；改完跑测试的那一步照旧单独发。
 ```
 
-It fires at most once per five replies and never blocks the tool call; any
-transcript or state error just skips it. To keep the hook registered but silent,
-start Claude Code with the variable set:
+After a later successful tool call, the same hook can also diagnose a failed
+`Edit` whose error is `String to replace not found`: if removing one leading tab
+from each tab-prefixed line in `old_string` makes it match the current file
+exactly once, it adds a hint like this (without quoting the anchor or file
+contents):
+
+```text
+Edit anchor may have one extra leading tab in path/to/file: Read's line-number separator tab is not indentation; remove one leading tab per line and retry.
+```
+
+A later successful `Edit` or `Write` to that file, a different error, zero or
+multiple matches, or an unreadable/missing file suppresses this diagnostic. Both
+reminders fail open and never block a tool call. To keep the hook registered but
+silent, disable both reminders by exporting this variable before starting Claude
+Code:
 
 ```bash
-DRSG_SINGLE_TOOL_STREAK_DISABLED=1 claude
+export DRSG_SINGLE_TOOL_STREAK_DISABLED=1
+claude
 ```
 
 ## Permission guard (`permission-guard.py`)

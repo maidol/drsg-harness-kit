@@ -443,10 +443,17 @@ DRSG_STOP_TEXTUAL_TOOL_CALL_GUARD_DISABLED=1 claude
 最近几轮都只发了一个调用。下一步如果有几处互不依赖的修改或读取，在同一轮里一起发；改完跑测试的那一步照旧单独发。
 ```
 
-每五次回复最多提醒一次，从不拦截工具调用；transcript 或状态文件出错时直接跳过。想保留注册、但不出提醒，启动 Claude Code 时设上这个变量：
+之后某次工具调用成功时，同一个 hook 还会诊断符合条件的失败 `Edit`：报错必须是 `String to replace not found`；把 `old_string` 中每个以 tab 开头的行去掉一个前导 tab 后，必须在当前文件中恰好匹配一次。提示示例（不会附上锚点或文件内容）：
+
+```text
+文件 path/to/file 的 Edit 锚点可能多了一个前导 tab：Read 输出中行号后的分隔 tab 不是缩进；每行少一个前导 tab 后重发。
+```
+
+同一文件后来已有成功的 `Edit` 或 `Write`、报错不同、匹配次数为零或多次、文件不存在或无法读取时，都不提示。两种提醒都会失败时放行，不会拦截工具调用。要保留 hook 注册、但关闭两种提醒，在启动 Claude Code 前导出：
 
 ```bash
-DRSG_SINGLE_TOOL_STREAK_DISABLED=1 claude
+export DRSG_SINGLE_TOOL_STREAK_DISABLED=1
+claude
 ```
 
 ## 权限护栏（`permission-guard.py`）
