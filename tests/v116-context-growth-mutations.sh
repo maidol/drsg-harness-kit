@@ -124,8 +124,14 @@ run_pair event-all-hint event event-list-all-limit tools/mcp_events.py \
 run_pair event-open-done-limit event event-list-status-isolation tools/mcp_events.py \
   'events = ev.fetch(path, token, status=want)' \
   'events = ev.fetch(path, token, status=want, limit=requested)'
+# Two gates keep the briefing out of a compaction: it is not built, and it is
+# not injected. Removing only the second is now equivalent (brief is ""), so
+# this mutant removes both; compact-briefing-build removes only the first.
 run_pair compact-briefing compact compact-excludes-briefing tools/templates/hooks/session_start.py \
-  'if source != "compact" and brief:' 'if brief:'
+  '                      if pid and source != "compact" else ("", None))\n    if source != "compact" and brief:' \
+  '                      if pid else ("", None))\n    if brief:'
+run_pair compact-briefing-build compact compact-skips-briefing-rebuild tools/templates/hooks/session_start.py \
+  'if pid and source != "compact" else ("", None))' 'if pid else ("", None))'
 run_pair compact-event compact compact-keeps-required-context tools/templates/hooks/session_start.py \
   'events = open_events(proj_dir, token)' \
   'events = [] if source == "compact" else open_events(proj_dir, token)'
@@ -180,8 +186,8 @@ if [ "$SURVIVED" -gt 0 ]; then
   printf 'MUTATION RESULT: SURVIVED (%d)\n' "$SURVIVED"
   exit 1
 fi
-if [ "$KILLED" -ne 8 ]; then
-  printf 'MUTATION RESULT: NOT RUN (killed %d/8)\n' "$KILLED"
+if [ "$KILLED" -ne 9 ]; then
+  printf 'MUTATION RESULT: NOT RUN (killed %d/9)\n' "$KILLED"
   exit 2
 fi
 printf 'MUTATION RESULT: ALL KILLED (%d)\n' "$KILLED"

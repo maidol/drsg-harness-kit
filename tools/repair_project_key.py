@@ -244,7 +244,6 @@ def main(argv=None):
     parser.add_argument("--snapshot")
     args = parser.parse_args(argv)
     u.load_env(PROJECT_DIR)
-    u.API = os.environ.get("DRSG_API", u.API)
     tok = os.environ.get("DRSG_TOKEN", "")
     repair(args.plane, args.project_path, args.key, tok,
            apply=args.apply, requested_snapshot=args.snapshot)

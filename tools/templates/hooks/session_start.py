@@ -16,9 +16,10 @@ Design (see tools/README.md):
     via the MCP tools / per-prompt recall (user_prompt.py), so the constant
     startup cost stays ~one short paragraph no matter how many Facts exist.
   * The .drsg/env file (gitignored) holds DRSG_TOKEN/DRSG_API/DRSG_PLANE.
-  * Runs on `startup|resume|compact`. A compaction drops the injected briefing
-    and protocol out of context while the session continues, so they have to be
-    re-injected; only the node bookkeeping differs (see `source == "compact"`).
+  * Runs on `startup|resume|compact`. A compaction drops the injected context
+    while the session continues; on `compact` only the open Events and the
+    protocol are re-injected (no briefing, no recent sessions), and the node
+    bookkeeping differs (see `source == "compact"`).
 """
 import hashlib
 import json
@@ -694,7 +695,7 @@ def main(now=None):
         # A compaction keeps the SAME session_id, so the Session node and its
         # BELONGS_TO edge already exist — creating again would only collide.
         # We still run (matcher includes `compact`) because the point of this
-        # hook on a compaction is re-injecting the briefing and the protocol,
+        # hook on a compaction is re-injecting the open Events and the protocol,
         # which the compaction summary drops. Stamp the event and move on.
         try:
             rpc("node.update", {"plane": PLANE, "key": sid,
@@ -742,7 +743,10 @@ def main(now=None):
 
     # 2. Inject the compressed briefing and recent sessions except after compaction.
     parts = []
-    brief, n_facts = ensure_briefing(proj_dir, pid, token) if pid else ("", None)
+    # After a compaction the briefing is not injected, so building it would be
+    # RPC round trips thrown away; telemetry records facts=None for compact.
+    brief, n_facts = (ensure_briefing(proj_dir, pid, token)
+                      if pid and source != "compact" else ("", None))
     if source != "compact" and brief:
         parts.append("Briefing:\n" + brief)
     if source != "compact":

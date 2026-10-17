@@ -221,6 +221,26 @@ check("compact-keeps-required-context",
       context.startswith(fixed_context + "\n\n") and
       event_key in context and "open fixture event" in context and
       "[write-memory protocol]" in context)
+# A compaction injects no briefing, so the hook must not build one either;
+# startup still builds it (the count proves the wrapper itself is wired in).
+briefing_calls = []
+original_ensure_briefing = ss.ensure_briefing
+
+
+def counting_ensure_briefing(*args, **kwargs):
+    briefing_calls.append(args)
+    return original_ensure_briefing(*args, **kwargs)
+
+
+ss.ensure_briefing = counting_ensure_briefing
+try:
+    invoke(normal, "compact", "compact-skip-briefing")
+    compact_calls = len(briefing_calls)
+    invoke(normal, "startup", "startup-builds-briefing")
+finally:
+    ss.ensure_briefing = original_ensure_briefing
+check("compact-skips-briefing-rebuild",
+      compact_calls == 0 and len(briefing_calls) == 1)
 recent_section = "Recent sessions:\n- session 4102444800 [startup]: recent fixture summary"
 print("RECENT_SESSIONS_CHARS=%d" % len(recent_section))
 

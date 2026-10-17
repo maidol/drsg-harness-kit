@@ -205,7 +205,10 @@ if any(should_run(name) for name in seen_names):
     seen_cases = [
         ("seen-old", "handoff", "open", now - 86401),
         ("seen-boundary", "handoff", "open", now - 86400),
-        ("seen-recent", "handoff", "open", now - 86399),
+        # Ten minutes inside the 24-hour line, not one second: the list checks
+        # below read the real clock, and a slow run used to push this fixture
+        # past the line (seen-boundary keeps testing the exact edge).
+        ("seen-recent", "handoff", "open", now - 86400 + 600),
         ("unseen-old", "handoff", "open", None),
         ("notice-old", "notice", "open", now - 2 * 86400),
         ("done-old", "handoff", "done", now - 2 * 86400),
