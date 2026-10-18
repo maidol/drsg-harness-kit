@@ -71,6 +71,8 @@
 
 API key、token、密码、私钥的**值**不进终端输出、文件、提交、PR、Fact、Event，只写变量名或 `<hidden>`。验证鉴权用假值或只断言形状；用 env 里的值时 `set -a; . <env 文件>; set +a`，不 `cat` env 文件、不跑 `env`/`printenv`、不用 `curl -v`。万一打印出来：立刻告诉用户留在了哪里，建议轮换，删掉落盘副本。Fact 写入不经过任何检查。
 
+可能带凭据的配置文件（`.mcp.json`、`settings*.json`、`~/.claude.json`、`.env`）不整段 `cat`/`head`/Read：要看结构，用 `jq` 只取键名或不含密钥的字段（`jq '.mcpServers | keys'`、`jq '.mcpServers[] | {type, url}'`）；要找某个名字，`grep` 那个名字就够了。动手前先问：需要的字段能不能从工具名、会话记录或键名里拿到。
+
 ## 跨项目审核与验收（要点；全文在 `~/.claude/CROSS-PROJECT-REVIEW.md`）
 
 - 只有用户全局 `CLAUDE.md` 指定了审核方项目，或当前任务明确指定时才启用；没有就不要猜审核方。**启用时，发评审或验收请求、处理收到的判定或提交授权之前，先 Read `~/.claude/CROSS-PROJECT-REVIEW.md` 全文**（分级、交接材料、授权格式、手动提交核对流程都在那里）。
