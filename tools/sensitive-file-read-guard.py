@@ -27,9 +27,11 @@ GREPS = {"grep", "egrep", "fgrep", "rg", "ag"}
 GREP_QUIET_LONG = {"--count", "--files-with-matches", "--files-without-match",
                    "--quiet", "--silent"}
 WRAPPERS = {"sudo", "env", "command", "nohup", "time", "exec"}
-# Object fields a jq filter may build from an MCP server entry; args, env and
-# headers can carry credentials.
-JQ_SAFE_FIELDS = {"type", "url", "command"}
+# Fields a jq filter may print: an MCP server's type/url/command and a hook's
+# matcher/command. args, env and headers can carry credentials.
+JQ_SAFE_FIELDS = {"type", "url", "command", "matcher"}
+# A plain path such as `.hooks.PreToolUse[].matcher` or `.mcpServers[].url`.
+JQ_PATH = re.compile(r"(?:\.[A-Za-z_][A-Za-z0-9_]*|\[\d*\]|\?)+")
 JQ_STRUCTURE = {"keys", "keys_unsorted", "length", "type"}
 ASSIGNMENT = re.compile(r"^[A-Za-z_][A-Za-z0-9_]*=")
 OPERATORS = ("||", "&&", "|&", "|", ";", "&", "\n")
@@ -98,13 +100,48 @@ def _close(text, i, opener, closer):
     raise ParseError("unclosed group")
 
 
+def _heredoc_word(text, i):
+    """The delimiter of the heredoc whose `<<` is at text[i], whether it is
+    `<<-` (tabs stripped from the terminator line), and the index after it."""
+    j = i + 2
+    strip = text.startswith("-", j)
+    j += strip
+    while j < len(text) and text[j] in " \t":
+        j += 1
+    if j < len(text) and text[j] in "'\"":
+        end = text.find(text[j], j + 1)
+        if end < 0:
+            raise ParseError("unclosed heredoc delimiter")
+        return text[j + 1:end], strip, end + 1
+    k = j
+    while k < len(text) and text[k] not in " \t\n;|&<>()":
+        k += 1
+    return text[j:k].replace("\\", ""), strip, k
+
+
+def _skip_heredocs(text, i, pending):
+    """Index after the bodies of the `pending` heredocs, which start at text[i]
+    (just after a newline). A body is data, not commands."""
+    for word, strip in pending:
+        while i < len(text):
+            end = text.find("\n", i)
+            line = text[i:] if end < 0 else text[i:end]
+            i = len(text) if end < 0 else end + 1
+            if (line.lstrip("\t") if strip else line) == word:
+                break
+    pending.clear()
+    return i
+
+
 def segments(text, depth=0):
     """Simple commands in `text`: split on | && || ; & and newlines outside
     quotes; $(...), <(...) and backtick bodies are returned as their own
-    segments, replaced in the outer one by a placeholder."""
+    segments, replaced in the outer one by a placeholder. Heredoc bodies are
+    skipped."""
     if depth > 8:
         raise ParseError("nesting limit")
     out, cur, quote, i = [], [], None, 0
+    heredocs = []
 
     def flush():
         s = "".join(cur).strip()
@@ -149,10 +186,18 @@ def segments(text, depth=0):
             cur.append(c)
             i += 1
             continue
+        if text.startswith("<<", i) and not text.startswith("<<<", i):
+            word, strip, end = _heredoc_word(text, i)
+            heredocs.append((word, strip))
+            cur.append(text[i:end])
+            i = end
+            continue
         op = next((o for o in OPERATORS if text.startswith(o, i)), None)
         if op:
             flush()
             i += len(op)
+            if op == "\n" and heredocs:
+                i = _skip_heredocs(text, i, heredocs)
             continue
         cur.append(c)
         i += 1
@@ -194,6 +239,9 @@ def _jq_structural(flt):
     last = flt.split("|")[-1].strip()
     if last in JQ_STRUCTURE:
         return True
+    if JQ_PATH.fullmatch(last):
+        fields = re.findall(r"\.([A-Za-z_][A-Za-z0-9_]*)", last)
+        return bool(fields) and fields[-1] in JQ_SAFE_FIELDS
     m = re.fullmatch(r"\{\s*([a-z_]+(?:\s*,\s*[a-z_]+)*)\s*\}", last)
     return bool(m) and {f.strip() for f in m.group(1).split(",")} <= JQ_SAFE_FIELDS
 

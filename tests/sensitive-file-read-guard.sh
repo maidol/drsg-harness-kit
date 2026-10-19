@@ -65,6 +65,13 @@ check "Grep content on .mcp.json" "$(first "$(decision Grep '{"pattern": "Bearer
 # --- allowed ---
 check "jq keys" "$(bash_d "jq '.mcpServers | keys' .mcp.json")" allow
 check "jq type,url" "$(bash_d "jq '.mcpServers[] | {type, url}' .mcp.json")" allow
+check "jq hook matcher object" "$(bash_d "jq '.hooks.PreToolUse[] | {matcher}' ~/.claude/settings.json")" allow
+check "jq path to hook commands" "$(bash_d "jq -r '.hooks[][] | .hooks[].command' ~/.claude/settings.json")" allow
+check "jq path to server url" "$(bash_d "jq -r '.mcpServers[].url' .mcp.json")" allow
+check "jq path to a header value" "$(first "$(bash_d "jq -r '.mcpServers[].headers.Authorization' .mcp.json")")" deny
+check "jq path to an env value" "$(first "$(bash_d "jq '.env.ANTHROPIC_API_KEY' .claude/settings.local.json")")" deny
+check "jq path to args" "$(first "$(bash_d "jq '.mcpServers[].args[]' .mcp.json")")" deny
+check "jq string built from fields" "$(first "$(bash_d "jq '.hooks[][] | .matcher + .env.X' ~/.claude/settings.json")")" deny
 check "grep -c" "$(bash_d 'grep -c WDZT_AK config.env')" allow
 check "grep -l" "$(bash_d 'grep -l Bearer .mcp.json')" allow
 check "grep -q in combined flags" "$(bash_d 'grep -iq token .env && echo yes')" allow
@@ -76,6 +83,14 @@ check "public key" "$(bash_d 'cat id_rsa.pub')" allow
 check "grep pattern that looks like a file" "$(bash_d 'grep -n .env README.md')" allow
 HEREDOC_CMD="$(printf 'cat > .env <<%sEOF%s\nA=1\nEOF' "'" "'")"
 check "writing an env file with a heredoc" "$(bash_d "$HEREDOC_CMD")" allow
+Q="'"
+HD_DATA="$(printf 'python3 - <<%sEOF%s\nprint("run `cat .env` and `jq -r %s.x%s ~/.claude/settings.json` first")\nEOF' "$Q" "$Q" "$Q" "$Q")"
+check "heredoc body is data" "$(bash_d "$HD_DATA")" allow
+HD_TAB="$(printf 'cat <<-END\n\tcat .mcp.json\n\tEND\necho done')"
+check "<<- heredoc body is data" "$(bash_d "$HD_TAB")" allow
+HD_AFTER="$(printf 'python3 - <<EOF\nprint(1)\nEOF\ncat .env')"
+check "command after the heredoc terminator" "$(first "$(bash_d "$HD_AFTER")")" deny
+check "herestring is not a heredoc" "$(first "$(bash_d 'cat <<< x; cat .env')")" deny
 check "appending to an env file" "$(bash_d 'cat part.txt >> config.env')" allow
 check "sourcing an env file" "$(bash_d 'set -a; . ~/.config/x/ccr.env; set +a')" allow
 check "Read README" "$(decision Read '{"file_path": "/x/README.md"}')" allow

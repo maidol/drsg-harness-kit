@@ -255,7 +255,7 @@ python3 -c 'import json, os; d=json.load(open(os.path.expanduser("~/.claude/sett
 `setup.sh` 会把这个脚本注册成 `~/.claude/settings.json` 里的全局 `PreToolUse` 钩子，matcher 是 `Bash|Read|Grep`（`--no-sensitive-read-guard` 可跳过）。凡是会把可能带凭据的文件整段打出来的工具调用，在执行前就被拒绝：那些内容会进会话记录，并随下一轮请求发给模型。拒绝理由只写文件类别和安全的替代写法，不回显命令。
 
 - **拒绝**：用 `cat`、`head`、`tail`、`less`、`sed`、`awk` 等读取命令（包括 `|`、`&&`、`;` 之后和 `$(...)` 里面）读 `.mcp.json`、`~/.claude.json`、`.claude/settings.json`、`settings.local.json`、`.env`、`.env.*`、`*.env`、`.netrc`、`.npmrc`、`.pypirc`、`*.pem`、`*.key`、`id_rsa*`、`id_ed25519*`；不带 `-c/-l/-L/-q` 的 `grep`/`rg`；过滤器会打出值的 `jq`；`Read`；`output_mode: content` 的 `Grep`。
-- **放行**：过滤器以 `keys`、`keys_unsorted`、`length`、`type` 结尾，或只有 `has(...)`，或只构造 `type`/`url`/`command` 字段的 `jq`；`grep -c/-l/-L/-q`；`ls`、`stat`、`wc`；`source` 一个 env 文件、往里面写；以及 `*.example*`、`*.sample`、`*.template`、`*.pub`。
+- **放行**：过滤器以 `keys`、`keys_unsorted`、`length`、`type` 结尾，或只有 `has(...)`，或只构造 `type`/`url`/`command`/`matcher` 字段，或是落在这几个字段上的纯路径（`.mcpServers[].url`、`.hooks.PreToolUse[].matcher`）的 `jq`；`grep -c/-l/-L/-q`；`ls`、`stat`、`wc`；`source` 一个 env 文件、往里面写；heredoc 正文里的内容（那是数据，不是命令）；以及 `*.example*`、`*.sample`、`*.template`、`*.pub`。
 - 它拦的是顺手 `cat .mcp.json` 这类无意泄露，不防刻意绕过；你自己用 `!` 运行的命令不经过钩子。
 - 会话开始时，项目钩子还会检查 `.mcp.json`：有明文 `Authorization` 头就在终端提示，只写 server 名，不写值。
 

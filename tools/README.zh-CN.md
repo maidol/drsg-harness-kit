@@ -437,7 +437,7 @@ DRSG_STOP_TEXTUAL_TOOL_CALL_GUARD_DISABLED=1 claude
 
 ## 敏感文件读取守卫（`sensitive-file-read-guard.py`）
 
-`setup.sh` 会把这个脚本注册成全局 `PreToolUse` 钩子，matcher 是 `Bash|Read|Grep`（`--no-sensitive-read-guard` 可跳过）。它拒绝整段读取可能带凭据的文件（`.mcp.json`、`~/.claude.json`、`.claude/settings*.json`、各类 env、`.netrc`、私钥），放行只看结构的读法，例如 `jq '.mcpServers | keys' .mcp.json`、`grep -c KEY config.env`。解析出错一律放行。完整规则见仓库根目录的 README。
+`setup.sh` 会把这个脚本注册成全局 `PreToolUse` 钩子，matcher 是 `Bash|Read|Grep`（`--no-sensitive-read-guard` 可跳过）。它拒绝整段读取可能带凭据的文件（`.mcp.json`、`~/.claude.json`、`.claude/settings*.json`、各类 env、`.netrc`、私钥），放行只看结构的读法，例如 `jq '.mcpServers | keys' .mcp.json`、`jq -r '.hooks[][] | .hooks[].command' ~/.claude/settings.json`、`grep -c KEY config.env`。解析出错一律放行。完整规则见仓库根目录的 README。
 
 ```bash
 DRSG_SENSITIVE_READ_GUARD_DISABLED=1 claude

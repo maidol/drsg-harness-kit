@@ -12,7 +12,7 @@ trap 'rm -rf "$T"' EXIT
 KILLED=0
 SURVIVED=0
 NOT_RUN=0
-EXPECTED=10
+EXPECTED=14
 
 run_mutation() {
   local name="$1" only="$2" variant="$3" copy="$T/$1.py"
@@ -39,6 +39,10 @@ pairs = {
     "grep-pattern-as-file": ("            positional = positional[1:]  # the first one is the pattern\n", "            pass\n"),
     "redirect-target-read": ('        elif re.fullmatch(r"\\d*>>?", a):  # `> file`: written, not read\n            skip = True\n', ""),
     "jq-keys-denied": ('JQ_STRUCTURE = {"keys", "keys_unsorted", "length", "type"}', "JQ_STRUCTURE = set()"),
+    "jq-path-any-field": ("        return bool(fields) and fields[-1] in JQ_SAFE_FIELDS\n", "        return bool(fields)\n"),
+    "jq-path-not-allowed": ("    if JQ_PATH.fullmatch(last):\n", "    if False:\n"),
+    "heredoc-body-parsed": ("                i = _skip_heredocs(text, i, heredocs)\n", "                heredocs.clear()\n"),
+    "heredoc-never-ends": ("            if (line.lstrip(\"\\t\") if strip else line) == word:\n", "            if False:\n"),
     "no-op": ("def category(path):\n", "def category(path):  # no-op\n"),
 }
 old, new = pairs[variant]
@@ -71,6 +75,10 @@ run_mutation switch-ignored "disabled switch" switch-ignored
 run_mutation grep-pattern-as-file "grep pattern that looks like a file" grep-pattern-as-file
 run_mutation redirect-target-read "writing an env file with a heredoc" redirect-target-read
 run_mutation jq-keys-denied "jq keys" jq-keys-denied
+run_mutation jq-path-any-field "jq path to a header value" jq-path-any-field
+run_mutation jq-path-not-allowed "jq path to server url" jq-path-not-allowed
+run_mutation heredoc-body-parsed "heredoc body is data" heredoc-body-parsed
+run_mutation heredoc-never-ends "command after the heredoc terminator" heredoc-never-ends
 if [ "${MUTATION_SELF_TEST:-0}" = 1 ]; then
   EXPECTED=$((EXPECTED + 1))
   run_mutation self-test-noop "incident 10-19: cat .mcp.json || true" no-op
