@@ -19,6 +19,14 @@ import re
 import statistics
 from datetime import datetime, timezone
 
+# 验收判定的写法见 claude/CROSS-PROJECT-REVIEW.md「原因类别」。
+PASS_RE = re.compile(r'^验收通过(?:并授权提交)?：')
+FAIL_RE = re.compile(r'^验收不通过(（转主模型出计划）)?：\s*(?:\[([^\]]*)\])?')
+REVIEW_RE = re.compile(r'^设计(通过|有条件通过|需修订|待决策)(?:，计划(?:通过|有条件通过|需修订|待决策))?：')
+LAYER = {'判据缺失': '判据', '理解偏差': '判据', '方案不成立': '设计',
+         '漏测边界': '计划/验收测试', '范围偏移': '计划/验收测试',
+         '钻判据空子': '判据+验收测试', '约定不符': '计划'}
+
 BINS = [(0, 50e3), (50e3, 100e3), (100e3, 200e3), (200e3, 300e3),
         (300e3, 400e3), (400e3, 500e3), (500e3, float('inf'))]
 
@@ -59,6 +67,8 @@ def analyse(rows):
     lat = []              # (prompt_tokens, cache_hit_ratio, seconds, output_tokens)
     waits = []            # 等人的秒数
     nsf = []              # no such file 报错的命令
+    posts = []            # (时间, tool_use id, 工具名, 输入)：审核方发出的判定候选
+    errored = set()       # 返回 is_error 的 tool_use id
     seen_msg = set()
     prev_user_t = None
     last_t = None
@@ -70,6 +80,8 @@ def analyse(rows):
                 if isinstance(c, dict) and c.get('type') == 'tool_use' and c['id'] not in pending:
                     pending[c['id']] = (c['name'], c.get('input', {}))
                     calls.append((c['name'], c.get('input', {})))
+                    if c['name'].endswith(('__event_post', '__commit_auth_post')):
+                        posts.append((t, c['id'], c['name'], c.get('input', {})))
                     per_msg[mid] += 1
             if mid not in seen_msg:
                 seen_msg.add(mid)
@@ -89,6 +101,8 @@ def analyse(rows):
             if isinstance(content, list):
                 for c in content:
                     if isinstance(c, dict) and c.get('type') == 'tool_result':
+                        if c.get('is_error'):
+                            errored.add(c.get('tool_use_id'))
                         out = c.get('content')
                         out = out if isinstance(out, str) else json.dumps(out, ensure_ascii=False)
                         if 'no such file or directory' in out.lower():
@@ -96,7 +110,7 @@ def analyse(rows):
                             nsf.append((inp.get('command') or inp.get('file_path') or name)[:80])
             prev_user_t = t
         last_t = t
-    return calls, per_msg, lat, waits, nsf
+    return calls, per_msg, lat, waits, nsf, [p for p in posts if p[1] not in errored]
 
 
 def main():
@@ -114,7 +128,7 @@ def main():
 
     agg = {'main': [], 'sub': []}
     per_msg = collections.Counter()
-    lat, waits, nsf = [], [], []
+    lat, waits, nsf, posts = [], [], [], []
     span = []
     for kind, files in (('main', mains), ('sub', subs)):
         for f in files:
@@ -122,7 +136,8 @@ def main():
             if not rows:
                 continue
             span += [rows[0]['_t'], rows[-1]['_t']]
-            c, pm, la, w, n = analyse(rows)
+            c, pm, la, w, n, po = analyse(rows)
+            posts += po
             agg[kind] += c
             per_msg.update({(f, k): v for k, v in pm.items()})
             lat += la
@@ -184,6 +199,56 @@ def main():
     print(f'{len(nsf)} 次；前几条:')
     for c in nsf[:6]:
         print('  ', c.replace('\n', ' '))
+
+    verdicts(posts)
+
+
+def verdicts(posts):
+    """第 7 节：审核方发出的验收判定。按收件项目分单：同一项目同时只做一单，
+    一次「通过」结束一单，之前的「不通过」都算这一单的轮次。"""
+    print('\n## 7. 验收判定（本范围内发出的 event_post / commit_auth_post）')
+    seq = collections.defaultdict(list)       # 收件项目 -> [是否通过]
+    reasons, layers = collections.Counter(), collections.Counter()
+    npass = nfail = nesc = nreview = ndesign = 0
+    for _t, _id, name, inp in sorted(posts, key=lambda p: p[0]):
+        who = inp.get('recipient', '?')
+        summary = (inp.get('summary') or '').strip()
+        if name.endswith('__commit_auth_post') or PASS_RE.match(summary):
+            npass += 1
+            seq[who].append(True)
+            continue
+        m = FAIL_RE.match(summary)
+        if m:
+            nfail += 1
+            nesc += bool(m.group(1))
+            seq[who].append(False)
+            tags = [x.strip() for x in re.split('[、,，]', m.group(2) or '') if x.strip()]
+            for tag in tags or ['未标类别']:
+                reasons[tag] += 1
+                if tag in LAYER:
+                    layers[LAYER[tag]] += 1
+            continue
+        m = REVIEW_RE.match(summary)
+        if m:
+            nreview += 1
+            ndesign += m.group(1) == '需修订'
+    print(f'验收判定 {npass + nfail} 次：通过 {npass}，不通过 {nfail}（其中升级 {nesc}）')
+    rounds, open_tasks = [], 0
+    for marks in seq.values():
+        n = 0
+        for ok in marks:
+            n += 1
+            if ok:
+                rounds.append(n)
+                n = 0
+        open_tasks += n > 0
+    first = sum(r == 1 for r in rounds)
+    avg = sum(rounds) / len(rounds) if rounds else 0
+    print(f'结单 {len(rounds)} 单，首次验收通过 {first} 单（{first / max(len(rounds), 1):.0%}），'
+          f'平均 {avg:.1f} 轮；未结 {open_tasks} 单')
+    print('原因类别:', ', '.join(f'{k} {v}' for k, v in reasons.most_common()) or '无')
+    print('按层:', ', '.join(f'{k} {v}' for k, v in layers.most_common()) or '无')
+    print(f'设计/计划评审 {nreview} 次，设计层退回 {ndesign} 次')
 
 
 if __name__ == '__main__':
