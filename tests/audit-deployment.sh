@@ -65,7 +65,8 @@ cat > "$CLAUDE_DIR/settings.json" <<'JSON'
       {"matcher": "*", "hooks": [{"command": "python3 /path/event-poller.py"}]},
       {"matcher": "*", "hooks": [{"command": "python3 /path/textual-tool-call-guard.py"}]}
     ],
-    "PostToolUse": [{"matcher": "*", "hooks": [{"command": "python3 /path/single-tool-streak.py"}]}]
+    "PostToolUse": [{"matcher": "*", "hooks": [{"command": "python3 /path/single-tool-streak.py"}]}],
+    "PreToolUse": [{"matcher": "Bash|Read|Grep", "hooks": [{"command": "python3 /path/sensitive-file-read-guard.py"}]}]
   }
 }
 JSON

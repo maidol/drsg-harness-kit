@@ -741,6 +741,14 @@ DRSG_STOP_FAILURE_NOTIFY_DISABLED=1 claude
 DRSG_STOP_TEXTUAL_TOOL_CALL_GUARD_DISABLED=1 claude
 ```
 
+## Sensitive file read guard (`sensitive-file-read-guard.py`)
+
+`setup.sh` registers this script as a global `PreToolUse` hook with matcher `Bash|Read|Grep` (skip with `--no-sensitive-read-guard`). It denies whole-file reads of files that may hold credentials (`.mcp.json`, `~/.claude.json`, `.claude/settings*.json`, env files, `.netrc`, private keys) and allows structure-only reads such as `jq '.mcpServers | keys' .mcp.json` and `grep -c KEY config.env`. Any parse error lets the call through. Full rules are in the top-level README.
+
+```bash
+DRSG_SENSITIVE_READ_GUARD_DISABLED=1 claude
+```
+
 ## Single-tool reminder (`single-tool-streak.py`)
 
 `setup.sh` also registers this script as a global `PostToolUse` hook in

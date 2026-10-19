@@ -86,6 +86,14 @@ w(t + "/dirty/.claude/settings.local.json",
 w(t + "/varonly/.claude/settings.local.json",
   {"env": {"ANTHROPIC_API_KEY": "$ANTHROPIC_API_KEY_FROM_SHELL"},
    "permissions": {"allow": ['Bash(curl -H "Authorization: Bearer $CCR_KEY" http://x/)']}})
+w(t + "/dirty/.mcp.json",
+  {"mcpServers": {"drsg-watch": {"type": "http", "url": "http://127.0.0.1:7708/mcp",
+                                 "headers": {"Authorization": "Bearer " + b}},
+                  "remote": {"type": "http", "url": "http://h.test/mcp",
+                             "headers": {"Authorization": "Bearer ${REMOTE_TOKEN}"}}}})
+w(t + "/varonly/.mcp.json",
+  {"mcpServers": {"remote": {"type": "http", "url": "http://h.test/mcp",
+                             "headers": {"Authorization": "Bearer ${REMOTE_TOKEN}"}}}})
 PY
 cp "$HOOKS/session_start.py" "$T/bare/session_start.py"
 
@@ -106,6 +114,12 @@ print("varonly=" + repr(msg(t + "/varonly")))
 print("dirty_rules=%d" % ("1 permission rule(s)" in dirty))
 print("dirty_env=%d" % ("env ANTHROPIC_API_KEY" in dirty))
 print("dirty_novalue=%d" % (os.environ["FAKE_BEARER"] not in dirty and os.environ["FAKE_API"] not in dirty))
+mcp = getattr(ss, "mcp_bearer_message", lambda _p: "")
+mcp_dirty = mcp(t + "/dirty")
+print("mcp_clean=" + repr(mcp(t + "/clean")))
+print("mcp_varonly=" + repr(mcp(t + "/varonly")))
+print("mcp_names=%d" % ("drsg-watch" in mcp_dirty and "remote" not in mcp_dirty))
+print("mcp_novalue=%d" % (bool(mcp_dirty) and os.environ["FAKE_BEARER"] not in mcp_dirty))
 # The first load put the hooks dir on sys.path and cached secret_redact.
 sys.modules.pop("secret_redact", None)
 sys.path[:] = [p for p in sys.path if os.path.abspath(p) != os.path.abspath(hooks)]
@@ -124,6 +138,7 @@ finally:
     sys.stdout = real
 out = json.loads(buf.getvalue().strip().splitlines()[-1])
 print("wired=%d" % ("1 permission rule(s)" in (out.get("systemMessage") or "")))
+print("mcp_wired=%d" % (".mcp.json Authorization for drsg-watch" in (out.get("systemMessage") or "")))
 print("wired_novalue=%d" % (os.environ["FAKE_BEARER"] not in buf.getvalue() and os.environ["FAKE_API"] not in buf.getvalue()))
 PY
 )"
@@ -136,6 +151,11 @@ check "warning never shows a value" "$(val dirty_novalue)" "1"
 check "missing secret_redact degrades to no warning" "$(val bare)" "''"
 check "session start shows the warning" "$(val wired)" "1"
 check "session start output has no value" "$(val wired_novalue)" "1"
+check "no .mcp.json gives no mcp warning" "$(val mcp_clean)" "''"
+check "\${VAR} Authorization gives no mcp warning" "$(val mcp_varonly)" "''"
+check "mcp warning names the plaintext server only" "$(val mcp_names)" "1"
+check "mcp warning never shows a value" "$(val mcp_novalue)" "1"
+check "session start shows the mcp warning" "$(val mcp_wired)" "1"
 
 if [ -n "$ONLY" ] && [ "$RAN" -eq 0 ]; then
   printf 'FAIL unknown-only-case: %s\n' "$ONLY"

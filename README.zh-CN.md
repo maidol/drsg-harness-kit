@@ -250,6 +250,33 @@ DRSG_STOP_TEXTUAL_TOOL_CALL_GUARD_DISABLED=1 claude
 python3 -c 'import json, os; d=json.load(open(os.path.expanduser("~/.claude/settings.json"))); print([h.get("command") for g in d.get("hooks",{}).get("Stop",[]) for h in g.get("hooks",[]) if "textual-tool-call-guard" in h.get("command","")])'
 ```
 
+## 敏感文件读取守卫（`sensitive-file-read-guard.py`）
+
+`setup.sh` 会把这个脚本注册成 `~/.claude/settings.json` 里的全局 `PreToolUse` 钩子，matcher 是 `Bash|Read|Grep`（`--no-sensitive-read-guard` 可跳过）。凡是会把可能带凭据的文件整段打出来的工具调用，在执行前就被拒绝：那些内容会进会话记录，并随下一轮请求发给模型。拒绝理由只写文件类别和安全的替代写法，不回显命令。
+
+- **拒绝**：用 `cat`、`head`、`tail`、`less`、`sed`、`awk` 等读取命令（包括 `|`、`&&`、`;` 之后和 `$(...)` 里面）读 `.mcp.json`、`~/.claude.json`、`.claude/settings.json`、`settings.local.json`、`.env`、`.env.*`、`*.env`、`.netrc`、`.npmrc`、`.pypirc`、`*.pem`、`*.key`、`id_rsa*`、`id_ed25519*`；不带 `-c/-l/-L/-q` 的 `grep`/`rg`；过滤器会打出值的 `jq`；`Read`；`output_mode: content` 的 `Grep`。
+- **放行**：过滤器以 `keys`、`keys_unsorted`、`length`、`type` 结尾，或只有 `has(...)`，或只构造 `type`/`url`/`command` 字段的 `jq`；`grep -c/-l/-L/-q`；`ls`、`stat`、`wc`；`source` 一个 env 文件、往里面写；以及 `*.example*`、`*.sample`、`*.template`、`*.pub`。
+- 它拦的是顺手 `cat .mcp.json` 这类无意泄露，不防刻意绕过；你自己用 `!` 运行的命令不经过钩子。
+- 会话开始时，项目钩子还会检查 `.mcp.json`：有明文 `Authorization` 头就在终端提示，只写 server 名，不写值。
+
+```bash
+jq '.mcpServers | keys' .mcp.json
+jq '.mcpServers[] | {type, url}' .mcp.json
+grep -c WDZT_AK config.env
+```
+
+安装时跳过注册：
+
+```bash
+/tmp/drsg-harness-kit-*/setup.sh --no-sensitive-read-guard
+```
+
+保留注册但在运行时禁用：
+
+```bash
+DRSG_SENSITIVE_READ_GUARD_DISABLED=1 claude
+```
+
 ## 敏感字面量提交守卫（`forbidden-literals-guard.py`）
 
 提交前与提交信息安全检查，防止将敏感标识（真实客户域名、客户邮箱、私有账号等）硬编码进仓库提交与 git 历史。

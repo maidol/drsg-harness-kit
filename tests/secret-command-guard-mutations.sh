@@ -12,7 +12,7 @@ trap 'rm -rf "$T"' EXIT
 KILLED=0
 SURVIVED=0
 NOT_RUN=0
-EXPECTED=5
+EXPECTED=6
 
 fresh_copy() {
   rm -rf "$1" && cp -r "$SOURCE" "$1"
@@ -46,7 +46,9 @@ elif variant == "drop-url-signature":
 elif variant == "env-ignores-dollar":
     old, new = ' and not v.startswith("$")', ""
 elif variant == "warning-not-wired":
-    old, new = "                                  settings_secret_message(proj_dir))\n", '                                  "")\n'
+    old, new = "                                  settings_secret_message(proj_dir),\n", '                                  "",\n'
+elif variant == "mcp-warning-not-wired":
+    old, new = "                                  mcp_bearer_message(proj_dir))\n", '                                  "")\n'
 elif variant == "no-op":
     old, new = "def _secret_kinds(cmd):\n", "def _secret_kinds(cmd):  # no-op\n"
 else:
@@ -77,6 +79,7 @@ run_mutation denial-shows-command "denial names the kind, not the value" pre_too
 run_mutation drop-url-signature "url signature is denied" secret_redact.py drop-url-signature
 run_mutation env-ignores-dollar "variable references give no warning" session_start.py env-ignores-dollar
 run_mutation warning-not-wired "session start shows the warning" session_start.py warning-not-wired
+run_mutation mcp-warning-not-wired "session start shows the mcp warning" session_start.py mcp-warning-not-wired
 if [ "${MUTATION_SELF_TEST:-0}" = 1 ]; then
   run_mutation self-test-noop "inline bearer is denied" pre_tool_use.py no-op
 fi

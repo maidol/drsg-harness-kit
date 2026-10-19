@@ -354,6 +354,33 @@ To verify its registration:
 python3 -c 'import json, os; d=json.load(open(os.path.expanduser("~/.claude/settings.json"))); print([h.get("command") for g in d.get("hooks",{}).get("Stop",[]) for h in g.get("hooks",[]) if "textual-tool-call-guard" in h.get("command","")])'
 ```
 
+## Sensitive file read guard (`sensitive-file-read-guard.py`)
+
+`setup.sh` registers this script as a global `PreToolUse` hook in `~/.claude/settings.json` with matcher `Bash|Read|Grep` (skip with `--no-sensitive-read-guard`). It denies, before they run, tool calls that would print the whole content of a file that may hold credentials, because that content lands in the transcript and is sent to the model. The deny reason names the file category and the safe alternatives, never the command.
+
+- **Denied**: `.mcp.json`, `~/.claude.json`, `.claude/settings.json`, `settings.local.json`, `.env`, `.env.*`, `*.env`, `.netrc`, `.npmrc`, `.pypirc`, `*.pem`, `*.key`, `id_rsa*`, `id_ed25519*` read by `cat`, `head`, `tail`, `less`, `sed`, `awk` and similar readers (also after `|`, `&&`, `;` and inside `$(...)`), by `grep`/`rg` without `-c/-l/-L/-q`, by `jq` with a filter that prints values, by `Read`, and by `Grep` with `output_mode: content`.
+- **Allowed**: `jq` filters ending in `keys`, `keys_unsorted`, `length` or `type`, `has(...)`, or an object of `type`/`url`/`command` only; `grep -c/-l/-L/-q`; `ls`, `stat`, `wc`; sourcing an env file; writing to one; and `*.example*`, `*.sample`, `*.template`, `*.pub`.
+- It stops the casual `cat .mcp.json`, not a determined bypass; your own `!` commands do not go through hooks.
+- At session start, the project hooks also warn (terminal only) when `.mcp.json` holds a plaintext `Authorization` header, naming the server, never the value.
+
+```bash
+jq '.mcpServers | keys' .mcp.json
+jq '.mcpServers[] | {type, url}' .mcp.json
+grep -c WDZT_AK config.env
+```
+
+To skip registering it during setup:
+
+```bash
+/tmp/drsg-harness-kit-*/setup.sh --no-sensitive-read-guard
+```
+
+To keep the hook registered but disable it at runtime:
+
+```bash
+DRSG_SENSITIVE_READ_GUARD_DISABLED=1 claude
+```
+
 ## Forbidden literals guard (`forbidden-literals-guard.py`)
 
 A pre-commit and commit-msg security check to prevent hardcoding sensitive identifiers (e.g. real client domains, emails, private endpoints) into repository commits and history.

@@ -164,6 +164,34 @@ def settings_secret_message(proj_dir):
     return "drsg: .claude settings hold secrets (values not shown): " + "; ".join(parts) + "."
 
 
+def mcp_bearer_message(proj_dir):
+    """Terminal-only warning when this project's .mcp.json has a plaintext
+    Authorization header. Names the servers, never the value; a `${VAR}`
+    reference does not match the secret_redact shapes and gives no warning."""
+    try:
+        from secret_redact import RULES
+        with open(os.path.join(proj_dir, ".mcp.json"), encoding="utf-8") as fh:
+            servers = json.load(fh).get("mcpServers")
+    except Exception:
+        return ""
+    if not isinstance(servers, dict):
+        return ""
+    names = []
+    for name, server in servers.items():
+        headers = server.get("headers") if isinstance(server, dict) else None
+        if not isinstance(headers, dict):
+            continue
+        for key, value in headers.items():
+            if (str(key).lower() == "authorization" and isinstance(value, str)
+                    and any(p.search("Authorization: " + value) for _, p in RULES)):
+                names.append(str(name))
+    if not names:
+        return ""
+    return ("drsg: .mcp.json Authorization for %s is plaintext (value not shown); "
+            "use \"Bearer ${VAR}\" and put the value in the environment."
+            % ", ".join(sorted(set(names))))
+
+
 def hook_drift_message(proj_dir):
     """Human-visible refresh command when installed project hooks differ."""
     try:
@@ -695,7 +723,8 @@ def main(now=None):
     proj_dir = os.environ.get("CLAUDE_PROJECT_DIR") or os.getcwd()
     load_env(proj_dir)
     drift_message = join_messages("\n", hook_drift_message(proj_dir),
-                                  settings_secret_message(proj_dir))
+                                  settings_secret_message(proj_dir),
+                                  mcp_bearer_message(proj_dir))
     source = data.get("source", "startup")
     # Re-read config after load_env populated os.environ (install.sh's .drsg/env).
     global API, PLANE, BRIEFING_MAX_CHARS

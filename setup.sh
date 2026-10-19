@@ -35,6 +35,8 @@
 #   --no-event-poller do not register the global to-do poller hooks
 #   --no-streak-hint do not register the global single-tool reminder hook
 #   --no-textual-tool-call-guard do not register the textual tool call stop guard
+#   --no-sensitive-read-guard do not register the global guard that denies
+#                     whole-file reads of credential files (.mcp.json, env, keys)
 #   --permission-guard DIR  add commit/push ask rules and narrow read-only allow
 #                     rules to DIR/.claude/settings.local.json (opt-in)
 #   --reviews-dir DIR teach the auto-mode classifier (~/.claude/settings.json)
@@ -49,7 +51,7 @@ set -euo pipefail
 HERE="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 PROJECT=""; ALL_PROJECTS=0; REPO=""; HUB=""; ROUTER=""; USAGE_REPORT=""; BIN=""; ADDR=""; TOKEN=""; PORT=""
 TOOLS="${DRSG_MEM_DIR:-$HOME/.drsg-memory}/tools"
-FETCH=0; SKILLS=1; MAIN_BRANCH_WORKFLOW=1; POLLER=1; STREAK_HINT=1; TEXTUAL_TOOL_GUARD=1
+FETCH=0; SKILLS=1; MAIN_BRANCH_WORKFLOW=1; POLLER=1; STREAK_HINT=1; TEXTUAL_TOOL_GUARD=1; SENSITIVE_READ_GUARD=1
 PG_DIR=""; REVIEWS_DIR=""; PRUNE=0; SELF_COMMIT=0; MODEL_PICKER=0
 
 while [ $# -gt 0 ]; do
@@ -71,6 +73,7 @@ while [ $# -gt 0 ]; do
     --no-event-poller) POLLER=0; shift ;;
     --no-streak-hint) STREAK_HINT=0; shift ;;
     --no-textual-tool-call-guard) TEXTUAL_TOOL_GUARD=0; shift ;;
+    --no-sensitive-read-guard) SENSITIVE_READ_GUARD=0; shift ;;
     --permission-guard) PG_DIR="${2:?--permission-guard needs a path}"; shift 2 ;;
     --reviews-dir) REVIEWS_DIR="${2:?--reviews-dir needs a path}"; shift 2 ;;
     --prune-broad) PRUNE=1; shift ;;
@@ -160,24 +163,25 @@ fi
 # open Events every 15 minutes without a model call, and wakes the model only
 # when there is one it has not been told about. Projects without .drsg/env are
 # skipped by the script itself. Idempotent: an existing registration is kept.
-if [ "$POLLER" -eq 1 ] || [ "$STREAK_HINT" -eq 1 ] || [ "$TEXTUAL_TOOL_GUARD" -eq 1 ]; then
+if [ "$POLLER" -eq 1 ] || [ "$STREAK_HINT" -eq 1 ] || [ "$TEXTUAL_TOOL_GUARD" -eq 1 ] || [ "$SENSITIVE_READ_GUARD" -eq 1 ]; then
   CLAUDE_DIR="${CLAUDE_CONFIG_DIR:-$HOME/.claude}"
   mkdir -p "$CLAUDE_DIR"
-  python3 - "$CLAUDE_DIR/settings.json" "$TOOLS/event-poller.py" "$TOOLS/single-tool-streak.py" "$POLLER" "$STREAK_HINT" "$TOOLS/stop-failure-notify.py" "$TOOLS/textual-tool-call-guard.py" "$TEXTUAL_TOOL_GUARD" <<'PY'
+  python3 - "$CLAUDE_DIR/settings.json" "$TOOLS/event-poller.py" "$TOOLS/single-tool-streak.py" "$POLLER" "$STREAK_HINT" "$TOOLS/stop-failure-notify.py" "$TOOLS/textual-tool-call-guard.py" "$TEXTUAL_TOOL_GUARD" "$TOOLS/sensitive-file-read-guard.py" "$SENSITIVE_READ_GUARD" <<'PY'
 import json, os, sys
 path, script, streak_script = sys.argv[1], sys.argv[2], sys.argv[3]
 poller_enabled, streak_hint = sys.argv[4] == "1", sys.argv[5] == "1"
 notify_script, textual_guard_script = sys.argv[6], sys.argv[7]
 textual_guard_enabled = sys.argv[8] == "1"
+sensitive_guard_script, sensitive_guard_enabled = sys.argv[9], sys.argv[10] == "1"
 d = json.load(open(path)) if os.path.exists(path) and os.path.getsize(path) else {}
 cmd = "python3 " + script
 hooks = d.setdefault("hooks", {})
 added = []
-def add(event, entry, marker):
+def add(event, entry, marker, matcher="*"):
     groups = hooks.setdefault(event, [])
     if any(marker in h.get("command", "") for g in groups for h in g.get("hooks", [])):
         return
-    groups.append({"matcher": "*", "hooks": [entry]})
+    groups.append({"matcher": matcher, "hooks": [entry]})
     added.append(event + "/" + marker)
 # asyncRewake: runs in the background, wakes the model only on exit code 2.
 # The timeout is the background lifetime; the poller exits on its own when its
@@ -201,6 +205,9 @@ if poller_enabled:
 if textual_guard_enabled:
     add("Stop", {"type": "command", "command": "python3 " + textual_guard_script,
                  "timeout": 5}, "textual-tool-call-guard.py")
+if sensitive_guard_enabled:
+    add("PreToolUse", {"type": "command", "command": "python3 " + sensitive_guard_script,
+                       "timeout": 5}, "sensitive-file-read-guard.py", matcher="Bash|Read|Grep")
 if added:
     tmp = path + ".tmp"
     with open(tmp, "w") as f:
