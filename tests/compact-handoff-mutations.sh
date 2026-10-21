@@ -45,6 +45,10 @@ run_case() {
     expiry)
       COMPACT_HANDOFF_SOURCE="$source" bash "$HERE/compact-handoff-expiry.sh" > "$log" 2>&1 || rc=$?
       ;;
+    fields)
+      COMPACT_HANDOFF_SOURCE="$source" ONLY="$assertion" \
+        bash "$HERE/compact-handoff-fields.sh" > "$log" 2>&1 || rc=$?
+      ;;
     audit)
       AUDIT_SOURCE="$source" ONLY="$assertion" \
         bash "$HERE/audit-deployment.sh" > "$log" 2>&1 || rc=$?
@@ -153,6 +157,29 @@ run_mutation tracked-audit-warning audit "tracked CLAUDE.md advisory does not fa
   'Advisory: CLAUDE.md is tracked; 这一段会出现在 git diff 里，需要你自己决定要不要提交。' \
   'Advisory: CLAUDE.md is tracked; warning omitted.'
 
+MUT="$(copy_hook_tree missing-field)"
+run_mutation missing-field fields missing-field "$MUT" \
+  'missing = [field["name"] for field in output_fields if not field["present"]]' \
+  'missing = [field["name"] for field in output_fields if field["present"]]'
+
+MUT="$(copy_hook_tree empty-value)"
+run_mutation empty-value fields empty-value "$MUT" \
+  'nonempty = bool(value.strip())' 'nonempty = True'
+
+MUT="$(copy_hook_tree nested-fields)"
+run_mutation nested-fields fields nested-items "$MUT" \
+  'r"^(?:[-*+]\s+|\d+[.)]\s+)(.*?)\s*$"' \
+  'r"^(?: {1,3})(?:[-*+]\s+|\d+[.)]\s+)(.*?)\s*$"'
+
+MUT="$(copy_hook_tree english-alias)"
+run_mutation english-alias fields sample-en "$MUT" \
+  '        alias_lookup = {_normalize_handoff_name(field["alias"]): (field, "alias")\\n                        for field in fields}' \
+  '        alias_lookup = {}'
+
+MUT="$(copy_hook_tree complete-alert)"
+run_mutation complete-alert fields render-complete "$MUT" \
+  '                if names:' '                if names is not None:'
+
 # A no-op mutant must pass its paired test and be explicitly reported as surviving.
 MUT="$(copy_hook_tree control-survivor)"
 BASE="$LOG_DIR/control-survivor.baseline.log"
@@ -186,8 +213,8 @@ if [ "$SURVIVED" -gt 0 ]; then
   printf 'MUTATION RESULT: SURVIVED (%d)\n' "$SURVIVED"
   exit 1
 fi
-if [ "$KILLED" -ne 10 ]; then
-  printf 'MUTATION RESULT: NOT RUN (killed %d/10)\n' "$KILLED"
+if [ "$KILLED" -ne 15 ]; then
+  printf 'MUTATION RESULT: NOT RUN (killed %d/15)\n' "$KILLED"
   exit 2
 fi
 printf 'MUTATION RESULT: ALL KILLED (%d)\n' "$KILLED"

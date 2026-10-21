@@ -327,6 +327,14 @@ with tempfile.TemporaryDirectory() as temp:
     _, directory = hook.storage_dir(str(proj.resolve()))
     record_path = next(path for path in pathlib.Path(directory).glob("*.json")
                        if json.loads(path.read_text()).get("session_id") == "latency-session")
+    record = json.loads(record_path.read_text(encoding="utf-8"))
+    record["summary"] = "## 交接\nsynthetic handoff\n"
+    record["handoff_check"] = {
+        "version": 1, "section_present": True,
+        "fields": [{"name": "synthetic field", "present": True, "by": "name"}],
+        "missing_fields": [],
+    }
+    hook.atomic_write(str(record_path), record)
     present_samples = []
     for _ in range(100):
         record = json.loads(record_path.read_text())
@@ -338,7 +346,23 @@ with tempfile.TemporaryDirectory() as temp:
     print("HANDOFF_LATENCY_PRESENT_MS=" + json.dumps(present_samples))
     print("HANDOFF_P95_BASELINE_MS=%.3f" % p95(empty_samples))
     print("HANDOFF_P95_PRESENT_MS=%.3f" % p95(present_samples))
-    check("SessionStart handoff p95 stays within 200ms", p95(present_samples) <= 200)
+    record = json.loads(record_path.read_text(encoding="utf-8"))
+    record["handoff_check"] = {
+        "version": 1, "section_present": True,
+        "fields": [{"name": "synthetic field", "present": False, "by": None}],
+        "missing_fields": ["synthetic field"],
+    }
+    hook.atomic_write(str(record_path), record)
+    missing_samples = []
+    for _ in range(100):
+        record = json.loads(record_path.read_text())
+        record["consumed"], record["consumed_at"] = False, None
+        hook.atomic_write(str(record_path), record)
+        missing_samples.append(sample())
+    print("HANDOFF_LATENCY_MISSING_MS=" + json.dumps(missing_samples))
+    print("HANDOFF_P95_MISSING_MS=%.3f" % p95(missing_samples))
+    check("SessionStart handoff p95 stays within 50ms",
+          p95(present_samples) <= 50 and p95(missing_samples) <= 50)
 
     record = json.loads(record_path.read_text())
     record["consumed"], record["consumed_at"] = False, None

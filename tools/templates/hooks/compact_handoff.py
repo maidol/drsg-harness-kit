@@ -13,6 +13,7 @@ except ImportError:
     fcntl = None
 import json
 import os
+import re
 import stat
 import subprocess
 import sys
@@ -157,6 +158,13 @@ def write_record(data):
         return
 
     project = project_path()
+    handoff_check = None
+    try:
+        instructions = project_handoff_block(project)
+        if instructions is not None:
+            handoff_check = check_handoff(summary, instructions)
+    except Exception as exc:
+        diagnose("handoff field check skipped (%s)" % type(exc).__name__)
     root, directory = storage_dir(project)
     os.makedirs(directory, mode=0o700, exist_ok=True)
     os.chmod(directory, 0o700)
@@ -181,6 +189,8 @@ def write_record(data):
         "consumed": False,
         "consumed_at": None,
     }
+    if handoff_check is not None:
+        record["handoff_check"] = handoff_check
     record = redact_record(record)
     payload = json.dumps(record, ensure_ascii=False).encode("utf-8")
     sid_hash = hashlib.sha256(record["session_id"].encode("utf-8")).hexdigest()[:16]
@@ -319,6 +329,140 @@ def selected_sections(summary):
     return selected
 
 
+def parse_handoff_fields(template_text):
+    """Return ordered field rules parsed from the compact instructions."""
+    lines = template_text.splitlines()
+    markers = {}
+    for line in lines:
+        if not re.match(r"^\s{0,3}[-*+]\s+", line):
+            continue
+        match = re.search(r"\[handoff:([a-z0-9_-]+)\]", line, re.I)
+        if not match:
+            continue
+        marker = match.group(1).lower()
+        if marker in markers:
+            raise ValueError("duplicate handoff marker")
+        prefix = line[:match.start()].strip()
+        prefix = re.sub(r"^[-*+]\s+", "", prefix)
+        if "：" in prefix:
+            prefix = prefix.split("：", 1)[0]
+        name = re.sub(r"\s+", " ", prefix).strip()
+        if not name:
+            raise ValueError("empty handoff field name")
+        markers[marker] = {"marker": marker, "name": name, "alias": None}
+
+    comments = re.findall(r"<!--\s*handoff-aliases\b(.*?)-->", template_text, re.S)
+    if len(comments) != 1 or not markers:
+        raise ValueError("handoff fields or alias comment missing")
+    aliases = {}
+    for marker, alias in re.findall(r"\[handoff:([a-z0-9_-]+)\]\s*=\s*([^;]+)", comments[0], re.I):
+        marker = marker.lower()
+        alias = alias.strip()
+        if marker in aliases or not alias:
+            raise ValueError("duplicate or empty handoff alias")
+        aliases[marker] = alias
+    if set(aliases) != set(markers):
+        raise ValueError("handoff aliases do not match fields")
+    for marker, field in markers.items():
+        field["alias"] = aliases[marker]
+    return list(markers.values())
+
+
+def _normalize_handoff_name(value):
+    value = value.replace("，", ",").replace("：", ":")
+    return re.sub(r"\s+", " ", value).strip().casefold()
+
+
+def project_handoff_block(project):
+    """Read the managed compact-instructions block from project CLAUDE.md."""
+    path = os.path.join(project, "CLAUDE.md")
+    try:
+        with open(path, encoding="utf-8") as stream:
+            text = stream.read()
+    except FileNotFoundError:
+        return None
+    start_tag = "<!-- BEGIN DRSG COMPACT INSTRUCTIONS -->"
+    end_tag = "<!-- END DRSG COMPACT INSTRUCTIONS -->"
+    if start_tag not in text and end_tag not in text:
+        return None
+    if text.count(start_tag) != 1 or text.count(end_tag) != 1:
+        raise ValueError("invalid managed compact-instructions block")
+    start = text.index(start_tag) + len(start_tag)
+    end = text.index(end_tag)
+    if end < start:
+        raise ValueError("invalid managed compact-instructions block")
+    return text[start:end]
+
+
+def check_handoff(summary, template_text):
+    """Return versioned section and per-field presence/source data."""
+    fields = parse_handoff_fields(template_text)
+    section = next((item for item in selected_sections(summary)
+                    if item[1].lower() == "交接"), None)
+    present = {field["marker"]: {"present": False, "by": None}
+               for field in fields}
+    if section is not None:
+        section_lines = section[2].splitlines()[1:]
+        name_lookup = {_normalize_handoff_name(field["name"]): (field, "name")
+                       for field in fields}
+        alias_lookup = {_normalize_handoff_name(field["alias"]): (field, "alias")
+                        for field in fields}
+        top_level = re.compile(r"^(?:[-*+]\s+|\d+[.)]\s+)(.*?)\s*$")
+        parsed = []
+        for index, line in enumerate(section_lines):
+            match = top_level.match(line)
+            if not match:
+                continue
+            content = match.group(1)
+            marker_match = re.search(r"\[handoff:([a-z0-9_-]+)\]", content, re.I)
+            by = None
+            field = None
+            value = ""
+            if marker_match:
+                marker = marker_match.group(1).lower()
+                field = next((entry for entry in fields if entry["marker"] == marker), None)
+                suffix = content[marker_match.end():].lstrip()
+                if field is not None and suffix.startswith((":", "：")):
+                    by = "marker"
+                    value = suffix[1:]
+            else:
+                separator = min((position for position in
+                                 (content.find(":"), content.find("：")) if position >= 0),
+                                default=-1)
+                if separator >= 0:
+                    key, value = content[:separator].strip(), content[separator + 1:]
+                    normalized = _normalize_handoff_name(key)
+                    found = name_lookup.get(normalized) or alias_lookup.get(normalized)
+                    if found:
+                        field, by = found
+            if field is not None:
+                parsed.append((index, field, by, value))
+
+        for position, field, by, value in parsed:
+            nonempty = bool(value.strip())
+            if not nonempty:
+                next_line = position + 1
+                while next_line < len(section_lines):
+                    candidate = section_lines[next_line]
+                    if candidate.strip() and not candidate.startswith((" ", "\t")):
+                        break
+                    if candidate.strip():
+                        nonempty = True
+                    next_line += 1
+            state = present[field["marker"]]
+            if nonempty and not state["present"]:
+                state["present"] = True
+                state["by"] = by
+
+    output_fields = [{"name": field["name"],
+                      "present": present[field["marker"]]["present"],
+                      "by": present[field["marker"]]["by"]}
+                     for field in fields]
+    missing = [field["name"] for field in output_fields if not field["present"]]
+    return {"version": 1, "section_present": section is not None,
+            "fields": output_fields, "missing_fields": missing}
+
+
 def current_work_line(summary):
     for _, title, text in selected_sections(summary):
         if title.lower() in ("current work", "当前工作"):
@@ -423,7 +567,20 @@ def render_handoff(project, records):
     s1_header = render_s1_header(latest)
     path_note = "完整摘要文件：%s\n需要全文时用 Read 读取该文件。" % latest_path
     prefix = [header, s1_header] + ([stale] if stale else [])
-    empty_text = "\n\n".join(prefix + ["", metadata, path_note])
+    check = latest.get("handoff_check")
+    warning = ""
+    if isinstance(check, dict) and check.get("version") == 1:
+        if check.get("section_present") is False:
+            warning = "（这次摘要没有「交接」一节；请先用 git status、git log 和计划文档核实。）"
+        elif check.get("section_present") is True:
+            missing_fields = check.get("missing_fields")
+            if isinstance(missing_fields, list):
+                names = [name.strip() for name in missing_fields
+                         if isinstance(name, str) and name.strip()]
+                if names:
+                    warning = "（交接字段缺失：%s；请先用 git status、git log 和计划文档核实。）" % "、".join(names)
+    warning_prefix = prefix + ([warning] if warning else [])
+    empty_text = "\n\n".join(warning_prefix + ["", metadata, path_note])
     available = max(0, 8000 - len(empty_text))
     if len(selected) > available:
         marker = "\n[交接块已截断；完整摘要见文件：%s]" % latest_path
@@ -431,7 +588,7 @@ def render_handoff(project, records):
             selected = selected[:available - len(marker)] + marker
         else:
             selected = selected[:available]
-    parts = prefix + ([selected] if selected else []) + [metadata, path_note]
+    parts = warning_prefix + ([selected] if selected else []) + [metadata, path_note]
     text = "\n\n".join(parts)
     text = redact(text)[0] if redact else text
     return text[:8000]

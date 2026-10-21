@@ -74,7 +74,24 @@ KEY="$(printf %s "$PROJECT" | sha256sum | cut -d' ' -f1)"
 ls -la "${XDG_DATA_HOME:-$HOME/.local/share}/drsg/compact-handoffs/$KEY"
 ```
 
-如需查看某条记录，可在本机用编辑器打开其中的 JSON 文件。摘要虽已脱敏，仍可能包含项目内容，请勿无必要地复制或分享。
+PostCompact 只核对模板字段是否有非空值，不会改写摘要。缺字段或缺少「交接」章节时，下一次 startup/clear 注入会显示提醒；字段齐全时不增加文字。旧记录、未托管项目和核对失败均视为未核对，不显示缺项提醒。若只想查看某条记录的字段名和在场状态、不打印摘要或字段值，可运行：
+
+```bash
+python3 - /path/to/one-record.json <<'PY'
+import json
+import pathlib
+import sys
+
+record = json.loads(pathlib.Path(sys.argv[1]).read_text())
+check = record.get("handoff_check")
+if not check:
+    print("未核对")
+else:
+    for field in check.get("fields", []):
+        state = "在场" if field.get("present") else "缺失"
+        print(f"{field['name']}\t{state}")
+PY
+```
 
 可单独为某个项目关闭或恢复托管指令，不必运行整套安装。退出标记按项目真实路径计算，保存在 `${XDG_CONFIG_HOME:-$HOME/.config}/drsg/compact-instructions-opt-outs/`；项目处于退出状态时，安装与审计都不会读取或改动其 `CLAUDE.md`：
 

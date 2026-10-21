@@ -117,6 +117,29 @@ KEY="$(printf %s "$PROJECT" | sha256sum | cut -d' ' -f1)"
 ls -la "${XDG_DATA_HOME:-$HOME/.local/share}/drsg/compact-handoffs/$KEY"
 ```
 
+PostCompact checks only whether each template field has a non-empty value; it
+never rewrites the summary. A missing-field or missing-section reminder appears
+on the next startup/clear injection. Complete handoffs add no text. Old records,
+unmanaged projects, and failed checks are treated as unverified without a warning.
+To inspect one record without printing its summary or field values, run:
+
+```bash
+python3 - /path/to/one-record.json <<'PY'
+import json
+import pathlib
+import sys
+
+record = json.loads(pathlib.Path(sys.argv[1]).read_text())
+check = record.get("handoff_check")
+if not check:
+    print("unverified")
+else:
+    for field in check.get("fields", []):
+        state = "present" if field.get("present") else "missing"
+        print(f"{field['name']}\t{state}")
+PY
+```
+
 The managed instructions can be disabled or restored for one project without
 changing the normal setup flow. The opt-out marker is keyed by the project's
 real path under `${XDG_CONFIG_HOME:-$HOME/.config}/drsg/compact-instructions-opt-outs/`;
