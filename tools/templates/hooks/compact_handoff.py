@@ -141,8 +141,62 @@ def redact_record(value):
     return value
 
 
+def capture_owner():
+    """Best-effort identity for the Claude process that ran this hook."""
+    if _common is None:
+        return None
+    try:
+        pid = _common._claude_pid()
+        if not isinstance(pid, int) or isinstance(pid, bool) or pid <= 0:
+            return None
+        proc = _common._proc(pid)
+        if not proc or not isinstance(proc[0], int) or isinstance(proc[0], bool):
+            return None
+        lanes = _common._hook_lanes(pid)
+        lanes = sorted({lane for lane in lanes
+                        if isinstance(lane, str) and lane.strip()})
+        return {"pid": pid, "start": proc[0], "lanes": lanes or ["*"]}
+    except Exception:
+        return None
+
+
+def normalize_owner(record):
+    """Normalize current and legacy record owner metadata."""
+    owner = record.get("owner") if isinstance(record, dict) else None
+    if not isinstance(owner, dict):
+        return {"pid": None, "start": None, "lanes": ["*"]}
+    pid, start = owner.get("pid"), owner.get("start")
+    if (not isinstance(pid, int) or isinstance(pid, bool) or pid <= 0
+            or not isinstance(start, int) or isinstance(start, bool)):
+        return {"pid": None, "start": None, "lanes": ["*"]}
+    lanes = owner.get("lanes")
+    if not isinstance(lanes, list) or any(not isinstance(lane, str) or not lane.strip()
+                                          for lane in lanes):
+        lanes = ["*"]
+    else:
+        lanes = sorted(set(lanes)) or ["*"]
+    return {"pid": pid, "start": start, "lanes": lanes}
+
+
+def owner_alive(record, cache):
+    owner = normalize_owner(record)
+    pid, start = owner["pid"], owner["start"]
+    if pid is None:
+        return False
+    if pid not in cache:
+        try:
+            cache[pid] = _common._proc(pid) if _common is not None else None
+        except Exception:
+            cache[pid] = None
+    proc = cache[pid]
+    return bool(isinstance(proc, (tuple, list)) and len(proc) >= 2
+                and proc[0] == start and proc[1] not in ("Z", "X"))
+
+
 def write_record(data):
-    if data.get("trigger") not in ("auto", "manual") or data.get("is_sidechain"):
+    if (data.get("trigger") not in ("auto", "manual") or data.get("is_sidechain")
+            or data.get("is_fork") or data.get("parent_session_id")
+            or data.get("agent_type") in ("subagent", "sidechain", "fork")):
         return
     summary = safe_summary(data.get("compact_summary"))
     if summary is None:
@@ -170,6 +224,7 @@ def write_record(data):
     os.chmod(directory, 0o700)
     now = time.time()
     created = datetime.datetime.fromtimestamp(now, datetime.timezone.utc).isoformat()
+    owner = capture_owner()
     record = {
         "version": 1,
         "compaction_id": str(uuid.uuid4()),
@@ -179,6 +234,7 @@ def write_record(data):
         "trigger": data["trigger"],
         "project_path": project,
         "transcript_path": transcript,
+        "owner": owner,
         "branch": git_value(project, "branch", "--show-current"),
         "head": git_value(project, "rev-parse", "HEAD"),
         "git_status": git_status(project),
@@ -197,11 +253,14 @@ def write_record(data):
     target = os.path.join(directory, sid_hash + ".json")
     with DirectoryLock(directory):
         atomic_write(target, record)
-        cleanup(directory, now)
+        owner_cache = ({owner["pid"]: (owner["start"], "S", 1)}
+                       if owner is not None else {})
+        cleanup(directory, now, owner_cache)
 
 
-def cleanup(directory, now):
+def cleanup(directory, now, owner_cache=None):
     records = []
+    owner_cache = owner_cache if owner_cache is not None else {}
     for name in os.listdir(directory):
         if not name.endswith(".json"):
             continue
@@ -212,18 +271,29 @@ def cleanup(directory, now):
             if now - float(record.get("created_at_epoch", 0)) > ttl_seconds():
                 os.unlink(path)
             else:
+                consumed = bool(record.get("consumed"))
+                alive = not consumed and owner_alive(record, owner_cache)
                 records.append((float(record.get("created_at_epoch", 0)), path,
-                                bool(record.get("consumed"))))
+                                consumed, alive))
         except Exception:
             continue
-    records.sort(key=lambda item: (not item[2], item[0]))
+    records.sort(key=lambda item: (not item[2], item[3], item[0]))
+    removed = False
     while len(records) > MAX_RECORDS:
-        _, path, _ = records.pop(0)
+        index = next((i for i, item in enumerate(records) if item[2]), None)
+        if index is None:
+            index = next((i for i, item in enumerate(records) if not item[3]), None)
+        if index is None:
+            diagnose("record limit exceeded; all remaining owners are active")
+            break
+        _, path, _, _ = records.pop(index)
         try:
             os.unlink(path)
         except OSError:
             pass
-        diagnose("removed oldest record to enforce 10-record limit")
+        removed = True
+    if removed:
+        diagnose("removed consumed or inactive record to enforce 10-record limit")
 
 
 class DirectoryLock:
@@ -628,8 +698,22 @@ class PendingHandoff:
             self.active = False
 
 
+def _ownership_notices(dead_other, live_other):
+    lines = []
+    for path, record in dead_other:
+        owner = normalize_owner(record)
+        lanes = ",".join(owner["lanes"])
+        lines.append("其他车道的已退出交接：%s | lanes %s | %s" % (
+            record.get("created_at", "?"), lanes, path))
+    if live_other:
+        owners = {(normalize_owner(record)["pid"], normalize_owner(record)["start"])
+                  for _, record in live_other}
+        lines.append("仍有 %d 个其他活跃会话的交接未消费（仅计数，不显示摘要或路径）。" % len(owners))
+    return lines
+
+
 def prepare_handoff(project, source, data):
-    if source not in ("startup", "clear") or os.environ.get("DRSG_COMPACT_HANDOFF", "1") != "1":
+    if source not in ("startup", "clear", "resume") or os.environ.get("DRSG_COMPACT_HANDOFF", "1") != "1":
         return None, None
     if (data.get("is_sidechain") or data.get("is_fork") or data.get("parent_session_id")
             or data.get("agent_type") in ("subagent", "sidechain", "fork")):
@@ -642,7 +726,12 @@ def prepare_handoff(project, source, data):
         batch = PendingHandoff(directory, [])
         batch.__enter__()
         now = time.time()
-        cleanup(directory, now)
+        current = capture_owner() if source != "resume" else None
+        owner_cache = {}
+        if current is not None:
+            # The hook could only run while its owning Claude process is live.
+            owner_cache[current["pid"]] = (current["start"], "S", 1)
+        cleanup(directory, now, owner_cache)
         records = []
         for name in os.listdir(directory):
             if not name.endswith(".json"):
@@ -657,14 +746,57 @@ def prepare_handoff(project, source, data):
             except Exception:
                 continue
         records.sort(key=lambda item: float(item[1].get("created_at_epoch", 0)))
-        if not records:
+
+        if source == "resume":
+            session_id = data.get("session_id")
+            selected = [(path, record) for path, record in records
+                        if isinstance(session_id, str) and session_id
+                        and record.get("session_id") == session_id]
+            if not selected:
+                batch.finish(False)
+                return None, None
+            batch.records = selected
+            return None, batch
+
+        own, dead_same_lane, dead_other, live_other = [], [], [], []
+        for path, record in records:
+            owner = normalize_owner(record)
+            if (current is not None and owner["pid"] == current["pid"]
+                    and owner["start"] == current["start"]):
+                own.append((path, record))
+            elif owner_alive(record, owner_cache):
+                live_other.append((path, record))
+            elif current is None:
+                # Without our identity, use the D1/N4 compatibility candidate set:
+                # anything that cannot be proven live is eligible for project-level selection.
+                dead_same_lane.append((path, record))
+            elif owner["lanes"] == current["lanes"]:
+                dead_same_lane.append((path, record))
+            else:
+                dead_other.append((path, record))
+
+        selected = own or dead_same_lane
+        notices = _ownership_notices(dead_other, live_other)
+        if not selected and not notices:
             batch.finish(False)
             return None, None
-        batch.records = records
-        return render_handoff(project, records), batch
+        if selected:
+            batch.records = selected
+            text = render_handoff(project, selected)
+        else:
+            text = ""
+            batch.finish(False)
+            batch = None
+        if notices:
+            suffix = "\n\n".join(notices)
+            if text:
+                text = text[:max(0, 8000 - len(suffix) - 2)] + "\n\n" + suffix
+            else:
+                text = suffix[:8000]
+        return text, batch
     except Exception as exc:
         try:
-            if "batch" in locals():
+            if "batch" in locals() and batch is not None:
                 batch.finish(False)
         except Exception:
             pass

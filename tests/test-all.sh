@@ -21,6 +21,8 @@ bash "$REPO/tests/audit-deployment.sh"
 bash "$REPO/tests/compact-instructions.sh"
 bash "$REPO/tests/compact-handoff.sh"
 bash "$REPO/tests/compact-handoff-fields.sh"
+bash "$REPO/tests/compact-handoff-ownership.sh"
+bash "$REPO/tests/compact-handoff-ownership-mutations.sh"
 bash "$REPO/tests/compact-handoff-expiry.sh"
 bash "$REPO/tests/compact-handoff-mutations.sh"
 

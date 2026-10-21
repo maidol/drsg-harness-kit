@@ -45,6 +45,10 @@ run_case() {
     expiry)
       COMPACT_HANDOFF_SOURCE="$source" bash "$HERE/compact-handoff-expiry.sh" > "$log" 2>&1 || rc=$?
       ;;
+    ownership)
+      COMPACT_HANDOFF_SOURCE="$source" ONLY="$assertion" \
+        bash "$HERE/compact-handoff-ownership.sh" > "$log" 2>&1 || rc=$?
+      ;;
     fields)
       COMPACT_HANDOFF_SOURCE="$source" ONLY="$assertion" \
         bash "$HERE/compact-handoff-fields.sh" > "$log" 2>&1 || rc=$?
@@ -65,13 +69,13 @@ run_mutation() {
   local name="$1" suite="$2" assertion="$3" source="$4" old="$5" new="$6"
   local target="$T/$name.py" base_log="$LOG_DIR/$name.baseline.log"
   local mutant_log="$LOG_DIR/$name.mutant.log" base_rc=0 mutant_rc=0
-  if [ "$suite" = handoff ]; then
+  if [ "$suite" = handoff ] || [ "$suite" = ownership ]; then
     target="$(dirname "$source")/$name-mutant.py"
   elif [ "$suite" = install ]; then
     target="$T/install/$name-mutant.sh"
   fi
   baseline_source="$source"
-  if [ "$suite" = handoff ]; then baseline_source="$HOOK_SOURCE"; fi
+  if [ "$suite" = handoff ] || [ "$suite" = ownership ]; then baseline_source="$HOOK_SOURCE"; fi
   if run_case "$suite" "$assertion" "$baseline_source" "$base_log"; then
     base_rc=0
   else
@@ -121,9 +125,9 @@ run_mutation expiry expiry "expired record cleanup prunes file" "$MUT" \
   '            if now - float(record.get("created_at_epoch", 0)) < ttl_seconds():'
 
 MUT="$(copy_hook_tree source-filter)"
-run_mutation source-filter handoff "resume does not read or consume handoff" "$MUT" \
-  'if source not in ("startup", "clear") or os.environ.get("DRSG_COMPACT_HANDOFF", "1") != "1":' \
-  'if source not in ("startup", "clear", "resume") or os.environ.get("DRSG_COMPACT_HANDOFF", "1") != "1":'
+run_mutation source-filter ownership "resume-consumes-own" "$MUT" \
+  'if source not in ("startup", "clear", "resume") or os.environ.get("DRSG_COMPACT_HANDOFF", "1") != "1":' \
+  'if source not in ("startup", "clear") or os.environ.get("DRSG_COMPACT_HANDOFF", "1") != "1":'
 
 MUT="$(copy_hook_tree redaction)"
 run_mutation redaction handoff "safe_summary redacts before persistence" "$MUT" \
@@ -136,8 +140,8 @@ run_mutation output-cap handoff "rendered handoff is capped at 8,000 with trunca
 
 MUT="$(copy_hook_tree daemon-project-dependency)"
 run_mutation daemon-project-dependency handoff "tokenless SessionStart injects handoff" "$MUT" \
-  '    if source not in ("startup", "clear") or os.environ.get("DRSG_COMPACT_HANDOFF", "1") != "1":' \
-  '    if source not in ("startup", "clear") or not os.environ.get("DRSG_TOKEN") or os.environ.get("DRSG_COMPACT_HANDOFF", "1") != "1":'
+  '    if source not in ("startup", "clear", "resume") or os.environ.get("DRSG_COMPACT_HANDOFF", "1") != "1":' \
+  '    if source not in ("startup", "clear", "resume") or not os.environ.get("DRSG_TOKEN") or os.environ.get("DRSG_COMPACT_HANDOFF", "1") != "1":'
 
 MUT="$(copy_hook_tree mtime-threshold)"
 run_mutation mtime-threshold handoff "late transcript mtime adds D2 notice without reading content" "$MUT" \

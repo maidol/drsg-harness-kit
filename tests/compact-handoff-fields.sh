@@ -327,9 +327,11 @@ def startup_p95():
         transcript.write_text("synthetic", encoding="utf-8")
         env_names = ("XDG_DATA_HOME", "DRSG_COMPACT_HANDOFF")
         previous = {key: os.environ.get(key) for key in env_names}
+        old_common = hook._common
         os.environ["XDG_DATA_HOME"] = str(root / "xdg")
         os.environ["DRSG_COMPACT_HANDOFF"] = "1"
         try:
+            hook._common = type("NoOwner", (), {"_claude_pid": staticmethod(lambda: None)})()
             _, directory = hook.storage_dir(str(project.resolve()))
             os.makedirs(directory, mode=0o700, exist_ok=True)
             path = str(pathlib.Path(directory) / "synthetic.json")
@@ -354,6 +356,7 @@ def startup_p95():
             print("FIELDS_STARTUP_P95_MS=%.3f" % (p95 * 1000))
             assert p95 <= .050, "SessionStart P95 %.2fms > 50ms" % (p95 * 1000)
         finally:
+            hook._common = old_common
             for key, value in previous.items():
                 if value is None:
                     os.environ.pop(key, None)

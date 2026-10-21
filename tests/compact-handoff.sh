@@ -99,9 +99,13 @@ with tempfile.TemporaryDirectory() as temp:
     hook.write_record({**base, "compact_summary": "replacement"})
     check("same-session record replaced", len(list(pathlib.Path(directory).glob("*.json"))) == 1 and
           json.loads(files[0].read_text(encoding="utf-8"))["summary"] == "replacement")
+    # Unknown owners are eligible for the legacy ten-record cap.
+    old_common = hook._common
+    hook._common = type("NoOwner", (), {"_claude_pid": staticmethod(lambda: None)})()
     for i in range(12):
         hook.write_record({**base, "session_id": "session-%d" % i,
                            "compact_summary": "summary %d" % i})
+    hook._common = old_common
     check("at most ten records retained", len(list(pathlib.Path(directory).glob("*.json"))) == 10)
 
     # More than fifty dirty paths are truncated without exposing porcelain status codes.

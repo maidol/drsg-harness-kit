@@ -107,6 +107,52 @@ transcript contents are not read. This local handoff works without the memory
 daemon. Set `DRSG_COMPACT_HANDOFF=0` in the Claude Code environment to disable
 saving and injection.
 
+Ownership is recorded as the Claude process PID plus `/proc` start time and its
+sorted lane list. `startup`/`clear` first use records from the same process
+identity; if none exists, they may take over all eligible exited records whose
+lane lists match exactly. Other active owners are represented by a count only;
+exited records from other lanes are listed without their summaries. `claude -r`
+resumes by the original `session_id`: its record is consumed after successful
+SessionStart output but is not injected. Same-session compactions replace the
+prior record. The 72-hour TTL applies to every record; the 10-record cleanup
+protects active owners and may temporarily exceed the limit if all records are
+active.
+
+On Linux, list ownership metadata without printing summary or Event fields:
+
+```bash
+python3 - <<'PY'
+import glob
+import hashlib
+import json
+import os
+import pathlib
+
+project = os.path.realpath(os.environ.get("CLAUDE_PROJECT_DIR") or os.getcwd())
+base = os.environ.get("XDG_DATA_HOME") or os.path.expanduser("~/.local/share")
+key = hashlib.sha256(project.encode()).hexdigest()
+for path in sorted(glob.glob(os.path.join(base, "drsg", "compact-handoffs", key, "*.json"))):
+    try:
+        record = json.loads(pathlib.Path(path).read_text(encoding="utf-8"))
+        owner = record.get("owner") if isinstance(record.get("owner"), dict) else {}
+        pid, start = owner.get("pid"), owner.get("start")
+        lanes = owner.get("lanes") if isinstance(owner.get("lanes"), list) else ["*"]
+        status = "unknown"
+        if isinstance(pid, int) and isinstance(start, int):
+            try:
+                rest = pathlib.Path("/proc/%d/stat" % pid).read_text().rsplit(")", 1)[1].split()
+                status = ("exited" if int(rest[19]) != start or rest[0] in ("Z", "X") else "active")
+            except (OSError, ValueError, IndexError):
+                status = "unknown"
+        lanes = [lane for lane in lanes if isinstance(lane, str)]
+        print("%s\t%s\t%s\t%s\t%s\t%s" % (
+            pid if pid is not None else "?", status, ",".join(lanes),
+            record.get("created_at", "?"), bool(record.get("consumed")), path))
+    except (OSError, ValueError):
+        continue
+PY
+```
+
 To inspect the records for a project, calculate its real-path key and list the
 resulting directory; open a JSON record locally if needed (the summary is
 redacted, but may still contain project information):
