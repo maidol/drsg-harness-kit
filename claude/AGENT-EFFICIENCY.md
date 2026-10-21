@@ -38,6 +38,7 @@
 
 - **tree 没变，就不重做验证。** 测试跑完记下 tree（`git add -A && git write-tree`）；要提交时 tree 相同就引用那次结果（命令、通过数、tree），不同就对新的改动重新选测试。
 - **回归只跑受影响的测试。** 用 `python3 ~/.drsg-memory/tools/affected-tests.py --base <起点>` 按工作区改动和代码图选测试，跑它打印的 `run:` 命令，或加 `--run` 直接跑。打出 `mode: full` 就按 `full:` 的理由跑整包，不许自己挑着跑。验收请求里贴它的完整输出，审核方按 `why:` 核对。整包只在它判 `full` 时和发版前（`release.sh check`）跑。`full: no rule covers …` 报的是单元测试不读的文件（部署、CI 配置）时，加进 `.drsg/affected-tests.json` 的 `ignore`，写法见 `tools/README.md` 的 Affected tests 一节。
+- **被权限检查拦下的命令，本会话不再重跑。** 隔一段时间再跑同一条，会被判成绕过（`[Auto-Mode Bypass]`），比第一次更难解开。被拦后停下，在回执或 notice 里写明命令、当前 tree 和拦截理由原文，请审核方或用户代跑，结果按「tree + 命令 + 通过数」引用。仓库里有同名副本的工具（例如 drsg-harness-kit 仓库里的 `tools/affected-tests.py`），在那个仓库里跑仓库内那份，分类器不会把它当外部代码。
 - 测试输出用机器可读格式写进文件（`go test -json > f`、`pytest --junitxml=f`），再只取失败项；终端输出会被截断。
 - **已知的老红要事先点名**；多出来的失败先到父提交上单跑那一条，分清新红老红。
 - **变异自检：每个变异要配一个只有那一道门拦得住的用例。** 不能有更早的检查先拦住，也不能有后面的检查以同样结果停下；做不到就断言原因文字。变异体活下来先看用例实际停在哪，不许删变异体或放宽断言；造不出来就在回执里写明理由。
