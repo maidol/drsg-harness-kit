@@ -478,13 +478,16 @@ python3 -c 'import json, os; d=json.load(open(os.path.expanduser("~/.claude/sett
 `setup.sh` registers this script as a global `PreToolUse` hook in `~/.claude/settings.json` with matcher `Bash|Read|Grep` (skip with `--no-sensitive-read-guard`). It denies, before they run, tool calls that would print the whole content of a file that may hold credentials, because that content lands in the transcript and is sent to the model. The deny reason names the file category and the safe alternatives, never the command.
 
 - **Denied**: `.mcp.json`, `~/.claude.json`, `.claude/settings.json`, `settings.local.json`, `.env`, `.env.*`, `*.env`, `.netrc`, `.npmrc`, `.pypirc`, `*.pem`, `*.key`, `id_rsa*`, `id_ed25519*` read by `cat`, `head`, `tail`, `less`, `sed`, `awk` and similar readers (also after `|`, `&&`, `;` and inside `$(...)`), by `grep`/`rg` without `-c/-l/-L/-q`, by `jq` with a filter that prints values, by `Read`, and by `Grep` with `output_mode: content`.
-- **Allowed**: `jq` filters ending in `keys`, `keys_unsorted`, `length` or `type`, `has(...)`, an object of `type`/`url`/`command`/`matcher` only, or a plain path ending in one of those fields (`.mcpServers[].url`, `.hooks.PreToolUse[].matcher`); `grep -c/-l/-L/-q`; `ls`, `stat`, `wc`; sourcing an env file; writing to one; anything inside a heredoc body, which is data rather than commands; and `*.example*`, `*.sample`, `*.template`, `*.pub`.
+- **Allowed**: `jq` filters whose every output is a key name, a count, a type, a boolean (`has`, `==`, `test`, ...), a literal, a field named `type`/`url`/`command`/`matcher`, or a path that stays inside a settings file's `hooks` (`.hooks.PreToolUse[].matcher`, `.hooks.SessionStart`); `,`, `|`, `[...]`, `{...}`, `select`, `map`, `join` and similar combine them. A string with `\(...)`, `$var`, `env`, `input`, `debug` or any function not on the list is denied; `grep -c/-l/-L/-q`; `ls`, `stat`, `wc`; sourcing an env file; writing to one; anything inside a heredoc body, which is data rather than commands; and `*.example*`, `*.sample`, `*.template`, `*.pub`.
 - It stops the casual `cat .mcp.json`, not a determined bypass; your own `!` commands do not go through hooks.
 - At session start, the project hooks also warn (terminal only) when `.mcp.json` holds a plaintext `Authorization` header, naming the server, never the value. `drsg-watch` is exempt: `codegraph-router.py` and `codegraph.sh` read its token verbatim and do not expand `${VAR}`, so it has to stay plaintext.
 
 ```bash
 jq '.mcpServers | keys' .mcp.json
 jq '.mcpServers[] | {type, url}' .mcp.json
+jq -r '.hooks.PreToolUse[]? | .matcher + "  " + (.hooks[].command | split("/")[-1])' ~/.claude/settings.json
+jq 'keys, (.env // {} | keys)' .claude/settings.local.json
+jq -e '.env.CLAUDE_CODE_AUTO_COMPACT_WINDOW == "300000"' .claude/settings.local.json
 grep -c WDZT_AK config.env
 ```
 

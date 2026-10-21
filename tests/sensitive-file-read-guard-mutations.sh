@@ -12,7 +12,7 @@ trap 'rm -rf "$T"' EXIT
 KILLED=0
 SURVIVED=0
 NOT_RUN=0
-EXPECTED=14
+EXPECTED=21
 
 run_mutation() {
   local name="$1" only="$2" variant="$3" copy="$T/$1.py"
@@ -39,8 +39,15 @@ pairs = {
     "grep-pattern-as-file": ("            positional = positional[1:]  # the first one is the pattern\n", "            pass\n"),
     "redirect-target-read": ('        elif re.fullmatch(r"\\d*>>?", a):  # `> file`: written, not read\n            skip = True\n', ""),
     "jq-keys-denied": ('JQ_STRUCTURE = {"keys", "keys_unsorted", "length", "type"}', "JQ_STRUCTURE = set()"),
-    "jq-path-any-field": ("        return bool(fields) and fields[-1] in JQ_SAFE_FIELDS\n", "        return bool(fields)\n"),
-    "jq-path-not-allowed": ("    if JQ_PATH.fullmatch(last):\n", "    if False:\n"),
+    "jq-path-any-field": ("    return bool(named) and named[-1] in JQ_SAFE_FIELDS\n", "    return bool(named)\n"),
+    "jq-path-not-allowed": ("            return _jq_path_safe(path), path\n", "            return False, path\n"),
+    "jq-known-path-inherits": ("        if known:\n", "        if False:\n"),
+    "jq-hooks-root": ('    if path[:1] == ("hooks",):\n', "    if False:\n"),
+    "jq-hook-fields-any": ("        if all(p in JQ_HOOK_FIELDS for p in path[2:] if isinstance(p, str)):\n", "        if True:\n"),
+    "jq-comma-any": ("            s, _ = self.alt(ctx)\n            safe, path = safe and s, None\n", "            s, _ = self.alt(ctx)\n            safe, path = safe or s, None\n"),
+    "jq-compare-passes": ("            self.arith(ctx)\n            result = (True, None)\n", "            s, _ = self.arith(ctx)\n            result = (result[0] and s, None)\n"),
+    "jq-unknown-fn-safe": ("            return ctx[0] and all(s for s, _ in args), None\n        raise _JqUnsafe()\n", "            return ctx[0] and all(s for s, _ in args), None\n        return True, None\n"),
+    "jq-interp-safe": ('"interp" if "\\\\(" in lit else "str"', '"str"'),
     "heredoc-body-parsed": ("                i = _skip_heredocs(text, i, heredocs)\n", "                heredocs.clear()\n"),
     "heredoc-never-ends": ("            if (line.lstrip(\"\\t\") if strip else line) == word:\n", "            if False:\n"),
     "no-op": ("def category(path):\n", "def category(path):  # no-op\n"),
@@ -77,6 +84,13 @@ run_mutation redirect-target-read "writing an env file with a heredoc" redirect-
 run_mutation jq-keys-denied "jq keys" jq-keys-denied
 run_mutation jq-path-any-field "jq path to a header value" jq-path-any-field
 run_mutation jq-path-not-allowed "jq path to server url" jq-path-not-allowed
+run_mutation jq-known-path-inherits "jq string built from fields" jq-known-path-inherits
+run_mutation jq-hooks-root "jq hook objects" jq-hooks-root
+run_mutation jq-hook-fields-any "jq string built from fields" jq-hook-fields-any
+run_mutation jq-comma-any "jq comma with an unsafe side" jq-comma-any
+run_mutation jq-compare-passes "jq comparison prints only a boolean" jq-compare-passes
+run_mutation jq-unknown-fn-safe "jq unknown function" jq-unknown-fn-safe
+run_mutation jq-interp-safe "jq string interpolation" jq-interp-safe
 run_mutation heredoc-body-parsed "heredoc body is data" heredoc-body-parsed
 run_mutation heredoc-never-ends "command after the heredoc terminator" heredoc-never-ends
 if [ "${MUTATION_SELF_TEST:-0}" = 1 ]; then

@@ -72,6 +72,23 @@ check "jq path to a header value" "$(first "$(bash_d "jq -r '.mcpServers[].heade
 check "jq path to an env value" "$(first "$(bash_d "jq '.env.ANTHROPIC_API_KEY' .claude/settings.local.json")")" deny
 check "jq path to args" "$(first "$(bash_d "jq '.mcpServers[].args[]' .mcp.json")")" deny
 check "jq string built from fields" "$(first "$(bash_d "jq '.hooks[][] | .matcher + .env.X' ~/.claude/settings.json")")" deny
+# Structure-only filters that combine several expressions: the seven
+# false denials seen 10-19..10-21 (paths shortened).
+check "jq matcher plus command basename" "$(bash_d "jq -r '.hooks.PreToolUse[]? | .matcher + \"  \" + (.hooks[].command | split(\"/\")[-1])' ~/.claude/settings.json")" allow
+check "jq hook event names joined" "$(bash_d "jq -r '.hooks | keys | join(\",\")' .claude/settings.local.json")" allow
+check "jq hook objects" "$(bash_d "jq -c '.hooks.SessionStart, .hooks.PostCompact' .claude/settings.local.json")" allow
+check "jq object of keys, matchers and counts" "$(bash_d "jq '{event_names:(.hooks|keys),session_start_matchers:[.hooks.SessionStart[].matcher],postcompact_count:(.hooks.PostCompact|length)}' .claude/settings.json")" allow
+check "jq keys of the file and of env" "$(bash_d "jq 'keys, (.env // {} | keys)' .claude/settings.local.json")" allow
+check "jq array of keys" "$(bash_d "jq -c '[keys, (.env // {} | keys)]' .claude/settings.local.json")" allow
+check "jq comparison prints only a boolean" "$(bash_d "jq -e '.env.CLAUDE_CODE_AUTO_COMPACT_WINDOW == \"50000\"' settings.local.json")" allow
+# ...and combinations that still carry a value out.
+check "jq comma with an unsafe side" "$(first "$(bash_d "jq '.env, .hooks' .claude/settings.local.json")")" deny
+check "jq array holding headers" "$(first "$(bash_d "jq '[.mcpServers[].headers]' .mcp.json")")" deny
+check "jq object holding env" "$(first "$(bash_d "jq '{a: .env}' .claude/settings.local.json")")" deny
+check "jq unknown function" "$(first "$(bash_d "jq '.env | debug' .claude/settings.local.json")")" deny
+check "jq string interpolation" "$(first "$(bash_d "jq '\"\\(.env.X)\"' .claude/settings.local.json")")" deny
+check "jq tostring keeps env unsafe" "$(first "$(bash_d "jq '.env | tostring' .claude/settings.local.json")")" deny
+check "jq hooks key below the top level" "$(first "$(bash_d "jq '.mcpServers[] | .hooks' .mcp.json")")" deny
 check "grep -c" "$(bash_d 'grep -c WDZT_AK config.env')" allow
 check "grep -l" "$(bash_d 'grep -l Bearer .mcp.json')" allow
 check "grep -q in combined flags" "$(bash_d 'grep -iq token .env && echo yes')" allow
@@ -102,6 +119,7 @@ check "disabled switch" "$(bash_d 'cat .mcp.json' DRSG_SENSITIVE_READ_GUARD_DISA
 OUT="$(bash_d 'cat /secret-dir-name/.mcp.json')"
 check "reason names the category" "$(printf '%s' "$OUT" | grep -c 'category: mcp-config')" 1
 check "reason gives the jq alternative" "$(printf '%s' "$OUT" | grep -c "jq '.mcpServers | keys'")" 1
+check "reason gives the settings alternative" "$(printf '%s' "$OUT" | grep -c "jq '.hooks | keys'")" 1
 check "reason does not echo the command" "$(printf '%s' "$OUT" | grep -c 'secret-dir-name')" 0
 
 # --- broken input fails open, silently ---
