@@ -6,6 +6,8 @@
 logs/
 .mcp.json
 
+.vscode
+
 __pycache__
 
 # Claude Code local instructions and hooks
