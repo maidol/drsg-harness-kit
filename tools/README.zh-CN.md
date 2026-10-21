@@ -67,6 +67,24 @@
 
 `--l3-chat` 也接受原始的、兼容 OpenAI 的 base URL——例如自托管 proxy——但只有接受该参数的 daemon 的 `digest.run` 才能使用；使用上面的 preset 名称时，任何 daemon 都可以。provider 契约由 memory daemon 实现，而不是由本仓库实现。
 
+### 托管 Compact instructions
+
+bundle 的 `setup.sh` 会管理项目 `CLAUDE.md` 中的 `# Compact instructions` 区块。以下独立选项只调整这个项目的指令区块，不安装或刷新记忆 hooks：
+
+```bash
+bash ../setup.sh --no-compact-instructions /path/to/project  # 退出
+bash ../setup.sh --compact-instructions /path/to/project     # 恢复/更新
+```
+
+直接安装器也接受相同选项：
+
+```bash
+bash ./install.sh --no-compact-instructions /path/to/project
+bash ./install.sh --compact-instructions /path/to/project
+```
+
+退出状态按项目真实路径计算，保存在 checkout 外的 `${XDG_CONFIG_HOME:-$HOME/.config}/drsg/compact-instructions-opt-outs/`。项目退出期间，setup 和 audit 不会读取或改动该项目的 `CLAUDE.md`。PostCompact 交接记录的存储与 SessionStart 注入行为见仓库根目录 README。
+
 ## 加入已有 daemon
 
 如果目标地址已经有进程响应 `/health`，`install.sh` 会**加入**它，而不是启动第二个 daemon。之后所有项目都会进入同一个 `memory` plane，由各自的 `Project` 节点区分，recall 也可以跨项目访问。对已有项目重新运行时，安装器会在进程内部复用 `.drsg/env` 中的凭据，不打印 token、不将其放入命令行；它会刷新 `drsg-events`，保留已有 `drsg` 注册。若 `drsg` 缺失，安装器会警告，`install.sh --audit` 也会报告漂移；请通过安全的凭据流程手动注册。新项目加入仍需提供该 daemon 的 token：

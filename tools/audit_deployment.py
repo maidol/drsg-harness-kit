@@ -422,7 +422,15 @@ def mcp_issues(project_dir, claude_json, tools_dir):
     return issues
 
 
-def check_layer4(project_dir, claude_json=None, tools_dir=None):
+def compact_opt_out_path(project_dir):
+    config_home = os.environ.get("XDG_CONFIG_HOME") or os.path.join(
+        os.path.expanduser("~"), ".config")
+    project = os.path.realpath(project_dir)
+    key = hashlib.sha256(project.encode("utf-8")).hexdigest()
+    return os.path.join(config_home, "drsg", "compact-instructions-opt-outs", key)
+
+
+def check_layer4(project_dir, claude_json=None, tools_dir=None, compact_template=None):
     """Layer 4: Project Settings & Docs.
 
     N1: Report missing CLAUDE.md when hooks are installed.
@@ -449,6 +457,15 @@ def check_layer4(project_dir, claude_json=None, tools_dir=None):
             for script_name in ["pre_tool_use.py", "session_start.py", "user_prompt.py", "session_end.py"]:
                 if not any(script_name in cmd for cmd in commands):
                     issues.append(f"Hook not registered in settings.local.json: {script_name}")
+            post_compact = hooks.get("PostCompact") or []
+            if not any("compact_handoff.py" in h.get("command", "")
+                       for group in post_compact
+                       for h in group.get("hooks", [])):
+                issues.append("Hook not registered in settings.local.json: compact_handoff.py (PostCompact)")
+            session_start = hooks.get("SessionStart") or []
+            if not any("clear" in str(group.get("matcher", "")).split("|")
+                       for group in session_start):
+                issues.append("SessionStart matcher missing clear in settings.local.json")
             # check legacy event.py allow rules
             perms = d.get("permissions", {})
             allows = perms.get("allow", []) if isinstance(perms, dict) else []
@@ -470,19 +487,63 @@ def check_layer4(project_dir, claude_json=None, tools_dir=None):
         if "DRSG_TOKEN=" not in env_content or "DRSG_API=" not in env_content:
             issues.append(".drsg/env missing DRSG_TOKEN or DRSG_API")
 
-    # 3. CLAUDE.md Event block & N1 check
+    # 3. CLAUDE.md docs and N1 check. An opt-out skips every CLAUDE.md read.
     claude_md = os.path.join(project_dir, "CLAUDE.md")
     hooks_installed = os.path.isdir(os.path.join(project_dir, ".claude", "hooks"))
-    if os.path.exists(claude_md):
-        with open(claude_md, encoding="utf-8") as f:
-            cmd_content = f.read()
-        has_event_block = ("<!-- drsg-memory:events:begin -->" in cmd_content) or (
-            "event.py" in cmd_content and "drsg-events" in cmd_content
-        )
-        if not has_event_block:
-            issues.append("CLAUDE.md lacks cross-agent Event documentation block")
-    elif hooks_installed:
-        issues.append("Missing CLAUDE.md while hooks are installed")
+    compact_disabled = os.path.exists(compact_opt_out_path(project_dir))
+    if compact_disabled:
+        res["details"].append("Compact instructions intentionally disabled (opt-out marker present); CLAUDE.md checks skipped")
+    else:
+        claude_bytes = None
+        if os.path.exists(claude_md):
+            try:
+                with open(claude_md, "rb") as f:
+                    claude_bytes = f.read()
+                cmd_content = claude_bytes.decode("utf-8", "replace")
+                has_event_block = ("<!-- drsg-memory:events:begin -->" in cmd_content) or (
+                    "event.py" in cmd_content and "drsg-events" in cmd_content
+                )
+                if not has_event_block:
+                    issues.append("CLAUDE.md lacks cross-agent Event documentation block")
+            except OSError as exc:
+                issues.append("Cannot read CLAUDE.md: " + type(exc).__name__)
+        elif hooks_installed:
+            issues.append("Missing CLAUDE.md while hooks are installed")
+
+        if compact_template:
+            if not os.path.isfile(compact_template):
+                issues.append("Compact instructions template missing")
+            else:
+                try:
+                    with open(compact_template, "rb") as f:
+                        expected = f.read().rstrip(bytes((10, 13)))
+                    begin = b"<!-- BEGIN DRSG COMPACT INSTRUCTIONS -->"
+                    end = b"<!-- END DRSG COMPACT INSTRUCTIONS -->"
+                    starts = claude_bytes.count(begin) if claude_bytes is not None else 0
+                    ends = claude_bytes.count(end) if claude_bytes is not None else 0
+                    if starts == 0 and ends == 0:
+                        issues.append("CLAUDE.md Compact instructions block missing")
+                    elif starts != 1 or ends != 1:
+                        issues.append("CLAUDE.md Compact instructions block repeated or malformed")
+                    else:
+                        start = claude_bytes.find(begin) + len(begin)
+                        finish = claude_bytes.find(end, start)
+                        if finish < 0:
+                            issues.append("CLAUDE.md Compact instructions block malformed")
+                        elif claude_bytes[start:finish] != bytes((10,)) + expected + bytes((10,)):
+                            issues.append("CLAUDE.md Compact instructions block differs from template")
+                except OSError as exc:
+                    issues.append("Cannot read compact instructions template: " + type(exc).__name__)
+
+        if claude_bytes is not None:
+            try:
+                tracked = subprocess.run(
+                    ["git", "-C", project_dir, "ls-files", "--error-unmatch", "--", "CLAUDE.md"],
+                    capture_output=True, timeout=5).returncode == 0
+            except Exception:
+                tracked = False
+            if tracked:
+                res["details"].append("Advisory: CLAUDE.md is tracked; 这一段会出现在 git diff 里，需要你自己决定要不要提交。")
 
     # 4. pre-commit completeness-guard & forbidden-literals status. Ask git where its hooks live:
     # a project that sets core.hooksPath keeps pre-commit there, not in .git/hooks.
@@ -638,6 +699,9 @@ def main():
     templates_dir = os.path.join(repo_tools, "templates", "hooks")
     if not os.path.isdir(templates_dir):
         templates_dir = os.path.join(deployed_tools, "templates", "hooks")
+    compact_template = os.path.join(repo_tools, "templates", "compact-instructions.md")
+    if not os.path.isfile(compact_template):
+        compact_template = os.path.join(deployed_tools, "templates", "compact-instructions.md")
 
     report = {"layers": [], "overall_ok": True}
 
@@ -694,7 +758,7 @@ def main():
             continue
 
         report["layers"].append(check_layer3(templates_dir, p))
-        report["layers"].append(check_layer4(p, claude_json, deployed_tools))
+        report["layers"].append(check_layer4(p, claude_json, deployed_tools, compact_template))
         report["layers"].append(check_layer5(p, deployed_tools if os.path.exists(deployed_tools) else repo_tools))
 
     report["overall_ok"] = all(item["ok"] for item in report["layers"])

@@ -231,8 +231,25 @@ def hook_drift_message(proj_dir):
         return ""
 
 
-def hook_out(system_message=None, **extra):
+_ACTIVE_HANDOFF = None
+
+
+def hook_out(system_message=None, handoff=None, **extra):
     # stdout must contain exactly one JSON object.
+    pending = None
+    if handoff:
+        try:
+            from compact_handoff import prepare_handoff
+            handoff_text, pending = prepare_handoff(*handoff)
+            if handoff_text:
+                existing = extra.get("additionalContext", "")
+                extra["additionalContext"] = "\n\n".join(
+                    part for part in (existing, handoff_text) if part)
+        except ModuleNotFoundError:
+            pass
+        except Exception as exc:
+            print("[drsg-compact-handoff] SessionStart injection failed (%s)" %
+                  type(exc).__name__, file=sys.stderr)
     out = {"hookSpecificOutput": {"hookEventName": "SessionStart"}}
     out["hookSpecificOutput"].update(extra)
     # `systemMessage` is top-level, not hook-specific, and it is the only
@@ -241,7 +258,14 @@ def hook_out(system_message=None, **extra):
     # person who decides whether it gets done this session.
     if system_message:
         out["systemMessage"] = system_message
-    print(json.dumps(out))
+    written = False
+    try:
+        print(json.dumps(out))
+        sys.stdout.flush()
+        written = True
+    finally:
+        if pending:
+            pending.finish(written)
 
 
 def compact_context(source, existing=None):
@@ -255,7 +279,10 @@ def compact_context(source, existing=None):
 
 def compact_context_kwargs(source, existing=None):
     context = compact_context(source, existing)
-    return {"additionalContext": context} if context is not None else {}
+    result = {"additionalContext": context} if context is not None else {}
+    if _ACTIVE_HANDOFF:
+        result["handoff"] = _ACTIVE_HANDOFF
+    return result
 
 
 BACKUP_RE = re.compile(r"^backup-\d{8}T\d{12}Z-[0-9a-f]{8}$")
@@ -489,7 +516,8 @@ def open_events(proj_dir, token, limit=3):
         # `fresh` marks a to-do the graph has no receipt for yet, so the ack
         # below records when it was FIRST delivered rather than most recently.
         out.append({"key": key, "line": line,
-                    "fresh": not pr.get("seen_at")})
+                    "fresh": not pr.get("seen_at"),
+                    "summary": pr.get("summary") or ""})
         if len(out) >= limit:
             break
     return out
@@ -715,17 +743,25 @@ if _common is not None:
 
 
 def main(now=None):
+    try:
+        data = json.load(sys.stdin)
+        if not isinstance(data, dict):
+            data = {}
+    except Exception:
+        data = {}
+    proj_dir = os.environ.get("CLAUDE_PROJECT_DIR") or os.getcwd()
+    source = data.get("source", "startup")
+    handoff = (proj_dir, source, data)
+    global _ACTIVE_HANDOFF
+    _ACTIVE_HANDOFF = handoff
     if _common is None:
-        hook_out()
+        hook_out(handoff=handoff)
         return
     ts_start = time.time()
-    data = json.load(sys.stdin)
-    proj_dir = os.environ.get("CLAUDE_PROJECT_DIR") or os.getcwd()
     load_env(proj_dir)
     drift_message = join_messages("\n", hook_drift_message(proj_dir),
                                   settings_secret_message(proj_dir),
                                   mcp_bearer_message(proj_dir))
-    source = data.get("source", "startup")
     # Re-read config after load_env populated os.environ (install.sh's .drsg/env).
     global API, PLANE, BRIEFING_MAX_CHARS
     API = os.environ.get("DRSG_API", API)
@@ -910,7 +946,7 @@ def main(now=None):
                          "orphan_facts": None if orphans is None else len(orphans),
                          "ms": int((time.time() - ts_start) * 1000)})
     user_msg = join_messages("\n", user_msg, drift_message, backup_notice)
-    hook_out(system_message=user_msg or None, additionalContext=ctx)
+    hook_out(system_message=user_msg or None, handoff=handoff, additionalContext=ctx)
 
 
 if __name__ == "__main__":

@@ -177,6 +177,15 @@ if [ "$CASE" = all ] || [ "$CASE" = mutual-exclusion ]; then
     check "mutual-exclusion-$option" \
       "$( [ "$rc" -ne 0 ] && grep -c -- "--all-projects cannot be combined with --$option" "$T/mutual-$option.out" || true )" 1
   done
+  for compact_option in no-compact-instructions compact-instructions; do
+    HOME="$HOME_DIR" CLAUDE_CONFIG_DIR="$CLAUDE_DIR" DRSG_MEM_DIR="$MEM_DIR" \
+      FAKE_INSTALL_LOG="$FAKE_INSTALL_LOG" MAIN_BRANCH_CALLS="$MAIN_BRANCH_CALLS" \
+      PATH="$T/bin:$PATH" bash "$BUNDLE/setup.sh" --all-projects \
+      "--$compact_option" "$ALPHA" > "$T/mutual-$compact_option.out" 2>&1
+    rc=$?
+    check "mutual-exclusion-$compact_option" \
+      "$( [ "$rc" -ne 0 ] && grep -c 'compact-instructions options are standalone' "$T/mutual-$compact_option.out" || true )" 1
+  done
   check "mutual-exclusion-happens-before-global-write" \
     "$(wc -l < "$MAIN_BRANCH_CALLS" | tr -d ' ')" 0
   check "mutual-exclusion-does-not-call-installer" \

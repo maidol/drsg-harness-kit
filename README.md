@@ -84,6 +84,56 @@ If the session runs in a worktree, `/exit` returns to the primary worktree but
 does not terminate Claude Code. Prefer `tmux attach` to reconnect to an existing
 process when one is running.
 
+## Compact handoff
+
+Project setup installs a managed `# Compact instructions` block in `CLAUDE.md`.
+It asks each compact summary to include a structured `交接` section with the
+plan, current step, next action, unresolved errors, exact user constraints, and
+uncommitted files. The block is refreshed idempotently on setup; the rest of
+`CLAUDE.md` remains project-owned. If `CLAUDE.md` is tracked, setup prints an
+advisory because the managed block will appear in `git diff`.
+
+The project PostCompact hook saves the redacted `compact_summary` from manual
+and automatic compaction outside the project tree. It does not read transcript
+content or call a model. Records are keyed by the project's real path and stored
+under `${XDG_DATA_HOME:-$HOME/.local/share}/drsg/compact-handoffs/<sha256-of-realpath>/`
+with directory mode `0700` and file mode `0600`. The default retention is 72
+hours and at most 10 records; `DRSG_COMPACT_HANDOFF_TTL_HOURS` changes the age
+limit. SessionStart injects pending handoffs on `startup` and `clear` only, and
+marks them consumed only after its hook output is successfully produced. It
+prioritizes `交接`, links the complete record, and caps injected text at 8,000
+characters. A transcript modification-time check can add a stale-work reminder;
+transcript contents are not read. This local handoff works without the memory
+daemon. Set `DRSG_COMPACT_HANDOFF=0` in the Claude Code environment to disable
+saving and injection.
+
+To inspect the records for a project, calculate its real-path key and list the
+resulting directory; open a JSON record locally if needed (the summary is
+redacted, but may still contain project information):
+
+```bash
+PROJECT="$(realpath /path/to/project)"
+KEY="$(printf %s "$PROJECT" | sha256sum | cut -d' ' -f1)"
+ls -la "${XDG_DATA_HOME:-$HOME/.local/share}/drsg/compact-handoffs/$KEY"
+```
+
+The managed instructions can be disabled or restored for one project without
+changing the normal setup flow. The opt-out marker is keyed by the project's
+real path under `${XDG_CONFIG_HOME:-$HOME/.config}/drsg/compact-instructions-opt-outs/`;
+while opted out, setup and audit leave that project's `CLAUDE.md` untouched.
+
+```bash
+/tmp/drsg-harness-kit-*/setup.sh --no-compact-instructions /path/to/project
+/tmp/drsg-harness-kit-*/setup.sh --compact-instructions /path/to/project
+```
+
+`/clear` still clears the conversation's active context; the handoff is a
+separate recovery path on the following startup, not a way to preserve the
+cleared context verbatim. Verify manual `/compact` and `/clear` behavior in an
+interactive session before relying on the workflow. Automatic compaction and
+its PostCompact payload should also be checked on the Claude Code version in
+use; do not infer that it fired merely because a session became long.
+
 `--project` also installs a git pre-commit hook in that project that runs
 `completeness-guard.py --staged`. A new CLI option, environment variable,
 route or config key that no doc mentions is printed as a notice; it blocks

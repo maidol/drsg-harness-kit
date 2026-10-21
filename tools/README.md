@@ -124,6 +124,30 @@ say — but only against a daemon whose `digest.run` accepts one; with the prese
 names above, any daemon will do. The provider contract is implemented by the
 memory daemon, not by this repository.
 
+### Managed Compact instructions
+
+The bundle's `setup.sh` manages a `# Compact instructions` block in each
+project's `CLAUDE.md`. These standalone options change only that project's
+instruction block and do not install or refresh the memory hooks:
+
+```bash
+bash ../setup.sh --no-compact-instructions /path/to/project  # opt out
+bash ../setup.sh --compact-instructions /path/to/project     # restore/update
+```
+
+The direct installer has the same flags:
+
+```bash
+bash ./install.sh --no-compact-instructions /path/to/project
+bash ./install.sh --compact-instructions /path/to/project
+```
+
+Opt-out state is stored outside the checkout under
+`${XDG_CONFIG_HOME:-$HOME/.config}/drsg/compact-instructions-opt-outs/`, keyed
+by the project's real path. While opted out, setup and audit do not read or
+modify that project's `CLAUDE.md`. See the root README for the PostCompact
+handoff storage and SessionStart behavior.
+
 ## Joining an existing daemon
 
 If something already answers `/health` at the target address, `install.sh`

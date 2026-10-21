@@ -5,13 +5,15 @@
 set -u
 
 HERE="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
-AUDIT="$HERE/../tools/audit_deployment.py"
+AUDIT="${AUDIT_SOURCE:-$HERE/../tools/audit_deployment.py}"
+ONLY="${ONLY:-}"
 T="$(mktemp -d)"
 trap 'rm -rf "$T"' EXIT
 
 RAN=0
 OK=0
 check() {
+  if [ -n "$ONLY" ] && [ "$ONLY" != "$1" ]; then return; fi
   RAN=$((RAN + 1))
   if [ "$2" = "$3" ]; then
     OK=$((OK + 1))
@@ -27,6 +29,9 @@ CLAUDE_DIR="$T/claude"
 PROJ="$T/project"
 
 mkdir -p "$REPO/tools/templates/hooks" "$REPO/claude" "$REPO/skills/agent-efficiency-retro" "$REPO/skills/codegraph" "$REPO/skills/diagram-conventions"
+mkdir -p "$T/xdg"
+export XDG_CONFIG_HOME="$T/xdg"
+cp "$HERE/../tools/templates/compact-instructions.md" "$REPO/tools/templates/compact-instructions.md"
 mkdir -p "$DEPLOYED_TOOLS/templates/hooks"
 mkdir -p "$CLAUDE_DIR/skills/agent-efficiency-retro" "$CLAUDE_DIR/skills/codegraph" "$CLAUDE_DIR/skills/diagram-conventions"
 mkdir -p "$PROJ/.claude/hooks" "$PROJ/.drsg"
@@ -43,6 +48,7 @@ echo "hook" > "$REPO/tools/templates/hooks/session_start.py"
 echo "hook" > "$REPO/tools/templates/hooks/session_end.py"
 echo "hook" > "$REPO/tools/templates/hooks/user_prompt.py"
 cp -r "$REPO/tools/templates/hooks/." "$DEPLOYED_TOOLS/templates/hooks/"
+cp "$REPO/tools/templates/compact-instructions.md" "$DEPLOYED_TOOLS/templates/compact-instructions.md"
 cp -r "$REPO/tools/templates/hooks/." "$PROJ/.claude/hooks/"
 chmod +x "$PROJ/.claude/hooks/"*.py
 
@@ -76,7 +82,8 @@ cat > "$PROJ/.claude/settings.local.json" <<'JSON'
 {
   "hooks": {
     "PreToolUse": [{"matcher": "Bash", "hooks": [{"command": "python3 pre_tool_use.py"}]}],
-    "SessionStart": [{"matcher": "*", "hooks": [{"command": "python3 session_start.py"}]}],
+    "SessionStart": [{"matcher": "startup|resume|compact|clear", "hooks": [{"command": "python3 session_start.py"}]}],
+    "PostCompact": [{"hooks": [{"command": "python3 compact_handoff.py"}]}],
     "UserPromptSubmit": [{"matcher": "*", "hooks": [{"command": "python3 user_prompt.py"}]}],
     "SessionEnd": [{"matcher": "*", "hooks": [{"command": "python3 session_end.py"}]}]
   }
@@ -89,6 +96,7 @@ cat > "$PROJ/CLAUDE.md" <<'MD'
 event block
 <!-- drsg-memory:events:end -->
 MD
+XDG_CONFIG_HOME="$XDG_CONFIG_HOME" HOME="$T/home" bash "$HERE/../tools/install.sh" --compact-instructions "$PROJ" > "$T/install-compact.out" 2>&1
 
 git -C "$REPO" add .
 git -C "$REPO" commit -q -m "initial commit"
@@ -128,6 +136,111 @@ PY
 python3 "$AUDIT" --repo "$REPO" --tools-dir "$DEPLOYED_TOOLS" --claude-dir "$CLAUDE_DIR" --project "$PROJ" --json > "$T/out1.json" 2>&1 || true
 l1_status=$(find_layer_ok "$T/out1.json" "L1")
 check "hermetic audit passes L1 when sync" "$l1_status" "ok"
+check "PostCompact registration passes L4 when present" "$(find_layer_details "$T/out1.json" "L4" | grep -c 'compact_handoff.py (PostCompact)' || true)" "0"
+check "SessionStart matcher with clear passes audit" "$(find_layer_details "$T/out1.json" "L4" | grep -c 'SessionStart matcher missing clear' || true)" "0"
+check "managed compact block passes audit" "$(find_layer_details "$T/out1.json" "L4" | grep -c 'Compact instructions block missing\|differs from template\|repeated or malformed' || true)" "0"
+cp "$PROJ/CLAUDE.md" "$T/claude-project.md"
+python3 - "$PROJ/CLAUDE.md" <<'PY'
+import sys
+p = sys.argv[1]
+data = open(p, "rb").read()
+begin = b"<!-- BEGIN DRSG COMPACT INSTRUCTIONS -->"
+end = b"<!-- END DRSG COMPACT INSTRUCTIONS -->"
+start = data.find(begin)
+finish = data.find(end, start) + len(end)
+open(p, "wb").write(data[:start] + data[finish:])
+PY
+python3 "$AUDIT" --repo "$REPO" --tools-dir "$DEPLOYED_TOOLS" --claude-dir "$CLAUDE_DIR" --project "$PROJ" --json > "$T/out_compact_missing.json" 2>&1 || true
+check "missing compact block is audit drift" "$(find_layer_details "$T/out_compact_missing.json" "L4" | grep -c 'Compact instructions block missing' || true)" "1"
+cp "$T/claude-project.md" "$PROJ/CLAUDE.md"
+python3 - "$PROJ/CLAUDE.md" <<'PY'
+import sys
+p = sys.argv[1]
+data = open(p, "rb").read()
+open(p, "wb").write(data.replace("逐项写".encode(), "逐行写".encode(), 1))
+PY
+python3 "$AUDIT" --repo "$REPO" --tools-dir "$DEPLOYED_TOOLS" --claude-dir "$CLAUDE_DIR" --project "$PROJ" --json > "$T/out_compact_drift.json" 2>&1 || true
+check "modified compact block is audit drift" "$(find_layer_details "$T/out_compact_drift.json" "L4" | grep -c 'Compact instructions block differs from template' || true)" "1"
+cp "$T/claude-project.md" "$PROJ/CLAUDE.md"
+python3 - "$PROJ/CLAUDE.md" <<'PY'
+import sys
+p = sys.argv[1]
+data = open(p, "rb").read()
+begin = b"<!-- BEGIN DRSG COMPACT INSTRUCTIONS -->"
+end = b"<!-- END DRSG COMPACT INSTRUCTIONS -->"
+start = data.find(begin)
+finish = data.find(end, start) + len(end)
+block = data[start:finish]
+open(p, "wb").write(data + b"\\n" + block + b"\\n")
+PY
+python3 "$AUDIT" --repo "$REPO" --tools-dir "$DEPLOYED_TOOLS" --claude-dir "$CLAUDE_DIR" --project "$PROJ" --json > "$T/out_compact_duplicate.json" 2>&1 || true
+check "duplicate compact block is audit drift" "$(find_layer_details "$T/out_compact_duplicate.json" "L4" | grep -c 'Compact instructions block repeated or malformed' || true)" "1"
+cp "$T/claude-project.md" "$PROJ/CLAUDE.md"
+python3 - "$PROJ/CLAUDE.md" <<'PY'
+import sys
+p = sys.argv[1]
+data = open(p, "rb").read()
+end = b"<!-- END DRSG COMPACT INSTRUCTIONS -->"
+open(p, "wb").write(data.replace(end, b"", 1))
+PY
+python3 "$AUDIT" --repo "$REPO" --tools-dir "$DEPLOYED_TOOLS" --claude-dir "$CLAUDE_DIR" --project "$PROJ" --json > "$T/out_compact_unpaired.json" 2>&1 || true
+check "unpaired compact marker is audit drift" "$(find_layer_details "$T/out_compact_unpaired.json" "L4" | grep -c 'Compact instructions block repeated or malformed' || true)" "1"
+mv "$T/claude-project.md" "$PROJ/CLAUDE.md"
+# D4: a tracked project gets an advisory only, with no audit failure.
+printf '{"projects":{"%s":{"mcpServers":{"drsg":{},"drsg-events":{}}}}}' "$PROJ" > "$CLAUDE_DIR/.claude.json"
+git -C "$PROJ" init -q
+git -C "$PROJ" add CLAUDE.md
+python3 "$AUDIT" --repo "$REPO" --tools-dir "$DEPLOYED_TOOLS" --claude-dir "$CLAUDE_DIR" --project "$PROJ" --json > "$T/out_compact_tracked.json" 2>&1 || true
+check "tracked CLAUDE.md advisory does not fail audit" "$(find_layer_ok "$T/out_compact_tracked.json" "L4")/$(find_layer_details "$T/out_compact_tracked.json" "L4" | grep -Fc '这一段会出现在 git diff 里，需要你自己决定要不要提交。' || true)" ok/1
+# Opt-out must not read CLAUDE.md, including when it is absent.
+cp "$PROJ/CLAUDE.md" "$T/claude-before-optout.md"
+XDG_CONFIG_HOME="$XDG_CONFIG_HOME" HOME="$T/home" bash "$HERE/../setup.sh" --no-compact-instructions "$PROJ" > "$T/compact-optout.out" 2>&1
+cmp -s "$PROJ/CLAUDE.md" "$T/claude-before-optout.md"
+check "setup opt-out leaves CLAUDE.md unchanged" "$?" 0
+check "per-project opt-out marker stored with private mode" "$(python3 - "$XDG_CONFIG_HOME" "$PROJ" <<'PY'
+import hashlib, os, stat, sys
+root, project = sys.argv[1:]
+marker = os.path.join(root, "drsg", "compact-instructions-opt-outs",
+                      hashlib.sha256(os.path.realpath(project).encode()).hexdigest())
+print("yes" if os.path.isfile(marker) and stat.S_IMODE(os.stat(marker).st_mode) == 0o600 else "no")
+PY
+)" yes
+mv "$PROJ/CLAUDE.md" "$T/claude-while-opted-out.md"
+python3 "$AUDIT" --repo "$REPO" --tools-dir "$DEPLOYED_TOOLS" --claude-dir "$CLAUDE_DIR" --project "$PROJ" --json > "$T/out_compact_optout.json" 2>&1 || true
+check "audit skips absent CLAUDE.md for opted-out project" "$(find_layer_ok "$T/out_compact_optout.json" "L4")" ok
+check "audit reports compact opt-out" "$(find_layer_details "$T/out_compact_optout.json" "L4" | grep -c 'Compact instructions intentionally disabled' || true)" 1
+cp "$T/claude-while-opted-out.md" "$PROJ/CLAUDE.md"
+XDG_CONFIG_HOME="$XDG_CONFIG_HOME" HOME="$T/home" bash "$HERE/../setup.sh" --compact-instructions "$PROJ" > "$T/compact-enable.out" 2>&1
+check "setup enable restores block and clears opt-out" "$(grep -c 'BEGIN DRSG COMPACT INSTRUCTIONS' "$PROJ/CLAUDE.md" || true)/$(test ! -e "$(python3 - "$XDG_CONFIG_HOME" "$PROJ" <<'PY'
+import hashlib, os, sys
+print(os.path.join(sys.argv[1], "drsg", "compact-instructions-opt-outs", hashlib.sha256(os.path.realpath(sys.argv[2]).encode()).hexdigest()))
+PY
+)" && echo absent)" 1/absent
+XDG_CONFIG_HOME="$XDG_CONFIG_HOME" HOME="$T/home" bash "$HERE/../tools/install.sh" --compact-instructions "$PROJ" > "$T/compact-idempotent.out" 2>&1
+cmp -s "$PROJ/CLAUDE.md" "$T/claude-before-optout.md"
+check "reinstall is idempotent and preserves outside text" "$?" 0
+cp "$PROJ/.claude/settings.local.json" "$T/settings.local.json"
+python3 - "$PROJ/.claude/settings.local.json" <<'PY'
+import json, sys
+path = sys.argv[1]
+data = json.load(open(path))
+data["hooks"]["SessionStart"][0]["matcher"] = "startup|resume|compact"
+json.dump(data, open(path, "w"))
+PY
+python3 "$AUDIT" --repo "$REPO" --tools-dir "$DEPLOYED_TOOLS" --claude-dir "$CLAUDE_DIR" --project "$PROJ" --json > "$T/out_clear_missing.json" 2>&1 || true
+check "old SessionStart matcher is audit drift" "$(find_layer_details "$T/out_clear_missing.json" "L4" | grep -c 'SessionStart matcher missing clear' || true)" "1"
+mv "$T/settings.local.json" "$PROJ/.claude/settings.local.json"
+cp "$PROJ/.claude/settings.local.json" "$T/settings.local.json"
+python3 - "$PROJ/.claude/settings.local.json" <<'PY'
+import json, sys
+path = sys.argv[1]
+data = json.load(open(path))
+data["hooks"].pop("PostCompact", None)
+json.dump(data, open(path, "w"))
+PY
+python3 "$AUDIT" --repo "$REPO" --tools-dir "$DEPLOYED_TOOLS" --claude-dir "$CLAUDE_DIR" --project "$PROJ" --json > "$T/out_postcompact_missing.json" 2>&1 || true
+check "missing PostCompact registration is audit drift" "$(find_layer_details "$T/out_postcompact_missing.json" "L4" | grep -c 'compact_handoff.py (PostCompact)' || true)" "1"
+mv "$T/settings.local.json" "$PROJ/.claude/settings.local.json"
 
 # 2. R2: uncommitted changes in repo working tree do NOT trigger L1 DRIFT
 echo "uncommitted draft" > "$REPO/tools/sample.sh"
@@ -266,13 +379,15 @@ cat > "$R2_PROJ/CLAUDE.md" <<'EOF'
 events
 <!-- drsg-memory:events:end -->
 EOF
+XDG_CONFIG_HOME="$XDG_CONFIG_HOME" HOME="$T/home" bash "$HERE/../tools/install.sh" --compact-instructions "$R2_PROJ" > "$T/install-r2-compact.out" 2>&1
 
 # User written rule that contains 'event.py' but is NOT the kit legacy allow rule
 cat > "$R2_PROJ/.claude/settings.local.json" <<EOF
 {
   "hooks": {
     "PreToolUse": [{"matcher": "Bash", "hooks": [{"command": "python3 pre_tool_use.py"}]}],
-    "SessionStart": [{"matcher": "*", "hooks": [{"command": "python3 session_start.py"}]}],
+    "SessionStart": [{"matcher": "startup|resume|compact|clear", "hooks": [{"command": "python3 session_start.py"}]}],
+    "PostCompact": [{"hooks": [{"command": "python3 compact_handoff.py"}]}],
     "UserPromptSubmit": [{"matcher": "*", "hooks": [{"command": "python3 user_prompt.py"}]}],
     "SessionEnd": [{"matcher": "*", "hooks": [{"command": "python3 session_end.py"}]}]
   },
@@ -314,5 +429,9 @@ python3 "$AUDIT" --repo "$REPO" --tools-dir "$DEPLOYED_TOOLS" --claude-dir "$CLA
 l4_r2_legacy=$(find_layer_ok "$T/out_r2_legacy.json" "L4")
 check "r2_legacy_rule_is_drift" "$l4_r2_legacy" "failed"
 
+if [ -n "$ONLY" ] && [ "$RAN" -eq 0 ]; then
+  echo "FAIL requested assertion was not run: $ONLY"
+  exit 2
+fi
 printf '\nPASS %d/%d\n' "$OK" "$RAN"
 [ "$OK" -eq "$RAN" ]

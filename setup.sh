@@ -37,6 +37,8 @@
 #   --no-textual-tool-call-guard do not register the textual tool call stop guard
 #   --no-sensitive-read-guard do not register the global guard that denies
 #                     whole-file reads of credential files (.mcp.json, env, keys)
+#   --no-compact-instructions DIR  opt this project out of the managed CLAUDE.md block
+#   --compact-instructions DIR     restore the managed block for this project
 #   --permission-guard DIR  add commit/push ask rules and narrow read-only allow
 #                     rules to DIR/.claude/settings.local.json (opt-in)
 #   --reviews-dir DIR teach the auto-mode classifier (~/.claude/settings.json)
@@ -53,10 +55,13 @@ PROJECT=""; ALL_PROJECTS=0; REPO=""; HUB=""; ROUTER=""; USAGE_REPORT=""; BIN="";
 TOOLS="${DRSG_MEM_DIR:-$HOME/.drsg-memory}/tools"
 FETCH=0; SKILLS=1; MAIN_BRANCH_WORKFLOW=1; POLLER=1; STREAK_HINT=1; TEXTUAL_TOOL_GUARD=1; SENSITIVE_READ_GUARD=1
 PG_DIR=""; REVIEWS_DIR=""; PRUNE=0; SELF_COMMIT=0; MODEL_PICKER=0
+COMPACT_ACTION=""; COMPACT_PROJECT=""
 
 while [ $# -gt 0 ]; do
   case "$1" in
     --project)    PROJECT="${2:?--project needs a path}"; shift 2 ;;
+    --no-compact-instructions) [ -z "$COMPACT_ACTION" ] || { echo "ERROR: choose only one compact-instructions option" >&2; exit 1; }; COMPACT_ACTION=off; COMPACT_PROJECT="${2:?--no-compact-instructions needs a project path}"; shift 2 ;;
+    --compact-instructions) [ -z "$COMPACT_ACTION" ] || { echo "ERROR: choose only one compact-instructions option" >&2; exit 1; }; COMPACT_ACTION=on; COMPACT_PROJECT="${2:?--compact-instructions needs a project path}"; shift 2 ;;
     --all-projects) ALL_PROJECTS=1; shift ;;
     --repo)       REPO="${2:?--repo needs a path}"; shift 2 ;;
     --hub)        HUB="${2:?--hub needs a path}"; shift 2 ;;
@@ -113,6 +118,19 @@ fi
 if [ "$SELF_COMMIT" -eq 1 ] && [ -z "$PG_DIR" ] && [ -z "$REVIEWS_DIR" ]; then
   echo "ERROR: --self-commit only applies together with --permission-guard DIR or --reviews-dir DIR" >&2
   exit 1
+fi
+if [ -n "$COMPACT_ACTION" ]; then
+  if [ -n "$PROJECT" ] || [ "$ALL_PROJECTS" -eq 1 ] || [ -n "$REPO" ] || [ -n "$HUB" ] || [ -n "$ROUTER" ] || [ -n "$USAGE_REPORT" ]; then
+    echo "ERROR: compact-instructions options are standalone and take one project path" >&2
+    exit 1
+  fi
+  [ -d "$COMPACT_PROJECT" ] || { echo "ERROR: project directory does not exist: $COMPACT_PROJECT" >&2; exit 1; }
+  [ -x "$HERE/tools/install.sh" ] || { echo "ERROR: tools/install.sh is missing from this bundle" >&2; exit 1; }
+  if [ "$COMPACT_ACTION" = "off" ]; then
+    exec bash "$HERE/tools/install.sh" --no-compact-instructions "$COMPACT_PROJECT"
+  else
+    exec bash "$HERE/tools/install.sh" --compact-instructions "$COMPACT_PROJECT"
+  fi
 fi
 
 [ -d "$HERE/tools" ] || { echo "ERROR: no tools/ next to $0 — run this from the unpacked bundle" >&2; exit 1; }

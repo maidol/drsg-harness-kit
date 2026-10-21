@@ -87,12 +87,23 @@ mkdir -p "$P/.claude/hooks" "$P/.drsg" "$OTHER"
 cat > "$P/.claude/settings.local.json" <<'JSON'
 {"hooks": {
   "PreToolUse": [{"matcher": "Bash", "hooks": [{"command": "python3 pre_tool_use.py"}]}],
-  "SessionStart": [{"matcher": "*", "hooks": [{"command": "python3 session_start.py"}]}],
+  "SessionStart": [{"matcher": "startup|resume|compact|clear", "hooks": [{"command": "python3 session_start.py"}]}],
   "UserPromptSubmit": [{"matcher": "*", "hooks": [{"command": "python3 user_prompt.py"}]}],
-  "SessionEnd": [{"matcher": "*", "hooks": [{"command": "python3 session_end.py"}]}]}}
+  "SessionEnd": [{"matcher": "*", "hooks": [{"command": "python3 session_end.py"}]}],
+  "PostCompact": [{"matcher": "*", "hooks": [{"command": "python3 compact_handoff.py"}]}]}}
 JSON
 printf 'DRSG_TOKEN=t\nDRSG_API=a\n' > "$P/.drsg/env"
 printf '<!-- drsg-memory:events:begin -->\nx\n<!-- drsg-memory:events:end -->\n' > "$P/CLAUDE.md"
+mkdir -p "$T/tools/templates"
+cp "$REPO/tools/templates/compact-instructions.md" "$T/tools/templates/compact-instructions.md"
+python3 - "$P/CLAUDE.md" "$T/tools/templates/compact-instructions.md" <<'PY'
+import pathlib, sys
+page, template = map(pathlib.Path, sys.argv[1:])
+body = template.read_bytes().rstrip(b"\n\r")
+with page.open("ab") as stream:
+    stream.write(b"\n<!-- BEGIN DRSG COMPACT INSTRUCTIONS -->\n" + body +
+                 b"\n<!-- END DRSG COMPACT INSTRUCTIONS -->\n")
+PY
 
 cfg() {  # cfg <file> <mode>: write a .claude.json for $P
   python3 - "$1" "$2" "$P" "$OTHER" <<'PY'

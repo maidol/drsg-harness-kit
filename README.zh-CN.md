@@ -60,6 +60,31 @@ tar xzf dist/drsg-harness-kit-*.tar.gz -C /tmp
 
 重新连接时，`claude -c` 会继续当前目录中最近的会话，不接收会话 ID；按 ID 恢复请用 `claude -r <session-id>`。如果会话在 worktree 中，`/exit` 会返回主工作区，但不会终止 Claude Code。若原进程仍在运行，优先使用 `tmux attach` 回到该进程。
 
+## 压缩交接
+
+项目安装会在 `CLAUDE.md` 中加入 kit 管理的 `# Compact instructions` 区块，要求压缩摘要单列结构化的「交接」章节，记录计划、当前步骤、下一步、未解决报错、用户原话约束和未提交文件。重复安装会幂等刷新这一区块，文件其余部分仍归项目所有。若 `CLAUDE.md` 已被 Git 跟踪，安装时会提示该区块会出现在 `git diff` 中，供你自行决定是否提交。
+
+项目 PostCompact hook 会把手动或自动压缩传入的 `compact_summary` 脱敏后保存在项目目录之外；它不读取 transcript 正文，也不调用模型。记录按项目真实路径的 SHA-256 分目录，默认位于 `${XDG_DATA_HOME:-$HOME/.local/share}/drsg/compact-handoffs/<真实路径的sha256>/`，目录权限为 `0700`、文件权限为 `0600`。默认保留 72 小时、最多 10 条；`DRSG_COMPACT_HANDOFF_TTL_HOURS` 可调整时限。SessionStart 只在 `startup` 和 `clear` 注入未消费交接，并且仅在 hook 成功输出后标记为已消费。注入时优先放「交接」章节，附完整记录路径，文本最多 8,000 字符。transcript 只检查修改时间，用于提示压缩后是否继续工作，不读其内容。即使记忆 daemon 不可用，本地交接仍可工作。在 Claude Code 的环境中设置 `DRSG_COMPACT_HANDOFF=0` 可同时关闭保存与注入。
+
+查看某个项目的记录目录：
+
+```bash
+PROJECT="$(realpath /path/to/project)"
+KEY="$(printf %s "$PROJECT" | sha256sum | cut -d' ' -f1)"
+ls -la "${XDG_DATA_HOME:-$HOME/.local/share}/drsg/compact-handoffs/$KEY"
+```
+
+如需查看某条记录，可在本机用编辑器打开其中的 JSON 文件。摘要虽已脱敏，仍可能包含项目内容，请勿无必要地复制或分享。
+
+可单独为某个项目关闭或恢复托管指令，不必运行整套安装。退出标记按项目真实路径计算，保存在 `${XDG_CONFIG_HOME:-$HOME/.config}/drsg/compact-instructions-opt-outs/`；项目处于退出状态时，安装与审计都不会读取或改动其 `CLAUDE.md`：
+
+```bash
+/tmp/drsg-harness-kit-*/setup.sh --no-compact-instructions /path/to/project  # 关闭
+/tmp/drsg-harness-kit-*/setup.sh --compact-instructions /path/to/project     # 恢复
+```
+
+`/clear` 仍会清除当前对话的活动上下文；交接是在后续 startup 中恢复工作的独立路径，不会原样保留已清除的上下文。依赖该流程前，应在交互式会话中手动验证 `/compact` 和 `/clear`。自动压缩及其 PostCompact payload 也应在实际使用的 Claude Code 版本上核实；不能仅凭会话变长就认定自动压缩已触发。
+
 
 ## 权限护栏（可选）
 

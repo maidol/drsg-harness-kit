@@ -33,6 +33,8 @@
 #   --audit             install nothing; run comprehensive 5-layer deployment
 #                       audit (runtime tools, global config & skills, hooks,
 #                       project settings & docs, code graph).
+#   --no-compact-instructions DIR  record a project opt-out without reading CLAUDE.md
+#   --compact-instructions DIR     remove the opt-out and manage the CLAUDE.md block
 #   -h, --help
 #
 # What it does:
@@ -95,6 +97,103 @@ L3_REASONING=""
 RESTART_DAEMON=0
 CHECK_ONLY=0
 AUDIT_ONLY=0
+COMPACT_ACTION=""
+COMPACT_PROJECT=""
+
+manage_compact_instructions() {
+  python3 - "$1" "$2" "$TEMPLATES/compact-instructions.md" <<'PYEOF'
+import hashlib
+import os
+import subprocess
+import sys
+import tempfile
+
+project, action, template_path = sys.argv[1:]
+project = os.path.realpath(project)
+config_home = os.environ.get("XDG_CONFIG_HOME") or os.path.join(
+    os.path.expanduser("~"), ".config")
+marker_dir = os.path.realpath(os.path.join(
+    config_home, "drsg", "compact-instructions-opt-outs"))
+try:
+    if os.path.commonpath((project, marker_dir)) == project:
+        raise ValueError("opt-out directory is inside the project")
+except ValueError as exc:
+    if str(exc) == "opt-out directory is inside the project":
+        sys.exit("ERROR: " + str(exc))
+marker = os.path.join(marker_dir, hashlib.sha256(project.encode("utf-8")).hexdigest())
+if action == "off":
+    os.makedirs(marker_dir, mode=0o700, exist_ok=True)
+    os.chmod(marker_dir, 0o700)
+    fd = os.open(marker, os.O_CREAT | os.O_WRONLY, 0o600)
+    os.close(fd)
+    os.chmod(marker, 0o600)
+    print("   Compact instructions disabled for " + project)
+    sys.exit(0)
+if action == "on":
+    try:
+        os.unlink(marker)
+    except FileNotFoundError:
+        pass
+if os.path.exists(marker):
+    print("   Compact instructions opted out; CLAUDE.md left untouched")
+    sys.exit(0)
+try:
+    with open(template_path, "rb") as stream:
+        body = stream.read().rstrip(bytes((10, 13)))
+except OSError as exc:
+    sys.exit("ERROR: Compact instructions template unavailable: " + type(exc).__name__)
+
+begin = b"<!-- BEGIN DRSG COMPACT INSTRUCTIONS -->"
+end = b"<!-- END DRSG COMPACT INSTRUCTIONS -->"
+newline = bytes((10,))
+block = begin + newline + body + newline + end
+path = os.path.join(project, "CLAUDE.md")
+try:
+    with open(path, "rb") as stream:
+        current = stream.read()
+except FileNotFoundError:
+    current = b""
+starts, ends = current.count(begin), current.count(end)
+if starts or ends:
+    start = current.find(begin)
+    finish = current.find(end, start + len(begin))
+    if starts != 1 or ends != 1 or finish < 0:
+        print("   WARN: Compact instructions markers are malformed or repeated; CLAUDE.md left untouched")
+        sys.exit(0)
+    updated = current[:start] + block + current[finish + len(end):]
+    result = "refreshed"
+else:
+    separator = b"" if not current else (
+        b"" if current.endswith(bytes((10, 10))) else
+        (newline if current.endswith(newline) else bytes((10, 10))))
+    updated = current + separator + block + newline
+    result = "added" if current else "created"
+if updated != current:
+    fd, temporary = tempfile.mkstemp(prefix=".CLAUDE.md.", dir=project)
+    try:
+        with os.fdopen(fd, "wb") as stream:
+            stream.write(updated)
+            stream.flush()
+            os.fsync(stream.fileno())
+        if os.path.exists(path):
+            os.chmod(temporary, os.stat(path).st_mode & 0o7777)
+        os.replace(temporary, path)
+    finally:
+        try:
+            os.unlink(temporary)
+        except FileNotFoundError:
+            pass
+print("   " + result + " Compact instructions block in " + path)
+try:
+    tracked = subprocess.run(
+        ["git", "-C", project, "ls-files", "--error-unmatch", "--", "CLAUDE.md"],
+        capture_output=True, timeout=5).returncode == 0
+except Exception:
+    tracked = False
+if tracked:
+    print("   NOTE: 这一段会出现在 git diff 里，需要你自己决定要不要提交。")
+PYEOF
+}
 
 # Anchored on the last option rather than a line number: the header grows, and
 # a stale number truncates the help text silently instead of failing.
@@ -113,10 +212,22 @@ while [ "$#" -gt 0 ]; do
     --restart-daemon) RESTART_DAEMON=1; shift ;;
     --check) CHECK_ONLY=1; shift ;;
     --audit) AUDIT_ONLY=1; shift ;;
+    --no-compact-instructions) [ -z "$COMPACT_ACTION" ] || { echo "ERROR: choose only one compact-instructions option" >&2; exit 1; }; COMPACT_ACTION=off; COMPACT_PROJECT="${2:?--no-compact-instructions needs a project path}"; shift 2 ;;
+    --compact-instructions) [ -z "$COMPACT_ACTION" ] || { echo "ERROR: choose only one compact-instructions option" >&2; exit 1; }; COMPACT_ACTION=on; COMPACT_PROJECT="${2:?--compact-instructions needs a project path}"; shift 2 ;;
     -h|--help) usage; exit 0 ;;
     *) echo "unknown option: $1" >&2; usage; exit 1 ;;
   esac
 done
+
+if [ -n "$COMPACT_ACTION" ]; then
+  if [ "$CHECK_ONLY" = "1" ] || [ "$AUDIT_ONLY" = "1" ] || [ "$PROJECT_DIR_GIVEN" = "1" ]; then
+    echo "ERROR: compact-instructions options are standalone and take one project path" >&2
+    exit 1
+  fi
+  [ -d "$COMPACT_PROJECT" ] || { echo "ERROR: project directory does not exist: $COMPACT_PROJECT" >&2; exit 1; }
+  manage_compact_instructions "$COMPACT_PROJECT" "$COMPACT_ACTION"
+  exit $?
+fi
 
 # ---- 0. --audit: run comprehensive 5-layer deployment audit -----------------
 if [ "$AUDIT_ONLY" = "1" ]; then
@@ -400,10 +511,17 @@ fi
 # alone — hand-written project docs outrank a generated block.
 echo "== documenting the Event channel in $PROJECT_DIR/CLAUDE.md"
 python3 - "$PROJECT_DIR" "$PLANE" "$TOOLS_DIR" <<'PYEOF'
+import hashlib
 import os
 import sys
 
 proj_dir, plane, tools_dir = sys.argv[1], sys.argv[2], sys.argv[3]
+config_home = os.environ.get("XDG_CONFIG_HOME") or os.path.join(os.path.expanduser("~"), ".config")
+marker = os.path.join(config_home, "drsg", "compact-instructions-opt-outs",
+                      hashlib.sha256(os.path.realpath(proj_dir).encode("utf-8")).hexdigest())
+if os.path.exists(marker):
+    print("   Compact instructions opted out; CLAUDE.md left untouched")
+    sys.exit(0)
 BEGIN = "<!-- drsg-memory:events:begin -->"
 END = "<!-- drsg-memory:events:end -->"
 
@@ -438,6 +556,7 @@ else:
         fh.write(sep + "\n" + block + "\n")
     print("   added the Event section" if existing else "   created CLAUDE.md with the Event section")
 PYEOF
+manage_compact_instructions "$PROJECT_DIR" install
 
 # ---- 4. merge hooks into settings.local.json --------------------------------
 echo "== registering hooks in $PROJECT_DIR/.claude/settings.local.json"

@@ -182,7 +182,7 @@ def hook_missing_module():
 def template_install_audit():
     hooks = root / "tools/templates/hooks"
     py_templates = sorted(hooks.glob("*.py"))
-    assert len(py_templates) == 7, f"expected 7 hook templates, found {len(py_templates)}"
+    assert len(py_templates) == 8, f"expected 8 hook templates, found {len(py_templates)}"
     common = hooks / "drsg_hook_common.py"
     assert common.is_file(), "the shared helper is not an installer template"
     with tempfile.TemporaryDirectory() as td:
@@ -209,7 +209,7 @@ def template_install_audit():
         audit = load("v116_deployment_audit", root / "tools/audit_deployment.py")
         result = audit.check_layer3(str(hooks), str(project))
         assert result["ok"], result
-        assert "All 7 hook templates" in result["details"][0], result
+        assert "All 8 hook templates" in result["details"][0], result
 
 
 def event_block_size():
