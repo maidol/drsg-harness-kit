@@ -167,7 +167,9 @@ def settings_secret_message(proj_dir):
 def mcp_bearer_message(proj_dir):
     """Terminal-only warning when this project's .mcp.json has a plaintext
     Authorization header. Names the servers, never the value; a `${VAR}`
-    reference does not match the secret_redact shapes and gives no warning."""
+    reference does not match the secret_redact shapes and gives no warning.
+    drsg-watch is skipped: codegraph-router.py and codegraph.sh read its
+    token verbatim and do not expand `${VAR}`, so it has to stay plaintext."""
     try:
         from secret_redact import RULES
         with open(os.path.join(proj_dir, ".mcp.json"), encoding="utf-8") as fh:
@@ -178,6 +180,8 @@ def mcp_bearer_message(proj_dir):
         return ""
     names = []
     for name, server in servers.items():
+        if name == "drsg-watch":
+            continue
         headers = server.get("headers") if isinstance(server, dict) else None
         if not isinstance(headers, dict):
             continue

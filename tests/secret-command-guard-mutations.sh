@@ -12,7 +12,7 @@ trap 'rm -rf "$T"' EXIT
 KILLED=0
 SURVIVED=0
 NOT_RUN=0
-EXPECTED=6
+EXPECTED=7
 
 fresh_copy() {
   rm -rf "$1" && cp -r "$SOURCE" "$1"
@@ -49,6 +49,8 @@ elif variant == "warning-not-wired":
     old, new = "                                  settings_secret_message(proj_dir),\n", '                                  "",\n'
 elif variant == "mcp-warning-not-wired":
     old, new = "                                  mcp_bearer_message(proj_dir))\n", '                                  "")\n'
+elif variant == "mcp-watch-not-skipped":
+    old, new = '        if name == "drsg-watch":\n            continue\n', ""
 elif variant == "no-op":
     old, new = "def _secret_kinds(cmd):\n", "def _secret_kinds(cmd):  # no-op\n"
 else:
@@ -80,6 +82,7 @@ run_mutation drop-url-signature "url signature is denied" secret_redact.py drop-
 run_mutation env-ignores-dollar "variable references give no warning" session_start.py env-ignores-dollar
 run_mutation warning-not-wired "session start shows the warning" session_start.py warning-not-wired
 run_mutation mcp-warning-not-wired "session start shows the mcp warning" session_start.py mcp-warning-not-wired
+run_mutation mcp-watch-not-skipped "drsg-watch plaintext gives no mcp warning" session_start.py mcp-watch-not-skipped
 if [ "${MUTATION_SELF_TEST:-0}" = 1 ]; then
   run_mutation self-test-noop "inline bearer is denied" pre_tool_use.py no-op
 fi

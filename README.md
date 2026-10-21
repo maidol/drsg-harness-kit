@@ -480,7 +480,7 @@ python3 -c 'import json, os; d=json.load(open(os.path.expanduser("~/.claude/sett
 - **Denied**: `.mcp.json`, `~/.claude.json`, `.claude/settings.json`, `settings.local.json`, `.env`, `.env.*`, `*.env`, `.netrc`, `.npmrc`, `.pypirc`, `*.pem`, `*.key`, `id_rsa*`, `id_ed25519*` read by `cat`, `head`, `tail`, `less`, `sed`, `awk` and similar readers (also after `|`, `&&`, `;` and inside `$(...)`), by `grep`/`rg` without `-c/-l/-L/-q`, by `jq` with a filter that prints values, by `Read`, and by `Grep` with `output_mode: content`.
 - **Allowed**: `jq` filters ending in `keys`, `keys_unsorted`, `length` or `type`, `has(...)`, an object of `type`/`url`/`command`/`matcher` only, or a plain path ending in one of those fields (`.mcpServers[].url`, `.hooks.PreToolUse[].matcher`); `grep -c/-l/-L/-q`; `ls`, `stat`, `wc`; sourcing an env file; writing to one; anything inside a heredoc body, which is data rather than commands; and `*.example*`, `*.sample`, `*.template`, `*.pub`.
 - It stops the casual `cat .mcp.json`, not a determined bypass; your own `!` commands do not go through hooks.
-- At session start, the project hooks also warn (terminal only) when `.mcp.json` holds a plaintext `Authorization` header, naming the server, never the value.
+- At session start, the project hooks also warn (terminal only) when `.mcp.json` holds a plaintext `Authorization` header, naming the server, never the value. `drsg-watch` is exempt: `codegraph-router.py` and `codegraph.sh` read its token verbatim and do not expand `${VAR}`, so it has to stay plaintext.
 
 ```bash
 jq '.mcpServers | keys' .mcp.json
