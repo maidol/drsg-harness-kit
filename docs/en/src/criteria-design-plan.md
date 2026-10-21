@@ -26,7 +26,7 @@ Review top-down: criteria not agreed, no design review; design not passed, no pl
   - Unknown account: counted the same, same message as a wrong password, so accounts cannot be enumerated
 【不做的事】CAPTCHA, SMS or e-mail notification, an unlock button in the admin console
 【约束】Request and response format of the login endpoint unchanged; P99 latency grows by at most 10ms
-【验收方式】Automated tests cover success criteria 1–3 and every edge case; the reviewer reruns them on the same tree
+【验收方式】Automated tests cover success criteria 1–3 and every edge case; the reviewer reruns them on the same tree. Tests use an in-memory Redis and an injectable clock, never the test machine's time or Redis; request samples come from production login logs
 【未决问题】Whether thresholds become configurable: product decides next week; this release uses config defaults
 ```
 
