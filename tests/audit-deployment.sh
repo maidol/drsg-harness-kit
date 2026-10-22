@@ -194,6 +194,19 @@ git -C "$PROJ" init -q
 git -C "$PROJ" add CLAUDE.md
 python3 "$AUDIT" --repo "$REPO" --tools-dir "$DEPLOYED_TOOLS" --claude-dir "$CLAUDE_DIR" --project "$PROJ" --json > "$T/out_compact_tracked.json" 2>&1 || true
 check "tracked CLAUDE.md advisory does not fail audit" "$(find_layer_ok "$T/out_compact_tracked.json" "L4")/$(find_layer_details "$T/out_compact_tracked.json" "L4" | grep -Fc '这一段会出现在 git diff 里，需要你自己决定要不要提交。' || true)" ok/1
+# The drsg entry's Bearer token must match .drsg/env (DRSG_TOKEN=token), by hash.
+audit_drsg_header() {
+  printf '{"projects":{"%s":{"mcpServers":{"drsg":{"type":"http","headers":{"Authorization":"%s"}},"drsg-events":{}}}}}' \
+    "$PROJ" "$1" > "$CLAUDE_DIR/.claude.json"
+  python3 "$AUDIT" --repo "$REPO" --tools-dir "$DEPLOYED_TOOLS" --claude-dir "$CLAUDE_DIR" --project "$PROJ" --json > "$T/out_drsg_header.json" 2>&1 || true
+  echo "$(find_layer_ok "$T/out_drsg_header.json" "L4")/$(find_layer_details "$T/out_drsg_header.json" "L4" | grep -c 'drsg MCP token differs' || true)"
+}
+check "drsg header token differing from .drsg/env is audit drift" "$(audit_drsg_header 'Bearer stale-value')" failed/1
+check "token mismatch report does not print either token" \
+  "$(grep -Ec 'stale-value|=token' "$T/out_drsg_header.json" || true)" 0
+check "drsg header token matching .drsg/env passes" "$(audit_drsg_header 'Bearer token')" ok/0
+check "drsg header that is not a literal Bearer token is not compared" "$(audit_drsg_header 'Bearer ${DRSG_TOKEN}')" ok/0
+printf '{"projects":{"%s":{"mcpServers":{"drsg":{},"drsg-events":{}}}}}' "$PROJ" > "$CLAUDE_DIR/.claude.json"
 # Opt-out must not read CLAUDE.md, including when it is absent.
 cp "$PROJ/CLAUDE.md" "$T/claude-before-optout.md"
 XDG_CONFIG_HOME="$XDG_CONFIG_HOME" HOME="$T/home" bash "$HERE/../setup.sh" --no-compact-instructions "$PROJ" > "$T/compact-optout.out" 2>&1

@@ -55,11 +55,19 @@ tar xzf dist/drsg-harness-kit-*.tar.gz -C /tmp
 Re-running setup for an installed project reuses its `.drsg/env` credential
 inside the installer: it is not printed or passed as a command-line argument.
 The `drsg-events` MCP entry is refreshed; an existing `drsg` entry is preserved.
-If `drsg` is missing, setup warns and `install.sh --audit` reports the drift;
-register it manually through a secret-safe workflow. A new project joining a
-running daemon still needs its token via `--token <t>`; the installer never
-mints a replacement, because that invalidates every client config already
-written.
+If `drsg` is missing, setup writes it straight into `~/.claude.json` (or
+`$CLAUDE_CONFIG_DIR/.claude.json`), keeping the token out of argv and output.
+A new project joining a running daemon needs no `--token`: setup reads the token
+the daemon persisted in `~/.drsg-memory/env` and uses it only after the daemon
+accepts it. `--token <t>` is still needed when that file is missing or belongs
+to another daemon; the installer never mints a replacement, because that
+invalidates every client config already written. `install.sh --audit` reports a
+project whose `drsg` entry is missing or whose token differs from its
+`.drsg/env` (compared by hash, never printed).
+
+```bash
+./setup.sh --project /path/to/new-project   # joins the running daemon, no --token
+```
 
 `setup.sh` also installs `claude/MAIN-BRANCH-WORKFLOW.md` as user-level
 instructions by default, independently of the skills installation option. It

@@ -1,5 +1,7 @@
 #!/usr/bin/env bash
-# Existing project credentials must let setup refresh hooks without a token flag.
+# Existing project credentials must let setup refresh hooks without a token flag,
+# and a new project must join the running daemon without one. In both cases the
+# drsg MCP entry is written straight into .claude.json, never through argv.
 set -u
 HERE="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 REPO="$(cd "$HERE/.." && pwd)"
@@ -109,11 +111,33 @@ cat > "$CLAUDE_DIR/.claude.json" <<JSON
 {"projects":{"$PROJECT":{"mcpServers":{"drsg":{"type":"http"}}}}}
 JSON
 
+# run_setup <output file> [project dir] [extra setup arguments...]
 run_setup() {
+  local out="$1" project="${2:-$PROJECT}"
+  shift
+  [ "$#" -gt 0 ] && shift
   HOME="$HOME_DIR" DRSG_MEM_DIR="$MEM_DIR" DRSG_MEM_ADDR= DRSG_MEM_TOKEN= \
     CLAUDE_CONFIG_DIR="$CLAUDE_DIR" PATH="$BIN_DIR:$PATH" \
-    bash "$REPO/setup.sh" --project "$PROJECT" --bin /bin/true \
-      --no-skills --no-event-poller --no-streak-hint >"$1" 2>&1
+    bash "$REPO/setup.sh" --project "$project" --bin /bin/true \
+      --no-skills --no-event-poller --no-streak-hint "$@" >"$out" 2>&1
+}
+# Prints "<type> <url> <yes|no: header carries the fixture token>" for the
+# project's local-scope drsg entry, or "absent". Never prints the header.
+drsg_entry() {
+  python3 - "$CLAUDE_DIR/.claude.json" "$1" "$SENTINEL" <<'PY'
+import json, sys
+path, project, want = sys.argv[1:]
+try:
+    entry = json.load(open(path))["projects"][project]["mcpServers"]["drsg"]
+except Exception:
+    print("absent")
+    sys.exit()
+auth = (entry.get("headers") or {}).get("Authorization")
+print(entry.get("type"), entry.get("url"), "yes" if auth == "Bearer " + want else "no")
+PY
+}
+mode_of() {
+  python3 -c 'import os,stat,sys; print(oct(stat.S_IMODE(os.stat(sys.argv[1]).st_mode)))' "$1"
 }
 
 RAN=0; OK=0
@@ -146,14 +170,83 @@ PY
 
 : > "$CLAUDE_CALLS"
 printf '{}\n' > "$CLAUDE_DIR/.claude.json"
+chmod 640 "$CLAUDE_DIR/.claude.json"
 if run_setup "$T/setup-missing.out"; then SETUP_MISSING_RC=0; else SETUP_MISSING_RC=$?; fi
-check "missing drsg MCP is warned, not called preserved" \
-  "$(grep -c 'WARN: drsg MCP is not registered' "$T/setup-missing.out")/$(grep -c 'preserving existing drsg MCP registration' "$T/setup-missing.out")" 1/0
+check "missing drsg MCP is written into .claude.json, not warned" \
+  "$(grep -c 'drsg MCP registered for this project' "$T/setup-missing.out")/$(grep -c 'WARN: drsg MCP' "$T/setup-missing.out")" 1/0
+check "written drsg entry has the daemon url and the reused token" \
+  "$(drsg_entry "$PROJECT")" "http http://127.0.0.1:$PORT/mcp yes"
+check "drsg is written without claude mcp add/remove (token stays out of argv)" \
+  "$(grep -Ec '^mcp (add|remove) .* drsg([[:space:]]|$)' "$CLAUDE_CALLS")" 0
+check "writing drsg keeps the config file's mode" "$(mode_of "$CLAUDE_DIR/.claude.json")" 0o640
 check "missing-drsg setup does not expose the token" \
   "$(grep -Fq "$SENTINEL" "$T/setup-missing.out" && echo leaked || echo hidden)" hidden
 check "missing-drsg setup still adds drsg-events" \
   "$(grep -c '^mcp add --scope local drsg-events ' "$CLAUDE_CALLS")" 1
-check "missing-drsg setup completes without registering drsg" "$SETUP_MISSING_RC" 0
+check "missing-drsg setup succeeds" "$SETUP_MISSING_RC" 0
+
+# An existing entry is preserved as before, even one that is not ours.
+python3 - "$CLAUDE_DIR/.claude.json" "$PROJECT" <<'PY'
+import json, sys
+path, project = sys.argv[1:]
+cfg = json.load(open(path))
+cfg["projects"][project]["mcpServers"]["drsg"] = {"type": "http", "url": "http://other/mcp"}
+json.dump(cfg, open(path, "w"))
+PY
+run_setup "$T/setup-again.out"
+check "existing drsg entry is preserved, not rewritten" \
+  "$(grep -c 'preserving existing drsg MCP registration' "$T/setup-again.out")/$(drsg_entry "$PROJECT")" \
+  "1/http http://other/mcp no"
+
+# A config file that is not JSON is left byte for byte.
+printf '{"projects": \n' > "$CLAUDE_DIR/.claude.json"
+cp "$CLAUDE_DIR/.claude.json" "$T/corrupt.before"
+if run_setup "$T/setup-corrupt.out"; then SETUP_CORRUPT_RC=0; else SETUP_CORRUPT_RC=$?; fi
+check "corrupt .claude.json: warned, untouched, setup still succeeds" \
+  "$(grep -c 'WARN: could not write the drsg MCP registration' "$T/setup-corrupt.out")/$(cmp -s "$T/corrupt.before" "$CLAUDE_DIR/.claude.json" && echo same || echo changed)/$SETUP_CORRUPT_RC" \
+  1/same/0
+check "corrupt-config setup does not expose the token" \
+  "$(grep -Fq "$SENTINEL" "$T/setup-corrupt.out" && echo leaked || echo hidden)" hidden
+
+# A config file that does not exist yet is created private.
+rm -f "$CLAUDE_DIR/.claude.json"
+run_setup "$T/setup-create.out"
+check "absent .claude.json is created 0600 with the drsg entry" \
+  "$(mode_of "$CLAUDE_DIR/.claude.json") $(drsg_entry "$PROJECT")" \
+  "0o600 http http://127.0.0.1:$PORT/mcp yes"
+
+# A new project (no .drsg/env) joins the running daemon with the token the
+# daemon persisted, without --token.
+NEW="$T/newproject"
+mkdir -p "$NEW"
+printf 'DRSG_TOKEN=%s\n' "$SENTINEL" > "$MEM_DIR/env"
+printf '{}\n' > "$CLAUDE_DIR/.claude.json"
+: > "$CLAUDE_CALLS"
+rm -f "$T/auth-ok" "$T/auth-failed"
+if run_setup "$T/setup-join.out" "$NEW" --addr "127.0.0.1:$PORT"; then JOIN_RC=0; else JOIN_RC=$?; fi
+check "new project joins a running daemon without --token" "$JOIN_RC" 0
+check "joined project's env carries the daemon token" \
+  "$(grep -Fxc "DRSG_TOKEN=$SENTINEL" "$NEW/.drsg/env" 2>/dev/null || true)" 1
+check "joined project gets its drsg entry written" \
+  "$(drsg_entry "$NEW")" "http http://127.0.0.1:$PORT/mcp yes"
+check "join keeps the token out of output and claude arguments" \
+  "$(cat "$T/setup-join.out" "$CLAUDE_CALLS" | grep -Fq "$SENTINEL" && echo leaked || echo hidden)" hidden
+
+# The daemon env token is checked against the daemon before it is used.
+NEW2="$T/newproject2"
+mkdir -p "$NEW2"
+printf 'DRSG_TOKEN=stale-%s\n' "$SENTINEL" > "$MEM_DIR/env"
+if run_setup "$T/setup-stale.out" "$NEW2" --addr "127.0.0.1:$PORT"; then STALE_RC=0; else STALE_RC=$?; fi
+check "stale daemon env token is refused before anything is written" \
+  "$STALE_RC/$(grep -c 'rejected the token in' "$T/setup-stale.out")/$([ -e "$NEW2/.drsg/env" ] && echo written || echo none)" \
+  1/1/none
+check "stale-token refusal does not print the token" \
+  "$(grep -Fq "$SENTINEL" "$T/setup-stale.out" && echo leaked || echo hidden)" hidden
+
+rm -f "$MEM_DIR/env"
+if run_setup "$T/setup-noenv.out" "$NEW2" --addr "127.0.0.1:$PORT"; then NOENV_RC=0; else NOENV_RC=$?; fi
+check "no daemon env and no --token still stops the join" \
+  "$NOENV_RC/$(grep -c 'joining a running daemon requires --token' "$T/setup-noenv.out")" 1/1
 
 echo "PASS $OK/$RAN"
-[ "$RAN" -eq 10 ] && [ "$OK" -eq "$RAN" ]
+[ "$RAN" -eq 24 ] && [ "$OK" -eq "$RAN" ]

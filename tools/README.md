@@ -156,15 +156,21 @@ same `memory` plane, separated by its `Project` node, and recall can reach
 across them. Re-running the installer for an existing project reuses its
 `.drsg/env` credential internally, without printing or passing it as a
 command-line argument. It refreshes `drsg-events` and preserves an existing
-`drsg` registration. If `drsg` is missing, it warns rather than exposing the
-reused token; `install.sh --audit` reports the drift. Register it manually
-through a secret-safe workflow. A new project joining still requires that
-daemon's token:
+`drsg` registration. If `drsg` is missing, it writes the entry straight into
+`.claude.json` (token from the environment, not argv; mode kept, 0600 when the
+file is new; a file that is not JSON is left alone with a WARN). A new project
+joining needs no `--token`: the installer reads the token the daemon persisted
+in `${DRSG_MEM_DIR:-~/.drsg-memory}/env` and uses it once the daemon accepts it.
+Pass `--token` only when that file is missing or belongs to another daemon:
 
 ```bash
+./install.sh /path/to/other-project --bin /path/to/drsg   # token from ~/.drsg-memory/env
 ./install.sh /path/to/other-project --bin /path/to/drsg \
-  --addr 127.0.0.1:7700 --token <the daemon's token>
+  --addr 127.0.0.1:7700 --token <the daemon's token>      # only for another daemon
 ```
+
+`install.sh --audit` reports a `drsg` entry whose Bearer token differs from the
+project's `.drsg/env` (by sha256; neither value is printed).
 
 To move a project that was installed against its *own* daemon, migrate its
 memory first:
@@ -249,7 +255,7 @@ mutation.
 |---|---|---|
 | `--bin <path>` | `$DRSG_MEM_BIN` or `drsg` | the binary to run |
 | `--addr <host:port>` | `127.0.0.1:7700` | daemon listen address |
-| `--token <t>` | reused or generated | explicit API token; existing projects reuse `.drsg/env`; **required for a new project joining** a running daemon |
+| `--token <t>` | reused or generated | explicit API token; existing projects reuse `.drsg/env`; a new project joining a running daemon uses `~/.drsg-memory/env`, so this is needed only when that file is missing or belongs to another daemon |
 | `--l3-chat <name\|url>` | empty (L3 off) | preset name or OpenAI-compatible base URL |
 | `--l3-key-env <v>` | the preset's own | **name** of the env var holding the LLM key (see below) |
 | `--l3-model <m>` | the provider's own | model id, exactly as the endpoint lists it |

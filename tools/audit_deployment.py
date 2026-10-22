@@ -417,8 +417,29 @@ def mcp_issues(project_dir, claude_json, tools_dir):
             fix = (f"(cd {project_dir} && claude mcp add --scope local drsg-events -- "
                    f"python3 {os.path.join(tools_dir, 'mcp_events.py')} {project_dir})")
         else:
-            fix = f"setup.sh --project {project_dir} --token <the running daemon's token>"
+            fix = f"setup.sh --project {project_dir}"
         issues.append(f"MCP server not registered for this project: {name} - fix: {fix}")
+    # The drsg entry carries its own copy of the token. Compare it with the
+    # project's .drsg/env by hash only; an entry without a literal Bearer
+    # header (another auth scheme, a ${VAR}) is not ours to judge.
+    entry = (proj.get("mcpServers") or {}).get("drsg")
+    scope = "local"
+    if entry is None:
+        entry, scope = (cfg.get("mcpServers") or {}).get("drsg"), "user"
+    auth = ((entry or {}).get("headers") or {}).get("Authorization") if isinstance(entry, dict) else None
+    if isinstance(auth, str) and auth.startswith("Bearer ") and "${" not in auth:
+        env_token = ""
+        try:
+            with open(os.path.join(project_dir, ".drsg", "env"), encoding="utf-8") as f:
+                for line in f:
+                    if line.startswith("DRSG_TOKEN="):
+                        env_token = line.rstrip("\n").split("=", 1)[1]
+        except OSError:
+            pass
+        sha = lambda s: hashlib.sha256(s.encode("utf-8")).hexdigest()
+        if env_token and sha(auth[len("Bearer "):]) != sha(env_token):
+            issues.append("drsg MCP token differs from this project's .drsg/env (compared by hash) - fix: "
+                          f"(cd {project_dir} && claude mcp remove drsg --scope {scope}) && setup.sh --project {project_dir}")
     return issues
 
 

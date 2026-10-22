@@ -87,7 +87,7 @@ bash ./install.sh --compact-instructions /path/to/project
 
 ## 加入已有 daemon
 
-如果目标地址已经有进程响应 `/health`，`install.sh` 会**加入**它，而不是启动第二个 daemon。之后所有项目都会进入同一个 `memory` plane，由各自的 `Project` 节点区分，recall 也可以跨项目访问。对已有项目重新运行时，安装器会在进程内部复用 `.drsg/env` 中的凭据，不打印 token、不将其放入命令行；它会刷新 `drsg-events`，保留已有 `drsg` 注册。若 `drsg` 缺失，安装器会警告，`install.sh --audit` 也会报告漂移；请通过安全的凭据流程手动注册。新项目加入仍需提供该 daemon 的 token：
+如果目标地址已经有进程响应 `/health`，`install.sh` 会**加入**它，而不是启动第二个 daemon。之后所有项目都会进入同一个 `memory` plane，由各自的 `Project` 节点区分，recall 也可以跨项目访问。对已有项目重新运行时，安装器会在进程内部复用 `.drsg/env` 中的凭据，不打印 token、不将其放入命令行；它会刷新 `drsg-events`，保留已有 `drsg` 注册。若 `drsg` 缺失，安装器会把条目直接写进 `.claude.json`（token 经环境变量传入，不进命令行；保留文件权限，新建时为 0600；文件不是合法 JSON 时不动它，只打 WARN）。新项目加入不必传 `--token`：安装器读取 daemon 保存在 `${DRSG_MEM_DIR:-~/.drsg-memory}/env` 里的 token，经 daemon 验证通过后使用。`install.sh --audit` 会报告 `drsg` 条目里的 Bearer token 和项目 `.drsg/env` 不一致的情况（比 sha256，不打印任何一方的值）。只有那个文件不存在、或者属于另一个 daemon 时，才需要提供 token：
 
 ```bash
 ./install.sh /path/to/other-project --bin /path/to/drsg \
@@ -150,7 +150,7 @@ DRSG_PROJECT_DIR=/path/to/project python3 ~/.drsg-memory/tools/repair_project_ke
 |---|---|---|
 | `--bin <path>` | `$DRSG_MEM_BIN` 或 `drsg` | 要运行的二进制 |
 | `--addr <host:port>` | `127.0.0.1:7700` | daemon 监听地址 |
-| `--token <t>` | 复用或生成 | 显式 API token；已有项目自动复用 `.drsg/env`；新项目加入运行中的 daemon 时**必填** |
+| `--token <t>` | 复用或生成 | 显式 API token；已有项目自动复用 `.drsg/env`；新项目加入运行中的 daemon 时用 `~/.drsg-memory/env`，只有该文件不存在或属于另一个 daemon 时才需要 |
 | `--l3-chat <name\|url>` | 空（关闭 L3） | preset 名称或兼容 OpenAI 的 base URL |
 | `--l3-key-env <v>` | preset 自带的变量名 | 保存 LLM key 的环境变量**名称**（见下文） |
 | `--l3-model <m>` | provider 自带的模型 | 与 endpoint 列出的内容完全一致的模型 id |

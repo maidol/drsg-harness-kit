@@ -45,7 +45,11 @@ tar xzf dist/drsg-harness-kit-*.tar.gz -C /tmp
 /tmp/drsg-harness-kit-*/setup.sh --project /path/to/project --repo /path/to/repo
 ```
 
-对已安装项目重新运行 setup 时，安装器会在进程内部复用项目 `.drsg/env` 中的凭据：不打印 token、不将其放入命令行。`drsg-events` MCP 条目会刷新；已有 `drsg` 条目会保留。若 `drsg` 注册缺失，setup 会警告，`install.sh --audit` 也会报告漂移；请通过安全的凭据流程手动注册。新项目加入正在运行的 daemon 时仍需通过 `--token <t>` 提供 token；安装器不会自行生成替代 token，因为这会使已写入的客户端配置失效。
+对已安装项目重新运行 setup 时，安装器会在进程内部复用项目 `.drsg/env` 中的凭据：不打印 token、不将其放入命令行。`drsg-events` MCP 条目会刷新；已有 `drsg` 条目会保留。若 `drsg` 注册缺失，setup 会把它直接写进 `~/.claude.json`（设了 `CLAUDE_CONFIG_DIR` 时是 `$CLAUDE_CONFIG_DIR/.claude.json`），token 不进命令行、不进输出。新项目加入正在运行的 daemon 时不必传 `--token`：setup 读取 daemon 自己保存在 `~/.drsg-memory/env` 里的 token，先经 daemon 验证通过才使用。那个文件不存在、或者属于另一个 daemon 时，仍需 `--token <t>`；安装器不会自行生成替代 token，因为这会使已写入的客户端配置失效。`install.sh --audit` 会报告 `drsg` 条目缺失、或条目里的 token 和项目 `.drsg/env` 不一致的项目（只比哈希，不打印）。
+
+```bash
+./setup.sh --project /path/to/new-project   # 加入运行中的 daemon，不需要 --token
+```
 
 `--project` 还会在该项目里装一个 git pre-commit hook，运行 `completeness-guard.py --staged`：新增的命令行选项、环境变量、路由或配置键在文档里找不到时打印提示；只有项目声明了 `.completeness.json` 才会拦下提交。项目已有自己的 pre-commit hook、或者设了 `core.hooksPath` 时不动它，安装器会打印手动串联的那一行。用法和声明文件见 [tools/README.zh-CN.md](tools/README.zh-CN.md#通用交付闭环守卫completeness-guardpy)。
 

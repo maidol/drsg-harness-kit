@@ -10,7 +10,8 @@
 # Options:
 #   --bin <path|name>   drsg binary (patched; default: DRSG_MEM_BIN or `drsg`)
 #   --addr <host:port>  daemon listen address (default 127.0.0.1:7700)
-#   --token <t>         shared API token; installed projects reuse .drsg/env automatically
+#   --token <t>         shared API token; installed projects reuse .drsg/env, and a
+#                       new project joining a running daemon reads its env file
 #   --l3-chat <url>     OpenAI-compatible chat endpoint for L3 distillation
 #                       (omit/empty to disable L3)
 #   --l3-key-env <v>    env var name holding the LLM key (default: the
@@ -395,15 +396,55 @@ fi
 #                     process on a port that's already up (native backend is
 #                     one process per db; a second one would fail to lock).
 #                     A re-install reuses the project's .drsg/env token. A new
-#                     project joining REQUIRES --token for the RUNNING daemon.
+#                     project joining takes the token serve.sh persisted in
+#                     $DAEMON_ENV, once the running daemon accepts it; --token
+#                     is needed only when that file is absent.
 HTTP_BASE="$(echo "$ADDR" | sed 's|^https\?://||')"
 JOINED=0
 if curl -sf -m 2 "http://$HTTP_BASE/health" >/dev/null 2>&1; then
   JOINED=1
   echo "== daemon already running at $ADDR — joining (no new process started)"
+  if [ -z "$TOKEN" ] && [ -f "$DAEMON_ENV" ]; then
+    # Same rule as the project env above: read inside this process, never
+    # printed, never a child-process argument, and the MCP entry is written
+    # into the config file (PRESERVE_MCP) instead of `claude mcp add --header`.
+    DAEMON_TOKEN=""
+    while IFS='=' read -r name value || [ -n "${name:-}" ]; do
+      if [ "$name" = "DRSG_TOKEN" ]; then DAEMON_TOKEN="$value"; fi
+    done < "$DAEMON_ENV"
+    if [ -n "$DAEMON_TOKEN" ]; then
+      if DRSG_INSTALL_API="http://$HTTP_BASE/rpc" DRSG_INSTALL_TOKEN="$DAEMON_TOKEN" python3 - <<'PYEOF'
+import json, os, sys, urllib.request
+body = json.dumps({"jsonrpc": "2.0", "id": 1, "method": "db.stats", "params": {}}).encode()
+req = urllib.request.Request(
+    os.environ["DRSG_INSTALL_API"], data=body,
+    headers={"Content-Type": "application/json",
+             "Authorization": "Bearer " + os.environ["DRSG_INSTALL_TOKEN"]})
+try:
+    opener = urllib.request.build_opener(urllib.request.ProxyHandler({}))
+    with opener.open(req, timeout=5) as r:
+        res = json.load(r)
+except Exception as e:
+    print("       (%s)" % type(e).__name__, file=sys.stderr)
+    sys.exit(1)
+if "result" not in res:
+    print("       (%s)" % ((res.get("error") or {}).get("message") or "no result"), file=sys.stderr)
+    sys.exit(1)
+PYEOF
+      then
+        TOKEN="$DAEMON_TOKEN"
+        PRESERVE_MCP=1
+        echo "   using the daemon token from $DAEMON_ENV (not shown)"
+      else
+        echo "ERROR: the daemon at $ADDR rejected the token in $DAEMON_ENV." >&2
+        echo "       That file may belong to another daemon; pass --token <its token>." >&2
+        exit 1
+      fi
+    fi
+  fi
   if [ -z "$TOKEN" ]; then
     echo "ERROR: joining a running daemon requires --token <its token>." >&2
-    echo "       Re-running for an installed project reuses its .drsg/env credential." >&2
+    echo "       No DRSG_TOKEN in $DAEMON_ENV; re-running for an installed project reuses its .drsg/env credential." >&2
     exit 1
   fi
 else
@@ -667,9 +708,51 @@ PYEOF
   then
     echo "   preserving existing drsg MCP registration"
   else
-    echo "   WARN: drsg MCP is not registered for $PROJECT_DIR; it was not re-added to avoid exposing the reused token."
-    echo "         Register it manually using a secret-safe workflow; install.sh --audit will report this drift:"
-    echo "         (cd $PROJECT_DIR && claude mcp add --scope local --transport http drsg $MCP_URL --header 'Authorization: Bearer <token>')"
+    # `claude mcp add --header` would put the token in argv (ps, shell history),
+    # so write the same local-scope entry into the config file directly. The
+    # token travels in the environment; the file is replaced atomically with
+    # its mode kept (0600 when new). A file that is not JSON is left alone.
+    if CLAUDE_JSON_PATH="$CLAUDE_JSON_PATH" DRSG_INSTALL_TOKEN="$TOKEN" \
+        python3 - "$PROJECT_DIR" "$MCP_URL" <<'PYEOF'
+import json, os, stat, sys, tempfile
+path = os.path.realpath(os.environ["CLAUDE_JSON_PATH"])
+project, url = sys.argv[1:3]
+entry = {"type": "http", "url": url,
+         "headers": {"Authorization": "Bearer " + os.environ["DRSG_INSTALL_TOKEN"]}}
+try:
+    with open(path, encoding="utf-8") as f:
+        cfg = json.load(f)
+    mode = stat.S_IMODE(os.stat(path).st_mode)
+except FileNotFoundError:
+    cfg, mode = {}, 0o600
+except (OSError, ValueError) as e:
+    sys.exit("%s is not readable JSON (%s)" % (path, type(e).__name__))
+try:
+    servers = cfg.setdefault("projects", {}).setdefault(project, {}).setdefault("mcpServers", {})
+    servers["drsg"] = entry
+except AttributeError:
+    sys.exit("%s does not have the expected projects/mcpServers shape" % path)
+fd, tmp = tempfile.mkstemp(dir=os.path.dirname(path), prefix=".claude.json.")
+try:
+    os.fchmod(fd, mode)
+    with os.fdopen(fd, "w", encoding="utf-8") as f:
+        json.dump(cfg, f, indent=2)
+        f.write("\n")
+    os.replace(tmp, path)
+except BaseException:
+    if os.path.exists(tmp):
+        os.unlink(tmp)
+    raise
+with open(path, encoding="utf-8") as f:
+    if json.load(f)["projects"][project]["mcpServers"].get("drsg") != entry:
+        sys.exit("%s did not keep the drsg entry" % path)
+PYEOF
+    then
+      echo "   drsg MCP registered for this project in $CLAUDE_JSON_PATH (token written to the file only, not shown)"
+    else
+      echo "   WARN: could not write the drsg MCP registration (see the line above); install.sh --audit will report it."
+      echo "         Fix the file, then re-run setup for $PROJECT_DIR."
+    fi
   fi
 
   if command -v claude >/dev/null 2>&1; then
