@@ -64,6 +64,8 @@ tar xzf dist/drsg-harness-kit-*.tar.gz -C /tmp
 
 项目安装会在 `CLAUDE.md` 中加入 kit 管理的 `# Compact instructions` 区块，要求压缩摘要单列结构化的「交接」章节，记录计划、当前步骤、下一步、未解决报错、用户原话约束和未提交文件。重复安装会幂等刷新这一区块，文件其余部分仍归项目所有。若 `CLAUDE.md` 已被 Git 跟踪，安装时会提示该区块会出现在 `git diff` 中，供你自行决定是否提交。
 
+项目 PreCompact hook 在每次手动或自动压缩前输出这一区块（读自磁盘上当前的 `CLAUDE.md`，去掉别名注释），Claude Code 会把它作为 `Additional Instructions` 附在压缩提示词末尾。没有它时，长会话的摘要常常漏掉「交接」，续接的会话也只能看到上次压缩时保存的旧版 `CLAUDE.md`。项目没有该区块或设置了 `DRSG_COMPACT_HANDOFF=0` 时不输出任何内容。`/compact` 之后 Claude Code 会在界面上回显这段文字。
+
 项目 PostCompact hook 会把手动或自动压缩传入的 `compact_summary` 脱敏后保存在项目目录之外；它不读取 transcript 正文，也不调用模型。记录按项目真实路径的 SHA-256 分目录，默认位于 `${XDG_DATA_HOME:-$HOME/.local/share}/drsg/compact-handoffs/<真实路径的sha256>/`，目录权限为 `0700`、文件权限为 `0600`。默认保留 72 小时、最多 10 条；`DRSG_COMPACT_HANDOFF_TTL_HOURS` 可调整时限。SessionStart 只在 `startup` 和 `clear` 注入未消费交接，并且仅在 hook 成功输出后标记为已消费。注入时优先放「交接」章节，附完整记录路径，文本最多 8,000 字符。transcript 只检查修改时间，用于提示压缩后是否继续工作，不读其内容。即使记忆 daemon 不可用，本地交接仍可工作。在 Claude Code 的环境中设置 `DRSG_COMPACT_HANDOFF=0` 可同时关闭保存与注入。
 
 记录会保存 Claude 进程 PID、`/proc` 启动时间和排序后的车道列表。`startup`/`clear` 优先使用同一进程身份的记录；没有时，才可接管所有车道列表完全相同且已退出的记录。其他仍活跃的 owner 只显示计数；其他车道的已退出记录只列出元数据、不注入摘要。`claude -r` 通过原 `session_id` 恢复：SessionStart 成功输出后消费对应记录，但不注入正文。同一 session 再次压缩会覆盖旧记录。72 小时 TTL 对所有记录生效；10 条上限清理会保护活跃 owner，如果全部记录都活跃，数量可能暂时超过上限。

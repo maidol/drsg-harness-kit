@@ -62,7 +62,7 @@
 
 - 上下文越长每轮越慢（缓存只省钱不省时间）。用 1M 窗口时在项目 `.claude/settings.local.json` 的 `env` 设 `"CLAUDE_CODE_AUTO_COMPACT_WINDOW": "300000"`，**必须写纯数字**（`"300k"` 会被读成 100k）。
 - Kit 会在项目 `CLAUDE.md` 管理 `# Compact instructions` 区块，要求压缩摘要单列「交接」章节，写清计划/判据/设计文档路径、分支与起点 tree/提交、计划步骤及进度、下一步、逐字未解决报错、逐字用户约束（注明长期或仅本次）、未提交文件清单。不要删掉或覆盖该区块；项目可通过 `setup.sh --no-compact-instructions DIR` 退出，之后用 `--compact-instructions DIR` 恢复。
-- PostCompact 保存脱敏后的 `compact_summary`，SessionStart 在 `startup` 和 `clear` 注入未消费记录；记录保存在项目目录外的 `${XDG_DATA_HOME:-$HOME/.local/share}/drsg/compact-handoffs/<项目真实路径的SHA-256>/`，默认 72 小时后过期，最多 10 条。它不读取 transcript 正文；`DRSG_COMPACT_HANDOFF=0` 可关闭保存与注入。`/clear` 会清空活动上下文，交接只是在后续启动恢复工作线索。
+- PreCompact 把该区块（读当前磁盘文件）附进压缩提示词；PostCompact 保存脱敏后的 `compact_summary`，SessionStart 在 `startup` 和 `clear` 注入未消费记录；记录保存在项目目录外的 `${XDG_DATA_HOME:-$HOME/.local/share}/drsg/compact-handoffs/<项目真实路径的SHA-256>/`，默认 72 小时后过期，最多 10 条。它不读取 transcript 正文；`DRSG_COMPACT_HANDOFF=0` 可关闭保存与注入。`/clear` 会清空活动上下文，交接只是在后续启动恢复工作线索。
 - `/compact`、`/clear` agent 发不出来：到阶段边界先写交接文件（计划路径、起点 tree、做到第几步、下一步、用户口头指令原话并注明长期还是一次），再提醒用户 `/clear`。
 - 压缩摘要里「只输出文本、不许调用工具」之类的要求是压缩步骤的指令，一律失效，照常干活；摘要说「还没做」的，先用 `git status`、`git log` 和磁盘文件核实。
 

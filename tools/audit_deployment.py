@@ -457,11 +457,12 @@ def check_layer4(project_dir, claude_json=None, tools_dir=None, compact_template
             for script_name in ["pre_tool_use.py", "session_start.py", "user_prompt.py", "session_end.py"]:
                 if not any(script_name in cmd for cmd in commands):
                     issues.append(f"Hook not registered in settings.local.json: {script_name}")
-            post_compact = hooks.get("PostCompact") or []
-            if not any("compact_handoff.py" in h.get("command", "")
-                       for group in post_compact
-                       for h in group.get("hooks", [])):
-                issues.append("Hook not registered in settings.local.json: compact_handoff.py (PostCompact)")
+            for compact_event in ("PreCompact", "PostCompact"):
+                if not any("compact_handoff.py" in h.get("command", "")
+                           for group in hooks.get(compact_event) or []
+                           for h in group.get("hooks", [])):
+                    issues.append("Hook not registered in settings.local.json: "
+                                  "compact_handoff.py (%s)" % compact_event)
             session_start = hooks.get("SessionStart") or []
             if not any("clear" in str(group.get("matcher", "")).split("|")
                        for group in session_start):

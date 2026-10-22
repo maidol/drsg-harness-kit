@@ -93,6 +93,14 @@ uncommitted files. The block is refreshed idempotently on setup; the rest of
 `CLAUDE.md` remains project-owned. If `CLAUDE.md` is tracked, setup prints an
 advisory because the managed block will appear in `git diff`.
 
+The project PreCompact hook prints that block (read from the current
+`CLAUDE.md` on disk, alias comment removed) before each manual or automatic
+compaction, and Claude Code appends it to the summary prompt as
+`Additional Instructions`. Without it the summarizer often skips `交接` in long
+sessions, and a resumed session only sees the `CLAUDE.md` copy saved at its last
+compaction. It prints nothing when the project has no managed block or when
+`DRSG_COMPACT_HANDOFF=0`. Claude Code also echoes the text after `/compact`.
+
 The project PostCompact hook saves the redacted `compact_summary` from manual
 and automatic compaction outside the project tree. It does not read transcript
 content or call a model. Records are keyed by the project's real path and stored

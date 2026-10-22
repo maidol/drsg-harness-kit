@@ -83,6 +83,7 @@ cat > "$PROJ/.claude/settings.local.json" <<'JSON'
   "hooks": {
     "PreToolUse": [{"matcher": "Bash", "hooks": [{"command": "python3 pre_tool_use.py"}]}],
     "SessionStart": [{"matcher": "startup|resume|compact|clear", "hooks": [{"command": "python3 session_start.py"}]}],
+    "PreCompact": [{"hooks": [{"command": "python3 compact_handoff.py"}]}],
     "PostCompact": [{"hooks": [{"command": "python3 compact_handoff.py"}]}],
     "UserPromptSubmit": [{"matcher": "*", "hooks": [{"command": "python3 user_prompt.py"}]}],
     "SessionEnd": [{"matcher": "*", "hooks": [{"command": "python3 session_end.py"}]}]
@@ -137,6 +138,7 @@ python3 "$AUDIT" --repo "$REPO" --tools-dir "$DEPLOYED_TOOLS" --claude-dir "$CLA
 l1_status=$(find_layer_ok "$T/out1.json" "L1")
 check "hermetic audit passes L1 when sync" "$l1_status" "ok"
 check "PostCompact registration passes L4 when present" "$(find_layer_details "$T/out1.json" "L4" | grep -c 'compact_handoff.py (PostCompact)' || true)" "0"
+check "PreCompact registration passes L4 when present" "$(find_layer_details "$T/out1.json" "L4" | grep -c 'compact_handoff.py (PreCompact)' || true)" "0"
 check "SessionStart matcher with clear passes audit" "$(find_layer_details "$T/out1.json" "L4" | grep -c 'SessionStart matcher missing clear' || true)" "0"
 check "managed compact block passes audit" "$(find_layer_details "$T/out1.json" "L4" | grep -c 'Compact instructions block missing\|differs from template\|repeated or malformed' || true)" "0"
 cp "$PROJ/CLAUDE.md" "$T/claude-project.md"
@@ -240,6 +242,17 @@ json.dump(data, open(path, "w"))
 PY
 python3 "$AUDIT" --repo "$REPO" --tools-dir "$DEPLOYED_TOOLS" --claude-dir "$CLAUDE_DIR" --project "$PROJ" --json > "$T/out_postcompact_missing.json" 2>&1 || true
 check "missing PostCompact registration is audit drift" "$(find_layer_details "$T/out_postcompact_missing.json" "L4" | grep -c 'compact_handoff.py (PostCompact)' || true)" "1"
+mv "$T/settings.local.json" "$PROJ/.claude/settings.local.json"
+cp "$PROJ/.claude/settings.local.json" "$T/settings.local.json"
+python3 - "$PROJ/.claude/settings.local.json" <<'PY'
+import json, sys
+path = sys.argv[1]
+data = json.load(open(path))
+data["hooks"].pop("PreCompact", None)
+json.dump(data, open(path, "w"))
+PY
+python3 "$AUDIT" --repo "$REPO" --tools-dir "$DEPLOYED_TOOLS" --claude-dir "$CLAUDE_DIR" --project "$PROJ" --json > "$T/out_precompact_missing.json" 2>&1 || true
+check "missing PreCompact registration is audit drift" "$(find_layer_details "$T/out_precompact_missing.json" "L4" | grep -c 'compact_handoff.py (PreCompact)' || true)" "1"
 mv "$T/settings.local.json" "$PROJ/.claude/settings.local.json"
 
 # 2. R2: uncommitted changes in repo working tree do NOT trigger L1 DRIFT
@@ -387,6 +400,7 @@ cat > "$R2_PROJ/.claude/settings.local.json" <<EOF
   "hooks": {
     "PreToolUse": [{"matcher": "Bash", "hooks": [{"command": "python3 pre_tool_use.py"}]}],
     "SessionStart": [{"matcher": "startup|resume|compact|clear", "hooks": [{"command": "python3 session_start.py"}]}],
+    "PreCompact": [{"hooks": [{"command": "python3 compact_handoff.py"}]}],
     "PostCompact": [{"hooks": [{"command": "python3 compact_handoff.py"}]}],
     "UserPromptSubmit": [{"matcher": "*", "hooks": [{"command": "python3 user_prompt.py"}]}],
     "SessionEnd": [{"matcher": "*", "hooks": [{"command": "python3 session_end.py"}]}]

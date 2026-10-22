@@ -90,6 +90,7 @@ cat > "$P/.claude/settings.local.json" <<'JSON'
   "SessionStart": [{"matcher": "startup|resume|compact|clear", "hooks": [{"command": "python3 session_start.py"}]}],
   "UserPromptSubmit": [{"matcher": "*", "hooks": [{"command": "python3 user_prompt.py"}]}],
   "SessionEnd": [{"matcher": "*", "hooks": [{"command": "python3 session_end.py"}]}],
+  "PreCompact": [{"hooks": [{"command": "python3 compact_handoff.py"}]}],
   "PostCompact": [{"matcher": "*", "hooks": [{"command": "python3 compact_handoff.py"}]}]}}
 JSON
 printf 'DRSG_TOKEN=t\nDRSG_API=a\n' > "$P/.drsg/env"

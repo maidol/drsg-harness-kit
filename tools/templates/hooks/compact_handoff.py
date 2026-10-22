@@ -1,6 +1,9 @@
 #!/usr/bin/env python3
 """Persist a redacted compact summary outside the project tree.
 
+On PreCompact it instead prints the managed compact-instructions block, which
+Claude Code appends to the summary prompt as Additional Instructions.
+
 PostCompact is deliberately best-effort: it never reads transcript content,
 never calls a model, and never blocks Claude Code's normal compact flow.
 """
@@ -804,17 +807,48 @@ def prepare_handoff(project, source, data):
         return None, None
 
 
+PRE_COMPACT_LEAD = (
+    "以下是本项目 CLAUDE.md 中 kit 管理的 Compact instructions，读自磁盘上的当前文件；"
+    "对话上下文里如有旧版本，以这里为准。摘要必须按它单列「交接」一节，不得省略。")
+
+
+def pre_compact_instructions(project):
+    """Text for PreCompact stdout, which Claude Code appends to the summary prompt.
+
+    The model already sees CLAUDE.md, but a resumed session sends the copy saved
+    at the last compaction, and in long contexts the block is often ignored.
+    """
+    try:
+        block = project_handoff_block(project)
+    except Exception as exc:
+        diagnose("compact instructions not sent (%s)" % type(exc).__name__)
+        return ""
+    if block is None:
+        return ""
+    block = re.sub(r"<!--.*?-->", "", block, flags=re.S).strip()
+    return PRE_COMPACT_LEAD + "\n\n" + block if block else ""
+
+
 def main():
+    data = None
     try:
         data = json.load(sys.stdin)
+        if isinstance(data, dict) and data.get("hook_event_name") == "PreCompact":
+            if os.environ.get("DRSG_COMPACT_HANDOFF", "1") == "1":
+                text = pre_compact_instructions(project_path())
+                if text:
+                    print(text)
+            return
         if os.environ.get("DRSG_COMPACT_HANDOFF", "1") != "1":
             return
         write_record(data)
     except Exception as exc:
         diagnose("handoff was not saved (%s)" % type(exc).__name__)
     finally:
+        # PreCompact stdout is summary-prompt text, so it must not get "{}".
         # Hook stdout remains one legal JSON object even on any failure.
-        print("{}")
+        if not (isinstance(data, dict) and data.get("hook_event_name") == "PreCompact"):
+            print("{}")
 
 
 if __name__ == "__main__":
