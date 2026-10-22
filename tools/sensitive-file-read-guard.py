@@ -6,7 +6,9 @@ credentials (.mcp.json, ~/.claude.json, .claude/settings*.json, env files,
 .netrc, private keys): the content would land in the transcript and be sent to
 the model. Structure-only reads stay allowed: `jq` filters that print only keys,
 counts, booleans, whitelisted fields or hook settings,
-`grep -c/-l/-L/-q`, `ls`, `stat`, sourcing an env file.
+`grep -c/-l/-L/-q`, `ls`, `stat`, sourcing an env file. A `jq` whose output is
+redirected to a sensitive file or its copy (an edit: `jq ... f > f.new && mv
+f.new f`) prints nothing; a copy (`f.new`, `f.bak-1022`) is as sensitive as `f`.
 
 This guards against the casual `cat .mcp.json`, not against a determined
 bypass (`python -c 'print(open(...).read())'`). The user's own `!` commands do
@@ -27,6 +29,9 @@ GREPS = {"grep", "egrep", "fgrep", "rg", "ag"}
 # Flags after which grep prints no matching lines.
 GREP_QUIET_LONG = {"--count", "--files-with-matches", "--files-without-match",
                    "--quiet", "--silent"}
+# A scratch or backup copy (`settings.local.json.new`, `.mcp.json.bak-1022`)
+# holds the same credentials as the file it was made from.
+COPY_SUFFIX = re.compile(r"\.(?:new|tmp|bak|orig|old|save)(?:[-.][\w.-]*)?$")
 WRAPPERS = {"sudo", "env", "command", "nohup", "time", "exec"}
 # Fields a jq filter may print: an MCP server's type/url/command and a hook's
 # matcher/command. args, env and headers can carry credentials.
@@ -45,6 +50,11 @@ JQ_PASS = {"tostring", "tojson", "ascii_downcase", "ascii_upcase", "sort",
            "unique", "reverse", "first", "last", "flatten", "add", "min", "max",
            "ltrimstr", "rtrimstr", "split", "join", "values", "arrays",
            "objects", "strings", "iterables", "scalars", "empty"}
+# jq options that take one or two values; --slurpfile/--rawfile read a file.
+JQ_ARG1 = {"-L", "--indent"}
+JQ_ARG2 = {"--arg", "--argjson", "--slurpfile", "--rawfile"}
+# A path element: the entries of an object (`to_entries`), whose `.key` is a key name.
+ENTRIES = "<entries>"
 ASSIGNMENT = re.compile(r"^[A-Za-z_][A-Za-z0-9_]*=")
 OPERATORS = ("||", "&&", "|&", "|", ";", "&", "\n")
 
@@ -56,9 +66,12 @@ REASON = (
     "grep -c KEY_NAME <file>.\n"
     "Settings: jq '.hooks | keys' <file> / jq -r '.hooks[][] | .hooks[].command' <file>; "
     "compare without printing: jq -e '.env.NAME == \"value\"' <file>.\n"
+    "Editing one: jq '<filter>' <file> > <file>.new && mv <file>.new <file> "
+    "(the output goes to the file), or write a script and ask the user to run it with !.\n"
     "If you really need the content, ask the user to run it with ! in their own shell.\n"
     "该文件可能带凭据，不要整段读取：用 jq 只取键名或不含密钥的字段，用 grep -c 判断键在不在；"
-    "确实要看内容，请用户自己用 ! 运行。不要换个命令绕过去。"
+    "确实要看内容，请用户自己用 ! 运行；"
+    "要改这类文件，用 jq 输出到新文件再 mv，或写成脚本请用户用 ! 运行。不要换个命令绕过去。"
 )
 
 
@@ -66,7 +79,7 @@ def category(path):
     """The credential category of `path`, or None when it is not sensitive."""
     if not isinstance(path, str) or not path:
         return None
-    path = path.rstrip("/")
+    path = COPY_SUFFIX.sub("", path.rstrip("/"))
     base = os.path.basename(path)
     parts = base.split(".")
     if base.endswith(".pub") or {"example", "sample", "template"} & set(parts[1:]):
@@ -250,6 +263,50 @@ class _JqUnsafe(Exception):
     """A jq construct the analysis does not understand: treat as printing values."""
 
 
+def _jq_string_end(text, i):
+    """Index of the quote closing the jq string that opens at text[i]; a
+    `\\(...)` interpolation inside it may hold strings of its own."""
+    j = i + 1
+    while j < len(text):
+        if text[j] == '"':
+            return j
+        if text[j] == "\\":
+            j = _jq_paren_end(text, j + 1) + 1 if text.startswith("(", j + 1) else j + 2
+        else:
+            j += 1
+    raise _JqUnsafe()
+
+
+def _jq_paren_end(text, i):
+    """Index of the `)` matching the `(` at text[i], skipping strings."""
+    depth, j = 0, i
+    while j < len(text):
+        c = text[j]
+        if c == '"':
+            j = _jq_string_end(text, j)
+        elif c == "(":
+            depth += 1
+        elif c == ")":
+            depth -= 1
+            if depth == 0:
+                return j
+        j += 1
+    raise _JqUnsafe()
+
+
+def _jq_interp_bodies(lit):
+    """The expressions inside the `\\(...)` of a string literal."""
+    bodies, j = [], 1
+    while j < len(lit) - 1:
+        if lit[j] == "\\" and lit.startswith("(", j + 1):
+            end = _jq_paren_end(lit, j + 1)
+            bodies.append(lit[j + 2:end])
+            j = end + 1
+        else:
+            j += 2 if lit[j] == "\\" else 1
+    return bodies
+
+
 def _jq_tokens(text):
     out, i = [], 0
     while i < len(text):
@@ -257,11 +314,7 @@ def _jq_tokens(text):
         if c.isspace():
             i += 1
         elif c == '"':
-            j = i + 1
-            while j < len(text) and text[j] != '"':
-                j += 2 if text[j] == "\\" else 1
-            if j >= len(text):
-                raise _JqUnsafe()
+            j = _jq_string_end(text, i)
             lit = text[i:j + 1]
             out.append(("interp" if "\\(" in lit else "str", lit))
             i = j + 1
@@ -283,6 +336,10 @@ def _jq_tokens(text):
         elif c.isalpha() or c == "_":
             m = re.match(r"[A-Za-z_][A-Za-z0-9_]*", text[i:])
             out.append(("ident", m.group(0)))
+            i += m.end()
+        elif c == "$" and re.match(r"\$[A-Za-z_]", text[i:]):
+            m = re.match(r"\$([A-Za-z_][A-Za-z0-9_]*)", text[i:])
+            out.append(("var", m.group(1)))
             i += m.end()
         elif text[i:i + 2] in ("//", "==", "!=", "<=", ">="):
             out.append(("op", text[i:i + 2]))
@@ -311,9 +368,11 @@ class _JqFilter:
     literals and safe fields. Each parse step returns (safe, path): `path` is
     the field path from the file's root when the output is a pure path."""
 
-    def __init__(self, text):
+    def __init__(self, text, variables=()):
         self.toks = _jq_tokens(text)
         self.i = 0
+        # Names bound by --arg/--argjson: values from the command line, not the file.
+        self.vars = set(variables)
 
     def peek(self, value=None):
         tok = self.toks[self.i] if self.i < len(self.toks) else (None, None)
@@ -403,6 +462,12 @@ class _JqFilter:
                 return safe, path
 
     def step(self, safe, path, name):
+        if path is not None and path[-2:] == (ENTRIES, 0):
+            if name == "key":
+                return True, None
+            if name == "value":
+                path = path[:-2] + (0,)
+                return (_jq_path_safe(path) if path[:1] != (None,) else safe), path
         # A path known from the file's root decides alone: `.hooks[][]` is
         # safe, `.hooks[][] | .env` is not. Below an unknown prefix (output
         # of keys, map, a comma) a safe input stays safe.
@@ -423,6 +488,17 @@ class _JqFilter:
         if kind in ("str", "num"):
             return True, None
         if kind == "interp":
+            safe = True
+            for body in _jq_interp_bodies(value):
+                sub = _JqFilter(body, self.vars)
+                s, _ = sub.pipe(ctx)
+                if sub.i != len(sub.toks):
+                    raise _JqUnsafe()
+                safe = safe and s
+            return safe, None
+        if kind == "var":
+            if value in self.vars:
+                return True, None
             raise _JqUnsafe()
         if value == "-" and kind == "op":
             return self.postfix(ctx)[0], None
@@ -485,6 +561,8 @@ class _JqFilter:
             return True, None
         if name == "select":
             return ctx
+        if name == "to_entries" and not args:
+            return ctx[0], (ctx[1] if ctx[1] is not None else (None,)) + (ENTRIES,)
         if name == "map":
             return args[0][0] if args else False, None
         if name in JQ_PASS:
@@ -492,9 +570,9 @@ class _JqFilter:
         raise _JqUnsafe()
 
 
-def _jq_structural(flt):
+def _jq_structural(flt, variables=()):
     try:
-        return _JqFilter(flt).safe()
+        return _JqFilter(flt, variables).safe()
     except (_JqUnsafe, IndexError, TypeError):
         return False
 
@@ -505,14 +583,19 @@ def segment_category(seg):
     if not argv:
         return None
     cmd = os.path.basename(argv[0])
-    args, skip = [], False
+    args, skip, stdout_target, to_file = [], False, False, False
     for a in argv[1:]:
         if skip:
             skip = False
+            if stdout_target and category(a):
+                to_file = True
         elif re.fullmatch(r"\d*>>?", a):  # `> file`: written, not read
             skip = True
-        elif re.match(r"\d*>", a):         # `>file`, `2>&1`
-            pass
+            stdout_target = a.rstrip(">") in ("", "1")
+        elif re.match(r"\d*>", a):         # `>file`, `2>&1`, `>&2`
+            fd, target = re.match(r"(\d*)>>?(.*)", a).groups()
+            if fd in ("", "1") and category(target):
+                to_file = True
         elif a.startswith("<"):            # `< file` is read; `<<EOF` is a heredoc
             if not a.startswith("<<") and a.lstrip("<"):
                 args.append(a.lstrip("<"))
@@ -525,17 +608,41 @@ def segment_category(seg):
         hits = [category(a) for a in positional if category(a)]
         return hits[0] if hits and not _grep_quiet(args) else None
     if cmd == "jq":
-        if "-f" in args or "--from-file" in args or not positional:
-            flt, files = None, positional
-        else:
-            flt, files = positional[0], positional[1:]
-        hits = [category(a) for a in files if category(a)]
-        if hits and (flt is None or not _jq_structural(flt)):
-            return hits[0]
-        return None
+        return _jq_category(args, to_file)
     if cmd in READERS:
         hits = [category(a) for a in positional if category(a)]
         return hits[0] if hits else None
+    return None
+
+
+def _jq_category(args, to_file):
+    """The category of a sensitive file this jq prints, or None."""
+    variables, files, positional, from_file, i = [], [], [], False, 0
+    while i < len(args):
+        a = args[i]
+        if a in JQ_ARG2:
+            if a in ("--slurpfile", "--rawfile"):
+                files.extend(args[i + 2:i + 3])  # its variable stays unknown
+            else:
+                variables.extend(args[i + 1:i + 2])
+            i += 3
+        elif a in JQ_ARG1:
+            i += 2
+        else:
+            if a in ("-f", "--from-file"):
+                from_file = True
+            elif not a.startswith("-"):
+                positional.append(a)
+            i += 1
+    if from_file or not positional:
+        flt = None
+        files += positional
+    else:
+        flt = positional[0]
+        files += positional[1:]
+    hits = [category(a) for a in files if category(a)]
+    if hits and not to_file and (flt is None or not _jq_structural(flt, variables)):
+        return hits[0]
     return None
 
 

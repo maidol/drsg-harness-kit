@@ -89,6 +89,20 @@ check "jq unknown function" "$(first "$(bash_d "jq '.env | debug' .claude/settin
 check "jq string interpolation" "$(first "$(bash_d "jq '\"\\(.env.X)\"' .claude/settings.local.json")")" deny
 check "jq tostring keeps env unsafe" "$(first "$(bash_d "jq '.env | tostring' .claude/settings.local.json")")" deny
 check "jq hooks key below the top level" "$(first "$(bash_d "jq '.mcpServers[] | .hooks' .mcp.json")")" deny
+# 10-22 replays: --arg values, $variables, interpolation and to_entries keys,
+# and a jq edit whose output goes to a file, not to the transcript.
+check "jq --arg index (10-22 02:21)" "$(bash_d "jq -r --arg p /work/x '.projects[\$p].mcpServers | keys' ~/.claude.json")" allow
+check "jq interpolation of keys and safe fields (10-22 02:21)" "$(bash_d "jq -r --arg p /x '.projects[\$p].mcpServers | to_entries[] | \"\\(.key) type=\\(.value.type) url=\\(.value.url) headers=\\((.value.headers//{})|keys|join(\",\"))\"' ~/.claude.json")" allow
+check "jq edit written to a new file (10-22 08:01)" "$(bash_d "jq --arg c 'bash -c x' '.hooks.SessionStart += [{\"matcher\":\"m\",\"hooks\":[{\"type\":\"command\",\"command\":\$c}]}]' settings.local.json > settings.local.json.new && mv settings.local.json.new settings.local.json")" allow
+check "jq --arg still denies a value" "$(first "$(bash_d "jq --arg p /x '.projects[\$p].mcpServers' ~/.claude.json")")" deny
+check "jq --rawfile variable" "$(first "$(bash_d "jq -n --rawfile s .mcp.json '\$s'")")" deny
+check "jq to_entries value" "$(first "$(bash_d "jq '.mcpServers | to_entries[] | .value' .mcp.json")")" deny
+check "jq interpolation with an unsafe part" "$(first "$(bash_d "jq -r '.mcpServers | to_entries[] | \"\\(.key) \\(.value.headers)\"' .mcp.json")")" deny
+check "jq output to /dev/stderr" "$(first "$(bash_d 'jq . .mcp.json > /dev/stderr')")" deny
+check "jq output to stderr by fd" "$(first "$(bash_d 'jq . .mcp.json >&2')")" deny
+check "jq output copied to a plain file" "$(first "$(bash_d 'jq . .mcp.json > /tmp/x && cat /tmp/x')")" deny
+check "cat a .new copy" "$(first "$(bash_d 'cat settings.local.json.new')")" deny
+check "cat a dated backup" "$(first "$(bash_d 'cat .claude/settings.local.json.bak-20261022-snapshot')")" deny
 check "grep -c" "$(bash_d 'grep -c WDZT_AK config.env')" allow
 check "grep -l" "$(bash_d 'grep -l Bearer .mcp.json')" allow
 check "grep -q in combined flags" "$(bash_d 'grep -iq token .env && echo yes')" allow
@@ -120,6 +134,7 @@ OUT="$(bash_d 'cat /secret-dir-name/.mcp.json')"
 check "reason names the category" "$(printf '%s' "$OUT" | grep -c 'category: mcp-config')" 1
 check "reason gives the jq alternative" "$(printf '%s' "$OUT" | grep -c "jq '.mcpServers | keys'")" 1
 check "reason gives the settings alternative" "$(printf '%s' "$OUT" | grep -c "jq '.hooks | keys'")" 1
+check "reason gives the edit alternative" "$(printf '%s' "$OUT" | grep -c "> <file>.new && mv <file>.new <file>")" 1
 check "reason does not echo the command" "$(printf '%s' "$OUT" | grep -c 'secret-dir-name')" 0
 
 # --- broken input fails open, silently ---

@@ -12,7 +12,7 @@ trap 'rm -rf "$T"' EXIT
 KILLED=0
 SURVIVED=0
 NOT_RUN=0
-EXPECTED=21
+EXPECTED=29
 
 run_mutation() {
   local name="$1" only="$2" variant="$3" copy="$T/$1.py"
@@ -50,6 +50,14 @@ pairs = {
     "jq-interp-safe": ('"interp" if "\\\\(" in lit else "str"', '"str"'),
     "heredoc-body-parsed": ("                i = _skip_heredocs(text, i, heredocs)\n", "                heredocs.clear()\n"),
     "heredoc-never-ends": ("            if (line.lstrip(\"\\t\") if strip else line) == word:\n", "            if False:\n"),
+    "jq-arg-values-as-files": ("        if a in JQ_ARG2:\n", "        if False:\n"),
+    "jq-undefined-var-safe": ("            if value in self.vars:\n", "            if True:\n"),
+    "jq-rawfile-ignored": ("                files.extend(args[i + 2:i + 3])  # its variable stays unknown\n", "                pass\n"),
+    "jq-interp-bodies-ignored": ('                safe = safe and s\n            return safe, None\n        if kind == "var":', '                pass\n            return safe, None\n        if kind == "var":'),
+    "jq-entries-any-field": ('            if name == "key":\n', "            if True:\n"),
+    "jq-redirect-file-ignored": ("            if stdout_target and category(a):\n                to_file = True\n", "            if stdout_target and category(a):\n                pass\n"),
+    "jq-redirect-any-target": ("            if stdout_target and category(a):\n", "            if stdout_target:\n"),
+    "copy-suffix-ignored": ('COPY_SUFFIX = re.compile(r"\\.(?:new|tmp|bak|orig|old|save)(?:[-.][\\w.-]*)?$")', 'COPY_SUFFIX = re.compile(r"(?!)")'),
     "no-op": ("def category(path):\n", "def category(path):  # no-op\n"),
 }
 old, new = pairs[variant]
@@ -93,6 +101,14 @@ run_mutation jq-unknown-fn-safe "jq unknown function" jq-unknown-fn-safe
 run_mutation jq-interp-safe "jq string interpolation" jq-interp-safe
 run_mutation heredoc-body-parsed "heredoc body is data" heredoc-body-parsed
 run_mutation heredoc-never-ends "command after the heredoc terminator" heredoc-never-ends
+run_mutation jq-arg-values-as-files "jq --arg index (10-22 02:21)" jq-arg-values-as-files
+run_mutation jq-undefined-var-safe "jq --rawfile variable" jq-undefined-var-safe
+run_mutation jq-rawfile-ignored "jq --rawfile variable" jq-rawfile-ignored
+run_mutation jq-interp-bodies-ignored "jq interpolation with an unsafe part" jq-interp-bodies-ignored
+run_mutation jq-entries-any-field "jq to_entries value" jq-entries-any-field
+run_mutation jq-redirect-file-ignored "jq edit written to a new file (10-22 08:01)" jq-redirect-file-ignored
+run_mutation jq-redirect-any-target "jq output copied to a plain file" jq-redirect-any-target
+run_mutation copy-suffix-ignored "cat a dated backup" copy-suffix-ignored
 if [ "${MUTATION_SELF_TEST:-0}" = 1 ]; then
   EXPECTED=$((EXPECTED + 1))
   run_mutation self-test-noop "incident 10-19: cat .mcp.json || true" no-op
