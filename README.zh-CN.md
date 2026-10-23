@@ -146,6 +146,17 @@ PY
 `/clear` 仍会清除当前对话的活动上下文；交接是在后续 startup 中恢复工作的独立路径，不会原样保留已清除的上下文。依赖该流程前，应在交互式会话中手动验证 `/compact` 和 `/clear`。自动压缩及其 PostCompact payload 也应在实际使用的 Claude Code 版本上核实；不能仅凭会话变长就认定自动压缩已触发。
 
 
+## Superpowers 文档归档
+
+`~/.drsg-memory/commit-auth.json` 配置了审核方仓库时，setup 会让新产生的 Superpowers 文档（设计、实施计划、评审与验收记录）保存到该仓库的 `reviews/<项目>/docs/superpowers/`：在项目 `CLAUDE.md` 写入一个独立的托管区块，并只把这一个目录加进 `.claude/settings.local.json` 的 `permissions.additionalDirectories`。没有审核方配置时什么都不写；已有文档不迁移。单独为某个项目关闭或恢复：
+
+```bash
+/tmp/drsg-harness-kit-*/setup.sh --no-superpowers-docs /path/to/project  # 关闭
+/tmp/drsg-harness-kit-*/setup.sh --superpowers-docs /path/to/project     # 恢复
+```
+
+关闭时删除托管区块和 kit 加的那一条 allow；已归档的文件保留不动。
+
 ## 权限护栏（可选）
 
 不要求就不装。`--permission-guard DIR` 往 `DIR/.claude/settings.local.json` 加入 `git commit` / `git push` / `gh pr create` 的 ask 规则和只读的窄 allow 规则；`--reviews-dir DIR` 在 `~/.claude/settings.json` 里告诉 auto 模式分类器：DIR 下的脚本在 Write 里原样展示过之后可以运行；`--prune-broad` 同时从项目文件里删掉 `Bash(python3 *)` 这类规则；`--self-commit` 不写 `git commit` 的 ask 规则（之前写过的会删掉），并加一条 auto 模式规则，允许本会话把自己的改动提交到本地，push、PR、tag 和发版照旧要问，只有你的全局 `CLAUDE.md` 允许未经审核的本地提交时才用它。这几个选项都不需要 `--project`、drsg 二进制或正在运行的 daemon。详见 [tools/README.zh-CN.md](tools/README.zh-CN.md#权限护栏permission-guardpy)。

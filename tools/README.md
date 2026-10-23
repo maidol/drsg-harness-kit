@@ -148,6 +148,30 @@ by the project's real path. While opted out, setup and audit do not read or
 modify that project's `CLAUDE.md`. See the root README for the PostCompact
 handoff storage and SessionStart behavior.
 
+### Superpowers document archive
+
+`superpowers_docs.py` is the module `install.sh` uses to merge hook
+registrations into `.claude/settings.local.json` and to install the
+Superpowers archive rule and its allow entry. The direct installer accepts the
+same per-project switches as `setup.sh`:
+
+```bash
+bash ./install.sh --no-superpowers-docs /path/to/project
+bash ./install.sh --superpowers-docs /path/to/project
+```
+
+`setup.sh --all-projects` passes its NUL-separated project list with
+`--known-projects-file`, so project-name conflicts are checked against the
+same list:
+
+```bash
+bash ./install.sh /path/to/project --bin /path/to/drsg --known-projects-file /path/to/projects.nul
+```
+
+Ownership state lives under
+`${XDG_CONFIG_HOME:-$HOME/.config}/drsg/superpowers-docs-state/`; only an
+allow entry recorded there is ever removed.
+
 ## Joining an existing daemon
 
 If something already answers `/health` at the target address, `install.sh`

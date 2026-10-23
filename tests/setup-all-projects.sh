@@ -35,6 +35,7 @@ MISSING="$PROJECTS/missing"
 ALIAS="$PROJECTS/alpha-alias"
 FAKE_INSTALL_LOG="$T/install.calls"
 MAIN_BRANCH_CALLS="$T/main-branch.calls"
+KNOWN_PROJECTS_LOG="$T/known-projects.count"
 mkdir -p "$MEM_DIR" "$HOME_DIR" "$CLAUDE_DIR" "$PROJECTS" "$BUNDLE/tools" \
   "$BUNDLE/claude" "$BUNDLE/skills/test-skill" "$ALPHA/.drsg" "$BETA/.drsg" "$NO_ENV"
 
@@ -89,6 +90,19 @@ cat > "$BUNDLE/tools/install.sh" <<'SH'
 set -u
 printf '%s\0' "$@" >> "$FAKE_INSTALL_LOG"
 printf '\n' >> "$FAKE_INSTALL_LOG"
+known_file=""
+while [ "$#" -gt 0 ]; do
+  if [ "$1" = "--known-projects-file" ]; then known_file="$2"; break; fi
+  shift
+done
+if [ -n "$known_file" ] && [ -r "$known_file" ]; then
+  python3 - "$known_file" >> "$KNOWN_PROJECTS_LOG" <<'PY'
+import sys
+print(len([path for path in open(sys.argv[1], "rb").read().split(b"\0") if path]))
+PY
+else
+  printf 'missing\n' >> "$KNOWN_PROJECTS_LOG"
+fi
 count="$(wc -l < "$FAKE_INSTALL_LOG" | tr -d ' ')"
 echo "fake-install-output $count"
 if [ "${FAIL_FIRST:-0}" = 1 ] && [ "$count" -eq 1 ]; then
@@ -146,9 +160,11 @@ check() {
 run_setup() {
   local out="$1" fail_first="$2"
   : > "$FAKE_INSTALL_LOG"
+  : > "$KNOWN_PROJECTS_LOG"
   FAIL_FIRST="$fail_first" HOME="$HOME_DIR" CLAUDE_CONFIG_DIR="$CLAUDE_DIR" \
     DRSG_MEM_DIR="$MEM_DIR" DRSG_API="$API" DRSG_TOKEN="$TOKEN" DRSG_PLANE=memory \
     FAKE_INSTALL_LOG="$FAKE_INSTALL_LOG" MAIN_BRANCH_CALLS="$MAIN_BRANCH_CALLS" \
+    KNOWN_PROJECTS_LOG="$KNOWN_PROJECTS_LOG" \
     PATH="$T/bin:$PATH" bash "$BUNDLE/setup.sh" --all-projects --bin /bin/true \
       --addr "127.0.0.1:$PORT" >"$out" 2>&1
 }
@@ -303,6 +319,15 @@ valid = len(records) == 2 and all(
     b"--bin" in args and b"/bin/true" in args and
     b"--addr" in args and want_addr in args for args in records)
 print("yes" if valid else "no")
+PY
+)" yes
+    check "installer-gets-known-project-list-file" \
+      "$(python3 - "$FAKE_INSTALL_LOG" "$KNOWN_PROJECTS_LOG" <<'PY'
+import sys
+records = [row.split(b"\0")[:-1] for row in open(sys.argv[1], "rb").read().splitlines()]
+counts = open(sys.argv[2]).read().splitlines()
+valid = len(records) == 2 and all(b"--known-projects-file" in args for args in records)
+print("yes" if valid and counts == ["4", "4"] else "no")
 PY
 )" yes
     check "global-main-branch-step-runs-once" \

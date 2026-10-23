@@ -228,6 +228,25 @@ alone, and the installer prints the line to chain by hand. Usage and the
 declaration file: [tools/README.md](tools/README.md#completeness-guard-completeness-guardpy).
 
 
+## Superpowers document archive
+
+When `~/.drsg-memory/commit-auth.json` names a reviewer repository, setup
+points new Superpowers documents (design specs, implementation plans, review
+and acceptance notes) at `reviews/<project>/docs/superpowers/` in that
+repository. It writes a separate managed block into the project's `CLAUDE.md`
+and adds exactly that directory to `permissions.additionalDirectories` in
+`.claude/settings.local.json`. Without a reviewer configuration nothing is
+written. Existing documents are not moved. To turn it off or back on for one
+project:
+
+```bash
+/tmp/drsg-harness-kit-*/setup.sh --no-superpowers-docs /path/to/project
+/tmp/drsg-harness-kit-*/setup.sh --superpowers-docs /path/to/project
+```
+
+Opting out removes the managed block and the allow entry the kit added; files
+already archived stay where they are.
+
 ## Permission guard (opt-in)
 
 Not installed unless asked for. `--permission-guard DIR` adds ask rules for

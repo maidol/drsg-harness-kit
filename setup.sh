@@ -40,6 +40,8 @@
 #                     whole-file reads of credential files (.mcp.json, env, keys)
 #   --no-compact-instructions DIR  opt this project out of the managed CLAUDE.md block
 #   --compact-instructions DIR     restore the managed block for this project
+#   --no-superpowers-docs DIR      opt out of Superpowers document archiving
+#   --superpowers-docs DIR         restore Superpowers document archiving
 #   --permission-guard DIR  add commit/push ask rules and narrow read-only allow
 #                     rules to DIR/.claude/settings.local.json (opt-in)
 #   --reviews-dir DIR teach the auto-mode classifier (~/.claude/settings.json)
@@ -57,12 +59,15 @@ TOOLS="${DRSG_MEM_DIR:-$HOME/.drsg-memory}/tools"
 FETCH=0; SKILLS=1; MAIN_BRANCH_WORKFLOW=1; POLLER=1; STREAK_HINT=1; TEXTUAL_TOOL_GUARD=1; SENSITIVE_READ_GUARD=1
 PG_DIR=""; REVIEWS_DIR=""; PRUNE=0; SELF_COMMIT=0; MODEL_PICKER=0
 COMPACT_ACTION=""; COMPACT_PROJECT=""
+SUPERPOWERS_ACTION=""; SUPERPOWERS_PROJECT=""
 
 while [ $# -gt 0 ]; do
   case "$1" in
     --project)    PROJECT="${2:?--project needs a path}"; shift 2 ;;
-    --no-compact-instructions) [ -z "$COMPACT_ACTION" ] || { echo "ERROR: choose only one compact-instructions option" >&2; exit 1; }; COMPACT_ACTION=off; COMPACT_PROJECT="${2:?--no-compact-instructions needs a project path}"; shift 2 ;;
-    --compact-instructions) [ -z "$COMPACT_ACTION" ] || { echo "ERROR: choose only one compact-instructions option" >&2; exit 1; }; COMPACT_ACTION=on; COMPACT_PROJECT="${2:?--compact-instructions needs a project path}"; shift 2 ;;
+    --no-compact-instructions) [ -z "$COMPACT_ACTION" ] && [ -z "$SUPERPOWERS_ACTION" ] || { echo "ERROR: choose only one documentation option" >&2; exit 1; }; COMPACT_ACTION=off; COMPACT_PROJECT="${2:?--no-compact-instructions needs a project path}"; shift 2 ;;
+    --compact-instructions) [ -z "$COMPACT_ACTION" ] && [ -z "$SUPERPOWERS_ACTION" ] || { echo "ERROR: choose only one documentation option" >&2; exit 1; }; COMPACT_ACTION=on; COMPACT_PROJECT="${2:?--compact-instructions needs a project path}"; shift 2 ;;
+    --no-superpowers-docs) [ -z "$SUPERPOWERS_ACTION" ] && [ -z "$COMPACT_ACTION" ] || { echo "ERROR: choose only one documentation option" >&2; exit 1; }; SUPERPOWERS_ACTION=off; SUPERPOWERS_PROJECT="${2:?--no-superpowers-docs needs a project path}"; shift 2 ;;
+    --superpowers-docs) [ -z "$SUPERPOWERS_ACTION" ] && [ -z "$COMPACT_ACTION" ] || { echo "ERROR: choose only one documentation option" >&2; exit 1; }; SUPERPOWERS_ACTION=on; SUPERPOWERS_PROJECT="${2:?--superpowers-docs needs a project path}"; shift 2 ;;
     --all-projects) ALL_PROJECTS=1; shift ;;
     --repo)       REPO="${2:?--repo needs a path}"; shift 2 ;;
     --hub)        HUB="${2:?--hub needs a path}"; shift 2 ;;
@@ -131,6 +136,20 @@ if [ -n "$COMPACT_ACTION" ]; then
     exec bash "$HERE/tools/install.sh" --no-compact-instructions "$COMPACT_PROJECT"
   else
     exec bash "$HERE/tools/install.sh" --compact-instructions "$COMPACT_PROJECT"
+  fi
+fi
+
+if [ -n "$SUPERPOWERS_ACTION" ]; then
+  if [ -n "$PROJECT" ] || [ "$ALL_PROJECTS" -eq 1 ] || [ -n "$REPO" ] || [ -n "$HUB" ] || [ -n "$ROUTER" ] || [ -n "$USAGE_REPORT" ]; then
+    echo "ERROR: Superpowers documentation options are standalone and take one project path" >&2
+    exit 1
+  fi
+  [ -d "$SUPERPOWERS_PROJECT" ] || { echo "ERROR: project directory does not exist: $SUPERPOWERS_PROJECT" >&2; exit 1; }
+  [ -x "$HERE/tools/install.sh" ] || { echo "ERROR: tools/install.sh is missing from this bundle" >&2; exit 1; }
+  if [ "$SUPERPOWERS_ACTION" = "off" ]; then
+    exec bash "$HERE/tools/install.sh" --no-superpowers-docs "$SUPERPOWERS_PROJECT"
+  else
+    exec bash "$HERE/tools/install.sh" --superpowers-docs "$SUPERPOWERS_PROJECT"
   fi
 fi
 
@@ -309,7 +328,9 @@ fi
 
 install_memory_project() {
   local target="$1"
+  local known_projects_file="${2:-}"
   local -a args=("$target" --bin "$BIN")
+  if [ -n "$known_projects_file" ]; then args+=(--known-projects-file "$known_projects_file"); fi
   if [ -n "$ADDR" ]; then args+=(--addr "$ADDR"); fi
   if [ -n "$TOKEN" ]; then args+=(--token "$TOKEN"); fi
   "$TOOLS/install.sh" "${args[@]}"
@@ -385,7 +406,7 @@ elif [ "$ALL_PROJECTS" -eq 1 ]; then
     fi
     ATTEMPT=$((ATTEMPT + 1))
     LOG_FILE="$LOG_DIR/$(printf '%04d' "$ATTEMPT").log"
-    if install_memory_project "$target" 2>&1 | \
+    if install_memory_project "$target" "$PROJECTS_FILE" 2>&1 | \
         DRSG_LOG_REDACT="$TOKEN" python3 -c 'import os,sys; t=os.environ.get("DRSG_LOG_REDACT", ""); [sys.stdout.write(line.replace(t, "<hidden>") if t else line) for line in sys.stdin]' \
         > "$LOG_FILE"; then
       echo "ok $target"

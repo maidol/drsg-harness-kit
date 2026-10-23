@@ -85,6 +85,23 @@ bash ./install.sh --compact-instructions /path/to/project
 
 退出状态按项目真实路径计算，保存在 checkout 外的 `${XDG_CONFIG_HOME:-$HOME/.config}/drsg/compact-instructions-opt-outs/`。项目退出期间，setup 和 audit 不会读取或改动该项目的 `CLAUDE.md`。PostCompact 交接记录的存储与 SessionStart 注入行为见仓库根目录 README。
 
+### Superpowers 文档归档
+
+`superpowers_docs.py` 是 `install.sh` 用来把 hook 注册合并进 `.claude/settings.local.json`、并安装 Superpowers 归档规则和对应 allow 的模块。直接安装器接受与 `setup.sh` 相同的单项目开关：
+
+```bash
+bash ./install.sh --no-superpowers-docs /path/to/project
+bash ./install.sh --superpowers-docs /path/to/project
+```
+
+`setup.sh --all-projects` 用 `--known-projects-file` 传入 NUL 分隔的项目清单，项目重名冲突按同一份清单检查：
+
+```bash
+bash ./install.sh /path/to/project --bin /path/to/drsg --known-projects-file /path/to/projects.nul
+```
+
+归属状态保存在 `${XDG_CONFIG_HOME:-$HOME/.config}/drsg/superpowers-docs-state/`；只有记录在那里的 allow 才会被删除。
+
 ## 加入已有 daemon
 
 如果目标地址已经有进程响应 `/health`，`install.sh` 会**加入**它，而不是启动第二个 daemon。之后所有项目都会进入同一个 `memory` plane，由各自的 `Project` 节点区分，recall 也可以跨项目访问。对已有项目重新运行时，安装器会在进程内部复用 `.drsg/env` 中的凭据，不打印 token、不将其放入命令行；它会刷新 `drsg-events`，保留已有 `drsg` 注册。若 `drsg` 缺失，安装器会把条目直接写进 `.claude.json`（token 经环境变量传入，不进命令行；保留文件权限，新建时为 0600；文件不是合法 JSON 时不动它，只打 WARN）。新项目加入不必传 `--token`：安装器读取 daemon 保存在 `${DRSG_MEM_DIR:-~/.drsg-memory}/env` 里的 token，经 daemon 验证通过后使用。`install.sh --audit` 会报告 `drsg` 条目里的 Bearer token 和项目 `.drsg/env` 不一致的情况（比 sha256，不打印任何一方的值）。只有那个文件不存在、或者属于另一个 daemon 时，才需要提供 token：

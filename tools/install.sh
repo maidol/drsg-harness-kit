@@ -36,6 +36,9 @@
 #                       project settings & docs, code graph).
 #   --no-compact-instructions DIR  record a project opt-out without reading CLAUDE.md
 #   --compact-instructions DIR     remove the opt-out and manage the CLAUDE.md block
+#   --no-superpowers-docs DIR      opt out of Superpowers document archiving
+#   --superpowers-docs DIR         restore Superpowers document archiving
+#   --known-projects-file FILE     NUL-separated registered project paths
 #   -h, --help
 #
 # What it does:
@@ -100,6 +103,9 @@ CHECK_ONLY=0
 AUDIT_ONLY=0
 COMPACT_ACTION=""
 COMPACT_PROJECT=""
+SUPERPOWERS_ACTION=""
+SUPERPOWERS_PROJECT=""
+KNOWN_PROJECTS_FILE=""
 
 manage_compact_instructions() {
   python3 - "$1" "$2" "$TEMPLATES/compact-instructions.md" <<'PYEOF'
@@ -213,8 +219,11 @@ while [ "$#" -gt 0 ]; do
     --restart-daemon) RESTART_DAEMON=1; shift ;;
     --check) CHECK_ONLY=1; shift ;;
     --audit) AUDIT_ONLY=1; shift ;;
-    --no-compact-instructions) [ -z "$COMPACT_ACTION" ] || { echo "ERROR: choose only one compact-instructions option" >&2; exit 1; }; COMPACT_ACTION=off; COMPACT_PROJECT="${2:?--no-compact-instructions needs a project path}"; shift 2 ;;
-    --compact-instructions) [ -z "$COMPACT_ACTION" ] || { echo "ERROR: choose only one compact-instructions option" >&2; exit 1; }; COMPACT_ACTION=on; COMPACT_PROJECT="${2:?--compact-instructions needs a project path}"; shift 2 ;;
+    --no-compact-instructions) [ -z "$COMPACT_ACTION" ] && [ -z "$SUPERPOWERS_ACTION" ] || { echo "ERROR: choose only one documentation option" >&2; exit 1; }; COMPACT_ACTION=off; COMPACT_PROJECT="${2:?--no-compact-instructions needs a project path}"; shift 2 ;;
+    --compact-instructions) [ -z "$COMPACT_ACTION" ] && [ -z "$SUPERPOWERS_ACTION" ] || { echo "ERROR: choose only one documentation option" >&2; exit 1; }; COMPACT_ACTION=on; COMPACT_PROJECT="${2:?--compact-instructions needs a project path}"; shift 2 ;;
+    --no-superpowers-docs) [ -z "$SUPERPOWERS_ACTION" ] && [ -z "$COMPACT_ACTION" ] || { echo "ERROR: choose only one documentation option" >&2; exit 1; }; SUPERPOWERS_ACTION=off; SUPERPOWERS_PROJECT="${2:?--no-superpowers-docs needs a project path}"; shift 2 ;;
+    --superpowers-docs) [ -z "$SUPERPOWERS_ACTION" ] && [ -z "$COMPACT_ACTION" ] || { echo "ERROR: choose only one documentation option" >&2; exit 1; }; SUPERPOWERS_ACTION=on; SUPERPOWERS_PROJECT="${2:?--superpowers-docs needs a project path}"; shift 2 ;;
+    --known-projects-file) KNOWN_PROJECTS_FILE="${2:?--known-projects-file needs a path}"; shift 2 ;;
     -h|--help) usage; exit 0 ;;
     *) echo "unknown option: $1" >&2; usage; exit 1 ;;
   esac
@@ -228,6 +237,34 @@ if [ -n "$COMPACT_ACTION" ]; then
   [ -d "$COMPACT_PROJECT" ] || { echo "ERROR: project directory does not exist: $COMPACT_PROJECT" >&2; exit 1; }
   manage_compact_instructions "$COMPACT_PROJECT" "$COMPACT_ACTION"
   exit $?
+fi
+
+if [ -n "$SUPERPOWERS_ACTION" ]; then
+  if [ "$CHECK_ONLY" = "1" ] || [ "$AUDIT_ONLY" = "1" ] || [ "$PROJECT_DIR_GIVEN" = "1" ]; then
+    echo "ERROR: Superpowers documentation options are standalone and take one project path" >&2
+    exit 1
+  fi
+  [ -d "$SUPERPOWERS_PROJECT" ] || { echo "ERROR: project directory does not exist: $SUPERPOWERS_PROJECT" >&2; exit 1; }
+  python3 - "$SCRIPT_DIR" "$SUPERPOWERS_PROJECT" "$SUPERPOWERS_ACTION" "$TEMPLATES/settings-hooks.json" <<'PYEOF'
+import os
+import sys
+sys.path.insert(0, sys.argv[1])
+import superpowers_docs
+project, action, hooks = sys.argv[2:]
+if action == "off":
+    result = superpowers_docs.set_opt_out(project, True)
+else:
+    result = superpowers_docs.set_opt_out(project, False)
+    if result["ok"]:
+        result = superpowers_docs.install_project(project, hooks_template=hooks)
+if not result["settings_ok"]:
+    print("WARN: project settings are invalid or could not be updated; settings left unchanged")
+elif result["warning"]:
+    print("WARN: Superpowers docs setup: " + (result["reason"] or "state requires review"))
+else:
+    print("Superpowers docs " + ("disabled" if action == "off" else "enabled"))
+PYEOF
+  exit 0
 fi
 
 # ---- 0. --audit: run comprehensive 5-layer deployment audit -----------------
@@ -611,75 +648,35 @@ HOOKS_JSON="$TEMPLATES/settings-hooks.json"
 # not. That is not hypothetical: it removed the code-graph SessionStart guard
 # from all six repositories that had one, and the guard exists precisely to
 # announce a dead daemon, so nothing was left to report its own absence.
-python3 - "$SETTINGS" "$HOOKS_JSON" <<'PYEOF'
-import json, os, sys
-settings_path, hooks_path = sys.argv[1], sys.argv[2]
-if os.path.exists(settings_path):
-    with open(settings_path) as f: d = json.load(f)
+python3 - "$SCRIPT_DIR" "$PROJECT_DIR" "$KNOWN_PROJECTS_FILE" "$HOOKS_JSON" <<'PYEOF'
+import sys
+sys.path.insert(0, sys.argv[1])
+import superpowers_docs
+project, known_projects, hooks_template = sys.argv[2:]
+result = superpowers_docs.install_project(
+    project, known_projects or None, hooks_template=hooks_template)
+if not result["settings_ok"]:
+    print("   WARN: project settings are invalid or could not be updated; settings left unchanged")
 else:
-    d = {}
-with open(hooks_path) as f: ours = json.load(f)
-
-def leaf(cmd):
-    # Identify our registrations by the script they run, not by the path that
-    # reaches it: an earlier install may have written an absolute path where
-    # the template now writes ${CLAUDE_PROJECT_DIR}.
-    #
-    # argv[0], then its basename — a registration carries arguments
-    # ("codegraph.sh hook --dir /repo"), and the last slash-separated segment
-    # of the whole string is an argument, not the program.
-    argv = (cmd or "").strip().split()
-    return argv[0].split("/")[-1] if argv else ""
-
-ours_leaves = {leaf(g["hooks"][0]["command"]) for gs in ours.values() for g in gs}
-hooks = d.get("hooks") or {}
-added, refreshed, deduped = [], [], []
-
-for event, groups in ours.items():
-    existing = hooks.get(event) or []
-    for g in groups:
-        tmpl = g["hooks"][0]
-        want = leaf(tmpl["command"])
-        mine = [(gi, hi)
-                for gi, eg in enumerate(existing)
-                for hi, h in enumerate(eg.get("hooks") or [])
-                if leaf(h.get("command")) == want]
-        if not mine:
-            existing.append(g)
-            added.append("%s/%s" % (event, want))
-            continue
-        gi, hi = mine[0]
-        existing[gi]["hooks"][hi] = dict(tmpl)
-        # Adopt the template's matcher only when our hook is alone in the
-        # group — sharing a group means re-targeting someone else's hook too.
-        if len(existing[gi]["hooks"]) == 1:
-            if "matcher" in g: existing[gi]["matcher"] = g["matcher"]
-            else: existing[gi].pop("matcher", None)
-        refreshed.append("%s/%s" % (event, want))
-        # Drop duplicates of OUR OWN registration only; two copies run the
-        # hook twice per event. Anything not ours is never touched.
-        for gi2, hi2 in reversed(mine[1:]):
-            del existing[gi2]["hooks"][hi2]
-            if not existing[gi2]["hooks"]: del existing[gi2]
-            deduped.append("%s/%s" % (event, want))
-    hooks[event] = existing
-
-d["hooks"] = hooks
-with open(settings_path, "w") as f:
-    json.dump(d, f, ensure_ascii=False, indent=2)
-    f.write("\n")
-
-# Name what survived as well as what changed: "merged" alone is what let the
-# clobber go unnoticed for six repositories.
-foreign = sorted({leaf(h.get("command"))
-                  for event in ours
-                  for eg in hooks.get(event) or []
-                  for h in eg.get("hooks") or []
-                  if leaf(h.get("command")) not in ours_leaves})
-if added:     print("   registered:", ", ".join(added))
-if refreshed: print("   refreshed: ", ", ".join(refreshed))
-if deduped:   print("   removed %d duplicate registration(s) of our own hooks" % len(deduped))
-print("   left untouched:", ", ".join(foreign) if foreign else "(no other hooks on these events)")
+    hooks = result.get("hooks") or {}
+    if hooks.get("added"):
+        print("   registered:", ", ".join(hooks["added"]))
+    if hooks.get("refreshed"):
+        print("   refreshed: ", ", ".join(hooks["refreshed"]))
+    if hooks.get("deduped"):
+        print("   removed %d duplicate registration(s) of our own hooks" % len(hooks["deduped"]))
+    foreign = hooks.get("foreign") or []
+    print("   left untouched:", ", ".join(foreign) if foreign else "(no other hooks on these events)")
+    if result["reason"] == "project-name-conflict":
+        print("   WARN: Superpowers docs disabled for duplicate project basename")
+    elif result["reason"] == "registry-unavailable":
+        print("   WARN: project registry unavailable; continuing with this project only")
+    elif result["reason"] == "reviewer-inactive":
+        print("   WARN: Superpowers docs inactive; reviewer configuration unavailable")
+    elif result["reason"] == "opted-out":
+        print("   Superpowers docs opted out; managed rule and allow left untouched")
+    elif result["warning"]:
+        print("   WARN: Superpowers docs state requires review")
 PYEOF
 
 # ---- 5. register MCP ---------------------------------------------------------
