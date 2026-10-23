@@ -26,12 +26,12 @@ only = set(filter(None, os.environ.get("ONLY", "").split(",")))
 ran = passed = 0
 
 
-def check(name, condition):
+def check(name, body):
     global ran, passed
     if only and name not in only:
         return
     ran += 1
-    if condition:
+    if body():
         passed += 1
         print("ok   " + name)
     else:
@@ -68,108 +68,145 @@ def write_fixture(root, session_id, summary, **extra):
     return proj
 
 
-with tempfile.TemporaryDirectory() as tmp:
-    root = pathlib.Path(tmp)
-    proj = root / "project"
-    transcript = project(proj)
-    os.environ.update({"CLAUDE_PROJECT_DIR": str(proj),
-                       "XDG_DATA_HOME": str(root / "xdg"),
-                       "DRSG_COMPACT_HANDOFF": "1"})
-    hook.open_events = lambda _project: []
-    install_common()
-    write_fixture(root, "owner-record", "owner summary")
-    _, directory = hook.storage_dir(str(proj.resolve()))
-    records = list(pathlib.Path(directory).glob("*.json"))
-    saved = json.loads(records[0].read_text(encoding="utf-8"))
-    check("owner-record", saved.get("owner") == {
-        "pid": 4101, "start": 701, "lanes": ["alpha", "beta"]})
+def owner_record_case():
+    with tempfile.TemporaryDirectory() as tmp:
+        root = pathlib.Path(tmp)
+        proj = root / "project"
+        project(proj)
+        os.environ.update({"CLAUDE_PROJECT_DIR": str(proj),
+                           "XDG_DATA_HOME": str(root / "xdg"),
+                           "DRSG_COMPACT_HANDOFF": "1"})
+        hook.open_events = lambda _project: []
+        install_common()
+        write_fixture(root, "owner-record", "owner summary")
+        _, directory = hook.storage_dir(str(proj.resolve()))
+        records = list(pathlib.Path(directory).glob("*.json"))
+        saved = json.loads(records[0].read_text(encoding="utf-8"))
+        return saved.get("owner") == {
+            "pid": 4101, "start": 701, "lanes": ["alpha", "beta"]}
 
-with tempfile.TemporaryDirectory() as tmp:
-    root = pathlib.Path(tmp)
-    proj = root / "project"
-    project(proj)
-    os.environ.update({"CLAUDE_PROJECT_DIR": str(proj),
-                       "XDG_DATA_HOME": str(root / "xdg")})
-    hook.open_events = lambda _project: []
-    def broken_pid():
-        raise OSError("fixture")
-    hook._common = types.SimpleNamespace(_claude_pid=broken_pid)
-    write_fixture(root, "unknown-owner", "synthetic summary")
-    _, directory = hook.storage_dir(str(proj.resolve()))
-    saved = json.loads(next(pathlib.Path(directory).glob("*.json")).read_text())
-    check("owner-unknown", "owner" in saved and saved["owner"] is None and
-          saved["summary"] == "synthetic summary")
-    hook._common = types.SimpleNamespace(_claude_pid=lambda: 4101,
-                                         _proc=lambda _pid: None,
-                                         _hook_lanes=lambda _pid: ["alpha"])
-    write_fixture(root, "unknown-owner-proc", "synthetic summary")
-    saved_proc = json.loads(next(path for path in pathlib.Path(directory).glob("*.json")
-                                 if json.loads(path.read_text()).get("session_id") == "unknown-owner-proc").read_text())
-    check("owner-unknown-proc", saved_proc.get("owner") is None and
-          saved_proc["summary"] == "synthetic summary")
 
-with tempfile.TemporaryDirectory() as tmp:
-    root = pathlib.Path(tmp)
-    proj = root / "project"
-    project(proj)
-    os.environ.update({"CLAUDE_PROJECT_DIR": str(proj),
-                       "XDG_DATA_HOME": str(root / "xdg")})
-    hook.open_events = lambda _project: []
-    install_common(lanes=("beta", "alpha", "beta"))
-    write_fixture(root, "owner-lanes", "synthetic summary")
-    _, directory = hook.storage_dir(str(proj.resolve()))
-    saved = json.loads(next(pathlib.Path(directory).glob("*.json")).read_text())
-    check("owner-lanes", saved.get("owner", {}).get("lanes") == ["alpha", "beta"])
+check("owner-record", owner_record_case)
 
-with tempfile.TemporaryDirectory() as tmp:
-    root = pathlib.Path(tmp)
-    proj = root / "project"
-    project(proj)
-    os.environ.update({"CLAUDE_PROJECT_DIR": str(proj),
-                       "XDG_DATA_HOME": str(root / "xdg")})
-    hook.open_events = lambda _project: []
-    install_common(lanes=())
-    write_fixture(root, "owner-default-lane", "synthetic summary")
-    _, directory = hook.storage_dir(str(proj.resolve()))
-    saved = json.loads(next(pathlib.Path(directory).glob("*.json")).read_text())
-    check("owner-default-lane", saved.get("owner", {}).get("lanes") == ["*"])
+def unknown_owner_case():
+    with tempfile.TemporaryDirectory() as tmp:
+        root = pathlib.Path(tmp)
+        proj = root / "project"
+        project(proj)
+        os.environ.update({"CLAUDE_PROJECT_DIR": str(proj),
+                           "XDG_DATA_HOME": str(root / "xdg")})
+        hook.open_events = lambda _project: []
+        def broken_pid():
+            raise OSError("fixture")
+        hook._common = types.SimpleNamespace(_claude_pid=broken_pid)
+        write_fixture(root, "unknown-owner", "synthetic summary")
+        _, directory = hook.storage_dir(str(proj.resolve()))
+        saved = json.loads(next(pathlib.Path(directory).glob("*.json")).read_text())
+        return "owner" in saved and saved["owner"] is None and saved["summary"] == "synthetic summary"
 
-legacy = {"session_id": "legacy", "summary": "legacy summary"}
-normalized = getattr(hook, "normalize_owner", lambda _record: None)(legacy)
-check("legacy-owner", normalized == {"pid": None, "start": None, "lanes": ["*"]})
 
-with tempfile.TemporaryDirectory() as tmp:
-    root = pathlib.Path(tmp)
-    proj = root / "project"
-    transcript = project(proj)
-    os.environ.update({"CLAUDE_PROJECT_DIR": str(proj),
-                       "XDG_DATA_HOME": str(root / "xdg")})
-    hook.open_events = lambda _project: []
-    install_common()
-    data = {"trigger": "manual", "session_id": "same-session",
-            "transcript_path": str(transcript), "compact_summary": "first"}
-    hook.write_record(data)
-    hook.write_record({**data, "compact_summary": "second"})
-    _, directory = hook.storage_dir(str(proj.resolve()))
-    files = list(pathlib.Path(directory).glob("*.json"))
-    record = json.loads(files[0].read_text())
-    check("overwrite-same-session", len(files) == 1 and record["summary"] == "second")
+def unknown_owner_proc_case():
+    with tempfile.TemporaryDirectory() as tmp:
+        root = pathlib.Path(tmp)
+        proj = root / "project"
+        project(proj)
+        os.environ.update({"CLAUDE_PROJECT_DIR": str(proj),
+                           "XDG_DATA_HOME": str(root / "xdg")})
+        hook.open_events = lambda _project: []
+        hook._common = types.SimpleNamespace(_claude_pid=lambda: 4101,
+                                             _proc=lambda _pid: None,
+                                             _hook_lanes=lambda _pid: ["alpha"])
+        write_fixture(root, "unknown-owner-proc", "synthetic summary")
+        _, directory = hook.storage_dir(str(proj.resolve()))
+        saved = json.loads(next(path for path in pathlib.Path(directory).glob("*.json")
+                                if json.loads(path.read_text()).get("session_id") == "unknown-owner-proc").read_text())
+        return saved.get("owner") is None and saved["summary"] == "synthetic summary"
 
-with tempfile.TemporaryDirectory() as tmp:
-    root = pathlib.Path(tmp)
-    proj = root / "project"
-    transcript = project(proj)
-    os.environ.update({"CLAUDE_PROJECT_DIR": str(proj),
-                       "XDG_DATA_HOME": str(root / "xdg")})
-    hook.open_events = lambda _project: []
-    install_common()
-    data = {"trigger": "manual", "session_id": "sidechain",
-            "transcript_path": str(transcript), "compact_summary": "synthetic"}
-    for flags in ({"is_sidechain": True}, {"is_fork": True},
-                  {"parent_session_id": "parent"}, {"agent_type": "fork"}):
-        hook.write_record({**data, **flags})
-    _, directory = hook.storage_dir(str(proj.resolve()))
-    check("sidechain-no-write", not list(pathlib.Path(directory).glob("*.json")))
+
+check("owner-unknown", unknown_owner_case)
+check("owner-unknown-proc", unknown_owner_proc_case)
+
+def owner_lanes_case():
+    with tempfile.TemporaryDirectory() as tmp:
+        root = pathlib.Path(tmp)
+        proj = root / "project"
+        project(proj)
+        os.environ.update({"CLAUDE_PROJECT_DIR": str(proj),
+                           "XDG_DATA_HOME": str(root / "xdg")})
+        hook.open_events = lambda _project: []
+        install_common(lanes=("beta", "alpha", "beta"))
+        write_fixture(root, "owner-lanes", "synthetic summary")
+        _, directory = hook.storage_dir(str(proj.resolve()))
+        saved = json.loads(next(pathlib.Path(directory).glob("*.json")).read_text())
+        return saved.get("owner", {}).get("lanes") == ["alpha", "beta"]
+
+
+check("owner-lanes", owner_lanes_case)
+
+def owner_default_lane_case():
+    with tempfile.TemporaryDirectory() as tmp:
+        root = pathlib.Path(tmp)
+        proj = root / "project"
+        project(proj)
+        os.environ.update({"CLAUDE_PROJECT_DIR": str(proj),
+                           "XDG_DATA_HOME": str(root / "xdg")})
+        hook.open_events = lambda _project: []
+        install_common(lanes=())
+        write_fixture(root, "owner-default-lane", "synthetic summary")
+        _, directory = hook.storage_dir(str(proj.resolve()))
+        saved = json.loads(next(pathlib.Path(directory).glob("*.json")).read_text())
+        return saved.get("owner", {}).get("lanes") == ["*"]
+
+
+check("owner-default-lane", owner_default_lane_case)
+
+def legacy_owner_case():
+    legacy = {"session_id": "legacy", "summary": "legacy summary"}
+    normalized = getattr(hook, "normalize_owner", lambda _record: None)(legacy)
+    return normalized == {"pid": None, "start": None, "lanes": ["*"]}
+
+check("legacy-owner", legacy_owner_case)
+
+def overwrite_same_session_case():
+    with tempfile.TemporaryDirectory() as tmp:
+        root = pathlib.Path(tmp)
+        proj = root / "project"
+        transcript = project(proj)
+        os.environ.update({"CLAUDE_PROJECT_DIR": str(proj),
+                           "XDG_DATA_HOME": str(root / "xdg")})
+        hook.open_events = lambda _project: []
+        install_common()
+        data = {"trigger": "manual", "session_id": "same-session",
+                "transcript_path": str(transcript), "compact_summary": "first"}
+        hook.write_record(data)
+        hook.write_record({**data, "compact_summary": "second"})
+        _, directory = hook.storage_dir(str(proj.resolve()))
+        files = list(pathlib.Path(directory).glob("*.json"))
+        record = json.loads(files[0].read_text())
+        return len(files) == 1 and record["summary"] == "second"
+
+
+check("overwrite-same-session", overwrite_same_session_case)
+
+def sidechain_no_write_case():
+    with tempfile.TemporaryDirectory() as tmp:
+        root = pathlib.Path(tmp)
+        proj = root / "project"
+        transcript = project(proj)
+        os.environ.update({"CLAUDE_PROJECT_DIR": str(proj),
+                           "XDG_DATA_HOME": str(root / "xdg")})
+        hook.open_events = lambda _project: []
+        install_common()
+        data = {"trigger": "manual", "session_id": "sidechain",
+                "transcript_path": str(transcript), "compact_summary": "synthetic"}
+        for flags in ({"is_sidechain": True}, {"is_fork": True},
+                      {"parent_session_id": "parent"}, {"agent_type": "fork"}):
+            hook.write_record({**data, **flags})
+        _, directory = hook.storage_dir(str(proj.resolve()))
+        return not list(pathlib.Path(directory).glob("*.json"))
+
+
+check("sidechain-no-write", sidechain_no_write_case)
 
 from contextlib import contextmanager
 import threading
@@ -224,15 +261,17 @@ def configure(current_pid=4101, current_start=701, current_lanes=("alpha",), pro
 
 def test_selection(name, records, current_pid=4101, current_start=701,
                    current_lanes=("alpha",), proc_map=None, expected=None):
-    with sandbox() as (_, proj, _):
-        for args in records:
-            saved_record(proj, *args)
-        configure(current_pid, current_start, current_lanes, proc_map)
-        text, pending = hook.prepare_handoff(str(proj), "clear", {})
-        result = expected(text, pending, proj) if expected else bool(text and pending)
-        if pending:
-            pending.finish(False)
-        check(name, result)
+    def body():
+        with sandbox() as (_, proj, _):
+            for args in records:
+                saved_record(proj, *args)
+            configure(current_pid, current_start, current_lanes, proc_map)
+            text, pending = hook.prepare_handoff(str(proj), "clear", {})
+            result = expected(text, pending, proj) if expected else bool(text and pending)
+            if pending:
+                pending.finish(False)
+            return result
+    check(name, body)
 
 
 test_selection("legacy-record", [("legacy", None, "legacy owner sentinel", 90)],
@@ -265,9 +304,9 @@ def test_per_pid_cache():
         text, pending = hook.prepare_handoff(str(proj), "clear", {})
         if pending:
             pending.finish(False)
-        check("per-pid-cache", calls.get(4201) == 1 and text and "仍有 1 个" in text)
+        return calls.get(4201) == 1 and text and "仍有 1 个" in text
 
-test_per_pid_cache()
+check("per-pid-cache", test_per_pid_cache)
 
 test_selection("lane-list-equality",
     [("single-lane", {"pid": 4201, "start": 801, "lanes": ["a"]}, "single lane sentinel", 90)],
@@ -341,9 +380,9 @@ def test_concurrent_clear():
             thread.start()
         for thread in threads:
             thread.join()
-        check("concurrent-clear", results.count(True) == 1)
+        return results.count(True) == 1
 
-test_concurrent_clear()
+check("concurrent-clear", test_concurrent_clear)
 
 def test_render_compat():
     with sandbox() as (_, proj, _):
@@ -355,9 +394,9 @@ def test_render_compat():
         expected = hook.render_handoff(str(proj.resolve()), [(str(path), record)])
         if pending:
             pending.finish(False)
-        check("render-single-byte-compat", text == expected)
+        return text == expected
 
-test_render_compat()
+check("render-single-byte-compat", test_render_compat)
 
 test_selection("nothing-to-say-byte-compat", [],
     expected=lambda text, pending, _proj: text is None and pending is None)
@@ -375,25 +414,53 @@ def test_resume():
         if pending:
             pending.finish(True)
         saved = json.loads(target.read_text())
-        text2, pending2 = hook.prepare_handoff(str(proj), "resume", {"session_id": "missing"})
-        check("resume-consumes-own", matched and saved.get("consumed") is True)
-        check("resume-no-injection", text is None)
-        check("resume-no-match", text2 is None and pending2 is None)
+        return matched and saved.get("consumed") is True
 
-test_resume()
+check("resume-consumes-own", test_resume)
 
-def test_ttl_and_limit():
+
+def resume_no_injection_case():
+    with sandbox() as (_, proj, _):
+        saved_record(proj, "resume-target", {"pid": 4101, "start": 701, "lanes": ["alpha"]},
+                     "resume target sentinel", 90)
+        saved_record(proj, "resume-other", {"pid": 4201, "start": 801, "lanes": ["alpha"]},
+                     "other resume sentinel", 91)
+        configure()
+        text, pending = hook.prepare_handoff(str(proj), "resume", {"session_id": "resume-target"})
+        if pending:
+            pending.finish(True)
+        return text is None
+
+
+def resume_no_match_case():
+    with sandbox() as (_, proj, _):
+        saved_record(proj, "resume-target", {"pid": 4101, "start": 701, "lanes": ["alpha"]},
+                     "resume target sentinel", 90)
+        saved_record(proj, "resume-other", {"pid": 4201, "start": 801, "lanes": ["alpha"]},
+                     "other resume sentinel", 91)
+        configure()
+        text, pending = hook.prepare_handoff(str(proj), "resume", {"session_id": "missing"})
+        return text is None and pending is None
+
+
+check("resume-no-injection", resume_no_injection_case)
+check("resume-no-match", resume_no_match_case)
+
+def ttl_unchanged_case():
     with sandbox() as (_, proj, _):
         expired = saved_record(proj, "expired", {"pid": 4201, "start": 801, "lanes": ["alpha"]},
                                "expired sentinel", -73 * 3600)
         saved_record(proj, "fresh", {"pid": 4101, "start": 701, "lanes": ["alpha"]},
                      "fresh sentinel", 0)
-        old_time = hook.time.time
-        hook.time.time = lambda: old_time()
         configure()
         hook.cleanup(str(hook.storage_dir(str(proj.resolve()))[1]), hook.time.time())
-        ttl_ok = not expired.exists()
-        hook.time.time = old_time
+        return not expired.exists()
+
+
+def limit_preserves_live_case():
+    with sandbox() as (_, proj, _):
+        saved_record(proj, "fresh", {"pid": 4101, "start": 701, "lanes": ["alpha"]},
+                     "fresh sentinel", 0)
         for i in range(12):
             saved_record(proj, "live-%d" % i, {"pid": 5000 + i, "start": 900 + i,
                          "lanes": ["alpha"]}, "live %d" % i, 100 + i)
@@ -403,13 +470,13 @@ def test_ttl_and_limit():
         with contextlib.redirect_stderr(stderr):
             hook.cleanup(directory, 200)
         live_records = [json.loads(path.read_text()) for path in pathlib.Path(directory).glob("*.json")]
-        preserved = len(live_records) == 13 and all(not record.get("consumed") for record in live_records)
         warning = stderr.getvalue()
-        check("ttl-unchanged", ttl_ok)
-        check("limit-preserves-live", preserved and warning.count("record limit exceeded") == 1 and
-              "live 0" not in warning)
+        return (len(live_records) == 13 and all(not record.get("consumed") for record in live_records) and
+                warning.count("record limit exceeded") == 1 and "live 0" not in warning)
 
-test_ttl_and_limit()
+
+check("ttl-unchanged", ttl_unchanged_case)
+check("limit-preserves-live", limit_preserves_live_case)
 
 def test_limit_prunes_dead():
     with sandbox() as (_, proj, _):
@@ -424,10 +491,9 @@ def test_limit_prunes_dead():
         _, directory = hook.storage_dir(str(proj.resolve()))
         hook.cleanup(directory, 300)
         remaining = [json.loads(path.read_text())["session_id"] for path in pathlib.Path(directory).glob("*.json")]
-        check("limit-prunes-dead", len(remaining) == 10 and "dead-00" not in remaining and
-              "consumed" not in remaining)
+        return len(remaining) == 10 and "dead-00" not in remaining and "consumed" not in remaining
 
-test_limit_prunes_dead()
+check("limit-prunes-dead", test_limit_prunes_dead)
 
 def test_owner_scan_p95():
     with sandbox() as (_, proj, _):
@@ -447,9 +513,9 @@ def test_owner_scan_p95():
         ordered = sorted(timings)
         p95 = ordered[int(len(ordered) * .95)]
         print("OWNER_SCAN_P95_MS=%.3f" % p95)
-        check("owner-scan-p95", p95 <= 50 and all(calls.get(pid) == 101 for pid in owners))
+        return p95 <= 50 and all(calls.get(pid) == 101 for pid in owners)
 
-test_owner_scan_p95()
+check("owner-scan-p95", test_owner_scan_p95)
 
 def test_readonly_doc_commands():
     import re
@@ -470,18 +536,19 @@ def test_readonly_doc_commands():
             content = doc.read_text(encoding="utf-8")
             match = re.search(heading + r"\n\n```bash\npython3 - <<'PY'\n(.*?)\nPY\n```", content, re.S)
             if not match:
-                check("readonly-listing-commands", False)
+                check("readonly-listing-commands", lambda: False)
                 continue
             env = dict(os.environ)
             run = subprocess.run(["python3", "-"], input=match.group(1), text=True,
                                  capture_output=True, env=env)
             output = run.stdout
-            check("readonly-listing-commands", run.returncode == 0 and
+            check("readonly-listing-commands", lambda: run.returncode == 0 and
                   "SECRET-SUMMARY-SENTINEL" not in output and "5501" not in output and
                   "4101" in output and "alpha,beta" in output and
                   "/compact-handoffs/" in output and "False" in output)
 
-test_readonly_doc_commands()
+if not only or "readonly-listing-commands" in only:
+    test_readonly_doc_commands()
 
 if only and ran == 0:
     print("NOT RUN: no selected ownership assertion matched")

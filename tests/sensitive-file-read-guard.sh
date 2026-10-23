@@ -9,155 +9,203 @@ ONLY="${ONLY:-}"
 
 RAN=0
 OK=0
+selected() { [ -z "$ONLY" ] || [ "$ONLY" = "$1" ]; }
 check() {
-  if [ -n "$ONLY" ] && [ "$ONLY" != "$1" ]; then
-    return
-  fi
+  local name="$1" want="$2" actual_fn="$3" actual
+  shift 3
+  selected "$name" || return
   RAN=$((RAN + 1))
-  if [ "$2" = "$3" ]; then
+  actual="$("$actual_fn" "$@")"
+  if [ "$actual" = "$want" ]; then
     OK=$((OK + 1))
-    printf 'ok   %s\n' "$1"
+    printf 'ok   %s\n' "$name"
   else
-    printf 'FAIL %s: got %s want %s\n' "$1" "$2" "$3"
+    printf 'FAIL %s: got %s want %s\n' "$name" "$actual" "$want"
   fi
 }
 
 # decision TOOL JSON-INPUT [ENV=VAL]: prints allow, or deny|<reason>.
 decision() {
   local tool="$1" input="$2" envset="${3:-}"
-  python3 -c 'import json,sys
+  if [ -n "$envset" ]; then
+    python3 -c 'import json,sys
 print(json.dumps({"hook_event_name": "PreToolUse", "tool_name": sys.argv[1],
                   "tool_input": json.loads(sys.argv[2])}))' "$tool" "$input" |
-    env -u DRSG_SENSITIVE_READ_GUARD_DISABLED $envset python3 "$GUARD" |
-    python3 -c 'import json,sys
+      env -u DRSG_SENSITIVE_READ_GUARD_DISABLED "$envset" python3 "$GUARD" |
+      python3 -c 'import json,sys
 raw = sys.stdin.read().strip()
 if not raw:
     print("allow")
 else:
     out = json.loads(raw)["hookSpecificOutput"]
     print(out["permissionDecision"] + "|" + out["permissionDecisionReason"])'
+  else
+    python3 -c 'import json,sys
+print(json.dumps({"hook_event_name": "PreToolUse", "tool_name": sys.argv[1],
+                  "tool_input": json.loads(sys.argv[2])}))' "$tool" "$input" |
+      env -u DRSG_SENSITIVE_READ_GUARD_DISABLED python3 "$GUARD" |
+      python3 -c 'import json,sys
+raw = sys.stdin.read().strip()
+if not raw:
+    print("allow")
+else:
+    out = json.loads(raw)["hookSpecificOutput"]
+    print(out["permissionDecision"] + "|" + out["permissionDecisionReason"])'
+  fi
 }
 bash_d() {
   decision Bash "$(python3 -c 'import json,sys; print(json.dumps({"command": sys.argv[1]}))' "$1")" "${2:-}"
 }
 first() { printf '%s' "${1%%|*}"; }
+actual_bash() { bash_d "$@"; }
+actual_first_bash() { first "$(bash_d "$1")"; }
+actual_decision() { decision "$1" "$2"; }
+actual_first_decision() { first "$(decision "$1" "$2")"; }
+actual_invalid_json() {
+  local rc=0 out
+  out="$(printf 'not json' | python3 "$GUARD" 2>&1)" || rc=$?
+  printf '%s|%s' "$rc" "$out"
+}
+actual_missing_input() {
+  local rc=0 out
+  out="$(printf '{"tool_name": "Bash"}' | python3 "$GUARD" 2>&1)" || rc=$?
+  printf '%s|%s' "$rc" "$out"
+}
+actual_heredoc_write() {
+  local command
+  command="$(printf 'cat > .env <<%sEOF%s\nA=1\nEOF' "'" "'")"
+  bash_d "$command"
+}
+actual_heredoc_data() {
+  local quote="'" command
+  command="$(printf 'python3 - <<%sEOF%s\nprint("run `cat .env` and `jq -r %s.x%s ~/.claude/settings.json` first")\nEOF' "$quote" "$quote" "$quote" "$quote")"
+  bash_d "$command"
+}
+actual_heredoc_tab() {
+  local command
+  command="$(printf 'cat <<-END\n\tcat .mcp.json\n\tEND\necho done')"
+  bash_d "$command"
+}
+actual_heredoc_after() {
+  local command
+  command="$(printf 'python3 - <<EOF\nprint(1)\nEOF\ncat .env')"
+  first "$(bash_d "$command")"
+}
+actual_reason() {
+  local key="$1" output
+  output="$(bash_d 'cat /secret-dir-name/.mcp.json')"
+  case "$key" in
+    category) printf '%s' "$output" | grep -c 'category: mcp-config' ;;
+    jq) printf '%s' "$output" | grep -c "jq '.mcpServers | keys'" ;;
+    settings) printf '%s' "$output" | grep -c "jq '.hooks | keys'" ;;
+    edit) printf '%s' "$output" | grep -c "> <file>.new && mv <file>.new <file>" ;;
+    no-command) printf '%s' "$output" | grep -c 'secret-dir-name' ;;
+  esac
+}
 
 # --- denied: the two incident commands first ---
-check "incident 10-19: cat .mcp.json || true" "$(first "$(bash_d 'cat .mcp.json || true')")" deny
-check "incident 10-18: cat .mcp.json | head -20" "$(first "$(bash_d 'cat .mcp.json | head -20')")" deny
-check "reader after a pipe" "$(first "$(bash_d 'printf x | cat - .env')")" deny
-check "head ~/.claude.json" "$(first "$(bash_d 'head -5 ~/.claude.json')")" deny
-check "less config.env" "$(first "$(bash_d 'less config.env')")" deny
-check "grep TOKEN .env" "$(first "$(bash_d 'grep TOKEN .env')")" deny
-check "jq . .mcp.json" "$(first "$(bash_d 'jq . .mcp.json')")" deny
-check "jq headers .mcp.json" "$(first "$(bash_d "jq '.mcpServers[] | .headers' .mcp.json")")" deny
-check "echo \$(cat .mcp.json)" "$(first "$(bash_d 'echo $(cat .mcp.json)')")" deny
-check "backtick cat" "$(first "$(bash_d 'echo `cat .env`')")" deny
-check "after && in a chain" "$(first "$(bash_d 'cd /x && cat .claude/settings.local.json')")" deny
-check "after ; in a chain" "$(first "$(bash_d 'pwd; tail -n 3 /p/.claude/settings.json')")" deny
-check "env prefix and sudo" "$(first "$(bash_d 'FOO=1 sudo cat /root/.netrc')")" deny
-check "stdin redirect" "$(first "$(bash_d 'cat < .mcp.json')")" deny
-check "private key" "$(first "$(bash_d 'cat ~/.ssh/id_ed25519')")" deny
-check "unbalanced quote falls back to deny" "$(first "$(bash_d "cat .mcp.json 'oops")")" deny
-check "Read .mcp.json" "$(first "$(decision Read '{"file_path": "/x/.mcp.json"}')")" deny
-check "Grep content on .mcp.json" "$(first "$(decision Grep '{"pattern": "Bearer", "path": ".mcp.json", "output_mode": "content"}')")" deny
+check "incident 10-19: cat .mcp.json || true" deny actual_first_bash 'cat .mcp.json || true'
+check "incident 10-18: cat .mcp.json | head -20" deny actual_first_bash 'cat .mcp.json | head -20'
+check "reader after a pipe" deny actual_first_bash 'printf x | cat - .env'
+check "head ~/.claude.json" deny actual_first_bash 'head -5 ~/.claude.json'
+check "less config.env" deny actual_first_bash 'less config.env'
+check "grep TOKEN .env" deny actual_first_bash 'grep TOKEN .env'
+check "jq . .mcp.json" deny actual_first_bash 'jq . .mcp.json'
+check "jq headers .mcp.json" deny actual_first_bash "jq '.mcpServers[] | .headers' .mcp.json"
+check "echo \$(cat .mcp.json)" deny actual_first_bash 'echo $(cat .mcp.json)'
+check "backtick cat" deny actual_first_bash 'echo `cat .env`'
+check "after && in a chain" deny actual_first_bash 'cd /x && cat .claude/settings.local.json'
+check "after ; in a chain" deny actual_first_bash 'pwd; tail -n 3 /p/.claude/settings.json'
+check "env prefix and sudo" deny actual_first_bash 'FOO=1 sudo cat /root/.netrc'
+check "stdin redirect" deny actual_first_bash 'cat < .mcp.json'
+check "private key" deny actual_first_bash 'cat ~/.ssh/id_ed25519'
+check "unbalanced quote falls back to deny" deny actual_first_bash "cat .mcp.json 'oops"
+check "Read .mcp.json" deny actual_first_decision Read '{"file_path": "/x/.mcp.json"}'
+check "Grep content on .mcp.json" deny actual_first_decision Grep '{"pattern": "Bearer", "path": ".mcp.json", "output_mode": "content"}'
 
 # --- allowed ---
-check "jq keys" "$(bash_d "jq '.mcpServers | keys' .mcp.json")" allow
-check "jq type,url" "$(bash_d "jq '.mcpServers[] | {type, url}' .mcp.json")" allow
-check "jq hook matcher object" "$(bash_d "jq '.hooks.PreToolUse[] | {matcher}' ~/.claude/settings.json")" allow
-check "jq path to hook commands" "$(bash_d "jq -r '.hooks[][] | .hooks[].command' ~/.claude/settings.json")" allow
-check "jq path to server url" "$(bash_d "jq -r '.mcpServers[].url' .mcp.json")" allow
-check "jq path to a header value" "$(first "$(bash_d "jq -r '.mcpServers[].headers.Authorization' .mcp.json")")" deny
-check "jq path to an env value" "$(first "$(bash_d "jq '.env.ANTHROPIC_API_KEY' .claude/settings.local.json")")" deny
-check "jq path to args" "$(first "$(bash_d "jq '.mcpServers[].args[]' .mcp.json")")" deny
-check "jq string built from fields" "$(first "$(bash_d "jq '.hooks[][] | .matcher + .env.X' ~/.claude/settings.json")")" deny
+check "jq keys" allow actual_bash "jq '.mcpServers | keys' .mcp.json"
+check "jq type,url" allow actual_bash "jq '.mcpServers[] | {type, url}' .mcp.json"
+check "jq hook matcher object" allow actual_bash "jq '.hooks.PreToolUse[] | {matcher}' ~/.claude/settings.json"
+check "jq path to hook commands" allow actual_bash "jq -r '.hooks[][] | .hooks[].command' ~/.claude/settings.json"
+check "jq path to server url" allow actual_bash "jq -r '.mcpServers[].url' .mcp.json"
+check "jq path to a header value" deny actual_first_bash "jq -r '.mcpServers[].headers.Authorization' .mcp.json"
+check "jq path to an env value" deny actual_first_bash "jq '.env.ANTHROPIC_API_KEY' .claude/settings.local.json"
+check "jq path to args" deny actual_first_bash "jq '.mcpServers[].args[]' .mcp.json"
+check "jq string built from fields" deny actual_first_bash "jq '.hooks[][] | .matcher + .env.X' ~/.claude/settings.json"
 # Structure-only filters that combine several expressions: the seven
 # false denials seen 10-19..10-21 (paths shortened).
-check "jq matcher plus command basename" "$(bash_d "jq -r '.hooks.PreToolUse[]? | .matcher + \"  \" + (.hooks[].command | split(\"/\")[-1])' ~/.claude/settings.json")" allow
-check "jq hook event names joined" "$(bash_d "jq -r '.hooks | keys | join(\",\")' .claude/settings.local.json")" allow
-check "jq hook objects" "$(bash_d "jq -c '.hooks.SessionStart, .hooks.PostCompact' .claude/settings.local.json")" allow
-check "jq object of keys, matchers and counts" "$(bash_d "jq '{event_names:(.hooks|keys),session_start_matchers:[.hooks.SessionStart[].matcher],postcompact_count:(.hooks.PostCompact|length)}' .claude/settings.json")" allow
-check "jq keys of the file and of env" "$(bash_d "jq 'keys, (.env // {} | keys)' .claude/settings.local.json")" allow
-check "jq array of keys" "$(bash_d "jq -c '[keys, (.env // {} | keys)]' .claude/settings.local.json")" allow
-check "jq comparison prints only a boolean" "$(bash_d "jq -e '.env.CLAUDE_CODE_AUTO_COMPACT_WINDOW == \"50000\"' settings.local.json")" allow
+check "jq matcher plus command basename" allow actual_bash "jq -r '.hooks.PreToolUse[]? | .matcher + \"  \" + (.hooks[].command | split(\"/\")[-1])' ~/.claude/settings.json"
+check "jq hook event names joined" allow actual_bash "jq -r '.hooks | keys | join(\",\")' .claude/settings.local.json"
+check "jq hook objects" allow actual_bash "jq -c '.hooks.SessionStart, .hooks.PostCompact' .claude/settings.local.json"
+check "jq object of keys, matchers and counts" allow actual_bash "jq '{event_names:(.hooks|keys),session_start_matchers:[.hooks.SessionStart[].matcher],postcompact_count:(.hooks.PostCompact|length)}' .claude/settings.json"
+check "jq keys of the file and of env" allow actual_bash "jq 'keys, (.env // {} | keys)' .claude/settings.local.json"
+check "jq array of keys" allow actual_bash "jq -c '[keys, (.env // {} | keys)]' .claude/settings.local.json"
+check "jq comparison prints only a boolean" allow actual_bash "jq -e '.env.CLAUDE_CODE_AUTO_COMPACT_WINDOW == \"50000\"' settings.local.json"
 # ...and combinations that still carry a value out.
-check "jq comma with an unsafe side" "$(first "$(bash_d "jq '.env, .hooks' .claude/settings.local.json")")" deny
-check "jq array holding headers" "$(first "$(bash_d "jq '[.mcpServers[].headers]' .mcp.json")")" deny
-check "jq object holding env" "$(first "$(bash_d "jq '{a: .env}' .claude/settings.local.json")")" deny
-check "jq unknown function" "$(first "$(bash_d "jq '.env | debug' .claude/settings.local.json")")" deny
-check "jq string interpolation" "$(first "$(bash_d "jq '\"\\(.env.X)\"' .claude/settings.local.json")")" deny
-check "jq tostring keeps env unsafe" "$(first "$(bash_d "jq '.env | tostring' .claude/settings.local.json")")" deny
-check "jq hooks key below the top level" "$(first "$(bash_d "jq '.mcpServers[] | .hooks' .mcp.json")")" deny
+check "jq comma with an unsafe side" deny actual_first_bash "jq '.env, .hooks' .claude/settings.local.json"
+check "jq array holding headers" deny actual_first_bash "jq '[.mcpServers[].headers]' .mcp.json"
+check "jq object holding env" deny actual_first_bash "jq '{a: .env}' .claude/settings.local.json"
+check "jq unknown function" deny actual_first_bash "jq '.env | debug' .claude/settings.local.json"
+check "jq string interpolation" deny actual_first_bash "jq '\"\\(.env.X)\"' .claude/settings.local.json"
+check "jq tostring keeps env unsafe" deny actual_first_bash "jq '.env | tostring' .claude/settings.local.json"
+check "jq hooks key below the top level" deny actual_first_bash "jq '.mcpServers[] | .hooks' .mcp.json"
 # 10-22 replays: --arg values, $variables, interpolation and to_entries keys,
 # and a jq edit whose output goes to a file, not to the transcript.
-check "jq --arg index (10-22 02:21)" "$(bash_d "jq -r --arg p /work/x '.projects[\$p].mcpServers | keys' ~/.claude.json")" allow
-check "jq interpolation of keys and safe fields (10-22 02:21)" "$(bash_d "jq -r --arg p /x '.projects[\$p].mcpServers | to_entries[] | \"\\(.key) type=\\(.value.type) url=\\(.value.url) headers=\\((.value.headers//{})|keys|join(\",\"))\"' ~/.claude.json")" allow
-check "jq edit written to a new file (10-22 08:01)" "$(bash_d "jq --arg c 'bash -c x' '.hooks.SessionStart += [{\"matcher\":\"m\",\"hooks\":[{\"type\":\"command\",\"command\":\$c}]}]' settings.local.json > settings.local.json.new && mv settings.local.json.new settings.local.json")" allow
-check "jq --arg still denies a value" "$(first "$(bash_d "jq --arg p /x '.projects[\$p].mcpServers' ~/.claude.json")")" deny
-check "jq --rawfile variable" "$(first "$(bash_d "jq -n --rawfile s .mcp.json '\$s'")")" deny
-check "jq to_entries value" "$(first "$(bash_d "jq '.mcpServers | to_entries[] | .value' .mcp.json")")" deny
-check "jq interpolation with an unsafe part" "$(first "$(bash_d "jq -r '.mcpServers | to_entries[] | \"\\(.key) \\(.value.headers)\"' .mcp.json")")" deny
-check "jq output to /dev/stderr" "$(first "$(bash_d 'jq . .mcp.json > /dev/stderr')")" deny
-check "jq output to stderr by fd" "$(first "$(bash_d 'jq . .mcp.json >&2')")" deny
-check "jq output copied to a plain file" "$(first "$(bash_d 'jq . .mcp.json > /tmp/x && cat /tmp/x')")" deny
-check "cat a .new copy" "$(first "$(bash_d 'cat settings.local.json.new')")" deny
-check "cat a dated backup" "$(first "$(bash_d 'cat .claude/settings.local.json.bak-20261022-snapshot')")" deny
-check "grep -c" "$(bash_d 'grep -c WDZT_AK config.env')" allow
-check "grep -l" "$(bash_d 'grep -l Bearer .mcp.json')" allow
-check "grep -q in combined flags" "$(bash_d 'grep -iq token .env && echo yes')" allow
-check "example env" "$(bash_d 'cat config.example.env')" allow
-check "env.example" "$(bash_d 'cat env.example')" allow
-check "README" "$(bash_d 'cat README.md')" allow
-check "ls" "$(bash_d 'ls -la .mcp.json')" allow
-check "public key" "$(bash_d 'cat id_rsa.pub')" allow
-check "grep pattern that looks like a file" "$(bash_d 'grep -n .env README.md')" allow
-HEREDOC_CMD="$(printf 'cat > .env <<%sEOF%s\nA=1\nEOF' "'" "'")"
-check "writing an env file with a heredoc" "$(bash_d "$HEREDOC_CMD")" allow
-Q="'"
-HD_DATA="$(printf 'python3 - <<%sEOF%s\nprint("run `cat .env` and `jq -r %s.x%s ~/.claude/settings.json` first")\nEOF' "$Q" "$Q" "$Q" "$Q")"
-check "heredoc body is data" "$(bash_d "$HD_DATA")" allow
-HD_TAB="$(printf 'cat <<-END\n\tcat .mcp.json\n\tEND\necho done')"
-check "<<- heredoc body is data" "$(bash_d "$HD_TAB")" allow
-HD_AFTER="$(printf 'python3 - <<EOF\nprint(1)\nEOF\ncat .env')"
-check "command after the heredoc terminator" "$(first "$(bash_d "$HD_AFTER")")" deny
-check "herestring is not a heredoc" "$(first "$(bash_d 'cat <<< x; cat .env')")" deny
-check "appending to an env file" "$(bash_d 'cat part.txt >> config.env')" allow
-check "sourcing an env file" "$(bash_d 'set -a; . ~/.config/x/ccr.env; set +a')" allow
-check "Read README" "$(decision Read '{"file_path": "/x/README.md"}')" allow
-check "Grep count on .mcp.json" "$(decision Grep '{"pattern": "Bearer", "path": ".mcp.json", "output_mode": "count"}')" allow
-check "Grep default mode on .mcp.json" "$(decision Grep '{"pattern": "Bearer", "path": ".mcp.json"}')" allow
-check "disabled switch" "$(bash_d 'cat .mcp.json' DRSG_SENSITIVE_READ_GUARD_DISABLED=1)" allow
-
-# --- the reason: a category and the alternatives, never the command ---
-OUT="$(bash_d 'cat /secret-dir-name/.mcp.json')"
-check "reason names the category" "$(printf '%s' "$OUT" | grep -c 'category: mcp-config')" 1
-check "reason gives the jq alternative" "$(printf '%s' "$OUT" | grep -c "jq '.mcpServers | keys'")" 1
-check "reason gives the settings alternative" "$(printf '%s' "$OUT" | grep -c "jq '.hooks | keys'")" 1
-check "reason gives the edit alternative" "$(printf '%s' "$OUT" | grep -c "> <file>.new && mv <file>.new <file>")" 1
-check "reason does not echo the command" "$(printf '%s' "$OUT" | grep -c 'secret-dir-name')" 0
+check "jq --arg index (10-22 02:21)" allow actual_bash "jq -r --arg p /work/x '.projects[\$p].mcpServers | keys' ~/.claude.json"
+check "jq interpolation of keys and safe fields (10-22 02:21)" allow actual_bash "jq -r --arg p /x '.projects[\$p].mcpServers | to_entries[] | \"\\(.key) type=\\(.value.type) url=\\(.value.url) headers=\\((.value.headers//{})|keys|join(\",\"))\"' ~/.claude.json"
+check "jq edit written to a new file (10-22 08:01)" allow actual_bash "jq --arg c 'bash -c x' '.hooks.SessionStart += [{\"matcher\":\"m\",\"hooks\":[{\"type\":\"command\",\"command\":\$c}]}]' settings.local.json > settings.local.json.new && mv settings.local.json.new settings.local.json"
+check "jq --arg still denies a value" deny actual_first_bash "jq --arg p /x '.projects[\$p].mcpServers' ~/.claude.json"
+check "jq --rawfile variable" deny actual_first_bash "jq -n --rawfile s .mcp.json '\$s'"
+check "jq to_entries value" deny actual_first_bash "jq '.mcpServers | to_entries[] | .value' .mcp.json"
+check "jq interpolation with an unsafe part" deny actual_first_bash "jq -r '.mcpServers | to_entries[] | \"\\(.key) \\(.value.headers)\"' .mcp.json"
+check "jq output to /dev/stderr" deny actual_first_bash 'jq . .mcp.json > /dev/stderr'
+check "jq output to stderr by fd" deny actual_first_bash 'jq . .mcp.json >&2'
+check "jq output copied to a plain file" deny actual_first_bash 'jq . .mcp.json > /tmp/x && cat /tmp/x'
+check "cat a .new copy" deny actual_first_bash 'cat settings.local.json.new'
+check "cat a dated backup" deny actual_first_bash 'cat .claude/settings.local.json.bak-20261022-snapshot'
+check "grep -c" allow actual_bash 'grep -c WDZT_AK config.env'
+check "grep -l" allow actual_bash 'grep -l Bearer .mcp.json'
+check "grep -q in combined flags" allow actual_bash 'grep -iq token .env && echo yes'
+check "example env" allow actual_bash 'cat config.example.env'
+check "env.example" allow actual_bash 'cat env.example'
+check "README" allow actual_bash 'cat README.md'
+check "ls" allow actual_bash 'ls -la .mcp.json'
+check "public key" allow actual_bash 'cat id_rsa.pub'
+check "grep pattern that looks like a file" allow actual_bash 'grep -n .env README.md'
+check "writing an env file with a heredoc" allow actual_heredoc_write
+check "heredoc body is data" allow actual_heredoc_data
+check "<<- heredoc body is data" allow actual_heredoc_tab
+check "command after the heredoc terminator" deny actual_heredoc_after
+check "herestring is not a heredoc" deny actual_first_bash 'cat <<< x; cat .env'
+check "appending to an env file" allow actual_bash 'cat part.txt >> config.env'
+check "sourcing an env file" allow actual_bash 'set -a; . ~/.config/x/ccr.env; set +a'
+check "Read README" allow actual_decision Read '{"file_path": "/x/README.md"}'
+check "Grep count on .mcp.json" allow actual_decision Grep '{"pattern": "Bearer", "path": ".mcp.json", "output_mode": "count"}'
+check "Grep default mode on .mcp.json" allow actual_decision Grep '{"pattern": "Bearer", "path": ".mcp.json"}'
+check "disabled switch" allow actual_bash 'cat .mcp.json' DRSG_SENSITIVE_READ_GUARD_DISABLED=1
 
 # --- broken input fails open, silently ---
-rc=0; out="$(printf 'not json' | python3 "$GUARD" 2>&1)" || rc=$?
-check "invalid JSON: exit 0, no output" "$rc|$out" "0|"
-rc=0; out="$(printf '{"tool_name": "Bash"}' | python3 "$GUARD" 2>&1)" || rc=$?
-check "missing tool_input: exit 0, no output" "$rc|$out" "0|"
+check "invalid JSON: exit 0, no output" "0|" actual_invalid_json
+check "missing tool_input: exit 0, no output" "0|" actual_missing_input
 
-# --- setup.sh registers it with its own matcher and leaves the others on "*" ---
-SETUP_CASES="setup registers Bash|Read|Grep once
-setup leaves other matchers on *
---no-sensitive-read-guard skips registration"
-if [ -z "$ONLY" ] || printf '%s\n' "$SETUP_CASES" | grep -qxF -- "$ONLY"; then
+# --- the reason: a category and the alternatives, never the command ---
+check "reason names the category" 1 actual_reason category
+check "reason gives the jq alternative" 1 actual_reason jq
+check "reason gives the settings alternative" 1 actual_reason settings
+check "reason gives the edit alternative" 1 actual_reason edit
+check "reason does not echo the command" 0 actual_reason no-command
+
+actual_setup() {
+  local mode="$1" result
+  local T
   T="$(mktemp -d)"
-  trap 'rm -rf "$T"' EXIT
+  trap 'rm -rf "$T"' RETURN
   mkdir -p "$T/claude" "$T/claude-off" "$T/home"
   run_setup() {
     HOME="$T/home" DRSG_MEM_DIR="$T/mem-$1" CLAUDE_CONFIG_DIR="$T/$1" \
       bash "$HERE/../setup.sh" --no-skills --tools-dir "$T/tools-$1" "${@:2}" >/dev/null 2>&1
   }
-  run_setup claude
-  run_setup claude
-  run_setup claude-off --no-sensitive-read-guard
   hooks_summary() {
     python3 - "$1" <<'PY'
 import json, sys
@@ -170,12 +218,27 @@ print("guard=" + ",".join(guard))
 print("others=" + ",".join(others))
 PY
   }
-  ON="$(hooks_summary "$T/claude/settings.json")"
-  OFF="$(hooks_summary "$T/claude-off/settings.json")"
-  check "setup registers Bash|Read|Grep once" "$(printf '%s\n' "$ON" | sed -n 's/^guard=//p')" "Bash|Read|Grep"
-  check "setup leaves other matchers on *" "$(printf '%s\n' "$ON" | sed -n 's/^others=//p')" "*"
-  check "--no-sensitive-read-guard skips registration" "$(printf '%s\n' "$OFF" | sed -n 's/^guard=//p')" ""
-fi
+  case "$mode" in
+    guard-on)
+      run_setup claude
+      result="$(hooks_summary "$T/claude/settings.json" | sed -n 's/^guard=//p')"
+      printf '%s' "$result"
+      ;;
+    other-matchers)
+      run_setup claude
+      result="$(hooks_summary "$T/claude/settings.json" | sed -n 's/^others=//p')"
+      printf '%s' "$result"
+      ;;
+    guard-off)
+      run_setup claude-off --no-sensitive-read-guard
+      result="$(hooks_summary "$T/claude-off/settings.json" | sed -n 's/^guard=//p')"
+      printf '%s' "$result"
+      ;;
+  esac
+}
+check "setup registers Bash|Read|Grep once" "Bash|Read|Grep" actual_setup guard-on
+check "setup leaves other matchers on *" "*" actual_setup other-matchers
+check "--no-sensitive-read-guard skips registration" "" actual_setup guard-off
 
 if [ -n "$ONLY" ] && [ "$RAN" -eq 0 ]; then
   printf 'FAIL unknown-only-case: %s\n' "$ONLY"
