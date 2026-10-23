@@ -1,0 +1,18 @@
+{
+  "always": [
+    "python3 tools/check-docs.py",
+    "python3 tools/check-no-machine-paths.py tools tests skills claude"
+  ],
+  "full": "bash tests/test-all.sh",
+  "shell": {
+    "tests": "tests/*.sh",
+    "exclude": [
+      "tests/test-all.sh"
+    ],
+    "path_map": {
+      "tools/templates/settings-hooks.json": [
+        "tests/setup-reuse-token.sh"
+      ]
+    }
+  }
+}

@@ -17,7 +17,8 @@ never into a smaller selection: dependency manifests, conftest.py, a file type
 no rule covers, a graph that cannot be asked, a symbol the graph should know but
 does not, or a code change that reaches no test at all.
 
-Optional per-repository config: <repo>/.drsg/affected-tests.json
+Optional per-repository config: <repo>/affected-tests.json
+(legacy: <repo>/.drsg/affected-tests.json)
 
   {"full": "bash tests/test-all.sh",
    "always": ["make lint"],
@@ -69,7 +70,13 @@ def git(root, *args):
 
 
 def load_config(root, path=None):
-    path = path or os.path.join(root, ".drsg", "affected-tests.json")
+    if path is None:
+        root_path = os.path.join(root, "affected-tests.json")
+        legacy_path = os.path.join(root, ".drsg", "affected-tests.json")
+        if os.path.exists(root_path) and os.path.exists(legacy_path):
+            raise ToolError("both %s and %s exist; remove one" %
+                            (root_path, legacy_path))
+        path = root_path if os.path.exists(root_path) else legacy_path
     try:
         with open(path, encoding="utf-8") as fh:
             cfg = json.load(fh)
@@ -583,6 +590,28 @@ def shell_select(root, cfg, changes, py_files, out):
     scripts = sorted(p for p in git(root, "ls-files", pattern).split("\n") + [
         p for s, p in changes if s == "A"]
         if p and fnmatch.fnmatch(p, pattern) and p not in exclude)
+    path_map = cfg.get("path_map", {})
+    if not isinstance(path_map, dict):
+        raise ToolError("shell.path_map must be an object")
+    for path, targets in path_map.items():
+        if (not path or os.path.isabs(path) or "\\" in path
+                or ".." in path.split("/") or os.path.normpath(path) != path):
+            raise ToolError("shell.path_map key must be a normalized "
+                            "repository-relative path: %s" % path)
+        if (not isinstance(targets, list) or not targets
+                or any(not isinstance(target, str) or not target for target in targets)):
+            raise ToolError("shell.path_map[%s] must be a non-empty string array" % path)
+        if len(targets) != len(set(targets)):
+            raise ToolError("shell.path_map[%s] contains duplicate targets" % path)
+        for target in targets:
+            if (os.path.isabs(target) or "\\" in target or ".." in target.split("/")
+                    or os.path.normpath(target) != target):
+                raise ToolError("shell.path_map[%s] target must be a normalized "
+                                "repository-relative path: %s" % (path, target))
+            if (not fnmatch.fnmatch(target, pattern) or target in exclude
+                    or target not in scripts):
+                raise ToolError("shell.path_map[%s] target is not an included shell test: %s" %
+                                (path, target))
     texts = {}
     for s in scripts:
         try:
@@ -600,6 +629,14 @@ def shell_select(root, cfg, changes, py_files, out):
                 reach[f] = reach[p]
                 queue.append(f)
     covered = set()
+    for status, path in changes:
+        for script in path_map.get(path, []):
+            covered.add(path)
+            if script not in out["shell"]:
+                out["shell"].add(script)
+            reason = "%s  <- explicit mapping %s" % (script, path)
+            if reason not in out["why"]:
+                out["why"].append(reason)
     for f, origin in sorted(reach.items()):
         for s, text in texts.items():
             if s == f or f in text or os.path.basename(f) in text:
@@ -721,7 +758,8 @@ def main(argv=None):
     ap.add_argument("--repo", default=".", help="repository directory (default: .)")
     ap.add_argument("--base", default="HEAD",
                     help="commit or tree to diff the working tree against (default: HEAD)")
-    ap.add_argument("--config", help="config file (default: <repo>/.drsg/affected-tests.json)")
+    ap.add_argument("--config", help="config file (default: <repo>/affected-tests.json, "
+                    "legacy: <repo>/.drsg/affected-tests.json)")
     ap.add_argument("--graph-repo",
                     help="code-graph repository to ask, by name or path (default: "
                          "the repository itself; a worktree names its main checkout)")

@@ -27,11 +27,12 @@ fi
 mutants=(go-deps graph-callers graph-error stale-node conftest unknown-file
          shell-import reaches-no-test module-level blank-lines unmodeled
          go-tags nested rs-cross-workspace rs-nested-fold rs-cargo-lock-full
-         rs-exclude rs-no-cargo rs-unconditional-cargo)
+         rs-exclude rs-no-cargo rs-unconditional-cargo duplicate-config)
 pairs=(go-dependents py-graph py-graph-down py-graph-missing py-conftest py-unknown
        sh-import py-untested py-module-level py-untested py-unmodeled
        go-tags py-nested rs-dependents-cross-workspace rs-ownership-nested-workspace
-       rs-cargo-lock-workspace rs-args-exclude rs-no-cargo rs-no-cargo-irrelevant)
+       rs-cargo-lock-workspace rs-args-exclude rs-no-cargo rs-no-cargo-irrelevant
+       sh-both-configs)
 
 if ! command -v go >/dev/null 2>&1; then
   printf 'no go toolchain: the go-deps and go-tags mutants cannot run\n'
@@ -115,6 +116,9 @@ mutants = {
     "rs-unconditional-cargo": (
         "    if not relevant:\n        return handled, reasons\n",
         "    if False:\n        return handled, reasons\n"),
+    "duplicate-config": (
+        "        if os.path.exists(root_path) and os.path.exists(legacy_path):\n",
+        "        if False and os.path.exists(root_path) and os.path.exists(legacy_path):\n"),
 }
 old, new = mutants[os.environ["MUTANT"]]
 if source.count(old) != 1:

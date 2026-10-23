@@ -658,20 +658,29 @@ python3 ~/.drsg-memory/tools/affected-tests.py --config /tmp/at.json --graph-rep
 
 输出每项一行：`mode:`（`selected`、`full` 或 `none`）、`full:` 理由、`ignored:` 路径、`run:` 命令，以及 `why:`（每个测试是因为什么被选中）。验收请求里把全部输出贴上，审核方按 `why:` 核对选择。
 
-每个仓库的设置写在 `.drsg/affected-tests.json`（键都可省略；`--config` 可以指向别处）：
+每个仓库的设置写在仓库根目录的 `affected-tests.json`（键都可省略；`--config` 可以指向别处）。根目录文件不存在时，仍会读取旧位置 `.drsg/affected-tests.json`。两处文件同时存在时，工具以退出码 2 报错并列出两个路径；删除其中一个即可消除歧义。
 
 ```json
-{"full": "bash tests/test-all.sh",
- "always": ["make lint"],
- "full_triggers": ["tests/lib/*"],
- "ignore": ["frontend/*", "deploy/*"],
- "go": {"tags": "unit"},
- "rust": {"args": "--all-features", "exclude": ["plugins/*/component"]},
- "python": {"runner": ".venv/bin/python -m pytest"},
- "shell": {"tests": "tests/*.sh", "exclude": ["tests/test-all.sh"], "runner": "bash"}}
+{
+  "full": "bash tests/test-all.sh",
+  "always": ["make lint"],
+  "full_triggers": ["tests/lib/*"],
+  "ignore": ["frontend/*", "deploy/*"],
+  "go": {"tags": "unit"},
+  "rust": {"args": "--all-features", "exclude": ["plugins/*/component"]},
+  "python": {"runner": ".venv/bin/python -m pytest"},
+  "shell": {
+    "tests": "tests/*.sh",
+    "exclude": ["tests/test-all.sh"],
+    "runner": "bash",
+    "path_map": {
+      "tools/templates/settings-hooks.json": ["tests/setup-reuse-token.sh"]
+    }
+  }
+}
 ```
 
-`rust.args` 会在选中的 `-p` crate 参数前追加 Cargo 选项；`rust.exclude` 是匹配相对仓库目录的 crate 路径 glob 列表。`always` 里的命令每次选择都先跑；`full_triggers` 追加会强制整包的路径；`ignore` 里的路径不归这个工具管（仍然打印成 `ignored:`）。第一次运行报出很多 `full: no rule covers …`，而这些文件没有单元测试会读（部署文件、CI 配置），就把它们加进 `ignore`。
+`shell.path_map` 按精确的仓库相对路径映射到 shell 测试脚本。每个目标必须匹配 `shell.tests`、不能被排除且必须存在；映射无效时按配置错误处理。映射会选择对应脚本并输出 `why:`，但不会覆盖整包触发条件。`rust.args` 会在选中的 `-p` crate 参数前追加 Cargo 选项；`rust.exclude` 是匹配相对仓库目录的 crate 路径 glob 列表。`always` 里的命令每次选择都先跑；`full_triggers` 追加会强制整包的路径；`ignore` 里的路径不归这个工具管（仍然打印成 `ignored:`）。第一次运行报出很多 `full: no rule covers …`，而这些文件没有单元测试会读（部署文件、CI 配置），就把它们加进 `ignore`。
 
 代码图是下界：解析不了的调用不会成为边。文本匹配补上了大部分缺口，发版前（`release.sh check`）照旧跑整包。`DRSG_AFFECTED_ROUTER` 让工具改用另一个路由模块，契约测试用它接一个桩代码图。
 

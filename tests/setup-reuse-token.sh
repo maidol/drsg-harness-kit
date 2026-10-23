@@ -168,6 +168,39 @@ print("yes" if found == sys.argv[2] else "no")
 PY
 )" yes
 
+# The hooks setup registered come from tools/templates/settings-hooks.json.
+# The expected set is written out here, not read from the template, so a
+# registration dropped from the template turns this red.
+check "setup registers all six kit hooks in settings.local.json" \
+  "$(python3 - "$PROJECT/.claude/settings.local.json" <<'PY'
+import json, sys
+want = {
+    "PreToolUse": "pre_tool_use.py",
+    "SessionStart": "session_start.py",
+    "UserPromptSubmit": "user_prompt.py",
+    "PreCompact": "compact_handoff.py",
+    "PostCompact": "compact_handoff.py",
+    "SessionEnd": "session_end.py",
+}
+try:
+    hooks = json.load(open(sys.argv[1], encoding="utf-8")).get("hooks") or {}
+except Exception:
+    print("unreadable")
+    sys.exit()
+missing = []
+for event, script in want.items():
+    commands = [h.get("command", "")
+                for group in hooks.get(event) or []
+                for h in group.get("hooks") or []]
+    if not any(c.split()[0].split("/")[-1] == script for c in commands if c.split()):
+        missing.append(event)
+if not any("clear" in str(group.get("matcher", "")).split("|")
+           for group in hooks.get("SessionStart") or []):
+    missing.append("SessionStart-clear")
+print("complete" if not missing else "missing " + ",".join(missing))
+PY
+)" complete
+
 : > "$CLAUDE_CALLS"
 printf '{}\n' > "$CLAUDE_DIR/.claude.json"
 chmod 640 "$CLAUDE_DIR/.claude.json"
@@ -249,4 +282,4 @@ check "no daemon env and no --token still stops the join" \
   "$NOENV_RC/$(grep -c 'joining a running daemon requires --token' "$T/setup-noenv.out")" 1/1
 
 echo "PASS $OK/$RAN"
-[ "$RAN" -eq 24 ] && [ "$OK" -eq "$RAN" ]
+[ "$RAN" -eq 25 ] && [ "$OK" -eq "$RAN" ]

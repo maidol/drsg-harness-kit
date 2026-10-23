@@ -552,6 +552,80 @@ if want sh-full-run; then
   check "sh: --run runs the configured full command when full is required" "$RC" 0
   check "sh: the full command is what ran" "$(line '+ bash tests/all.sh')" 1
 fi
+if want sh-root-config; then
+  sh_repo root-config
+  rm "$REPO/.drsg/affected-tests.json"
+  printf '{"always": ["printf root-config"],\n "shell": {"tests": "tests/*.sh", "exclude": ["tests/all.sh"]}}\n' \
+    > "$REPO/affected-tests.json"
+  commit_all "$REPO"
+  printf 'def fa():\n    return 2\n' > "$REPO/tools/a.py"
+  at
+  check "sh: repository-root config takes precedence" \
+    "$(line 'run: printf root-config')" 1
+  check "sh: repository-root config is used with shell selection" \
+    "$(line 'run: bash tests/t_b.sh')" 1
+fi
+if want sh-both-configs; then
+  sh_repo both-configs
+  printf '{"full": "bash tests/all.sh"}\n' > "$REPO/affected-tests.json"
+  commit_all "$REPO"
+  at
+  check "sh: both config locations are rejected" "$RC" 2
+  check "sh: duplicate-config error names repository-root path" \
+    "$(has "$REPO/affected-tests.json")" 1
+  check "sh: duplicate-config error names legacy path" \
+    "$(has "$REPO/.drsg/affected-tests.json")" 1
+fi
+if want sh-path-map; then
+  sh_repo path-map
+  printf '#!/usr/bin/env bash\nprintf mapped\\n\n' > "$REPO/tests/t_mapped.sh"
+  printf '{"full": "bash tests/all.sh",\n "shell": {"tests": "tests/*.sh", "exclude": ["tests/all.sh"],\n "path_map": {"tools/templates/settings-hooks.json": ["tests/t_mapped.sh"]}}}\n' \
+    > "$REPO/.drsg/affected-tests.json"
+  commit_all "$REPO"
+  mkdir -p "$REPO/tools/templates"
+  printf '{}\n' > "$REPO/tools/templates/settings-hooks.json"
+  at
+  check "sh: explicit path map selects its target" \
+    "$(line 'run: bash tests/t_mapped.sh')" 1
+  check "sh: explicit path map explains its source path" \
+    "$(has 'why: tests/t_mapped.sh  <- explicit mapping tools/templates/settings-hooks.json')" 1
+  check "sh: path-mapped file is selected, not full" "$RC" 0
+  commit_all "$REPO"
+  printf 'x\n' > "$REPO/unmapped.bin"
+  at
+  check "sh: adjacent unmapped file still requires full suite" "$RC" 3
+  check "sh: full fallback names adjacent unmapped file" \
+    "$(has 'full: no rule covers unmapped.bin')" 1
+  printf 'x\n' > "$REPO/requirements.txt"
+  at
+  check "sh: path map does not override full triggers" "$RC" 3
+  check "sh: full trigger reason is retained" \
+    "$(has 'full: requirements.txt changed (dependency or test setup)')" 1
+fi
+if want sh-path-map-invalid; then
+  for invalid in object non-array empty duplicate nonexistent outside excluded \
+                 bad-key absolute-key empty-key; do
+    sh_repo "map-$invalid"
+    case "$invalid" in
+      object) value='"path_map": []' ;;
+      non-array) value='"path_map": {"tools/x": "tests/t_b.sh"}' ;;
+      empty) value='"path_map": {"tools/x": []}' ;;
+      duplicate) value='"path_map": {"tools/x": ["tests/t_b.sh", "tests/t_b.sh"]}' ;;
+      nonexistent) value='"path_map": {"tools/x": ["tests/missing.sh"]}' ;;
+      outside) value='"path_map": {"tools/x": ["pkg/test.sh"]}' ;;
+      excluded) value='"path_map": {"tools/x": ["tests/all.sh"]}' ;;
+      bad-key) value='"path_map": {"../tools/x": ["tests/t_b.sh"]}' ;;
+      absolute-key) value='"path_map": {"/tools/x": ["tests/t_b.sh"]}' ;;
+      empty-key) value='"path_map": {"": ["tests/t_b.sh"]}' ;;
+    esac
+    printf '{"shell": {"tests": "tests/*.sh", "exclude": ["tests/all.sh"], %s}}\n' \
+      "$value" > "$REPO/.drsg/affected-tests.json"
+    commit_all "$REPO"
+    printf 'x\n' >> "$REPO/tools/a.py"
+    at
+    check "sh: invalid path map ($invalid) is a config error" "$RC" 2
+  done
+fi
 
 printf 'PASS %d/%d%s\n' "$OK" "$RAN" "$SKIPPED"
 [ "$OK" -eq "$RAN" ] && [ "$RAN" -gt 0 ]

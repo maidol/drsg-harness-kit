@@ -1058,22 +1058,38 @@ reasons, `ignored:` paths, `run:` commands, and `why:` lines naming what
 selected each test. Paste all of it into an acceptance request; the reviewer
 checks the selection against the `why:` lines.
 
-Per-repository settings live in `.drsg/affected-tests.json` (all keys optional;
-`--config` points elsewhere):
+Per-repository settings live in the repository root's `affected-tests.json`
+(all keys optional; `--config` points elsewhere). The legacy
+`.drsg/affected-tests.json` location is still read when the root file is absent.
+If both files exist, the tool exits 2 and names both paths; remove one to resolve
+the ambiguity.
 
 ```json
-{"full": "bash tests/test-all.sh",
- "always": ["make lint"],
- "full_triggers": ["tests/lib/*"],
- "ignore": ["frontend/*", "deploy/*"],
- "go": {"tags": "unit"},
- "rust": {"args": "--all-features", "exclude": ["plugins/*/component"]},
- "python": {"runner": ".venv/bin/python -m pytest"},
- "shell": {"tests": "tests/*.sh", "exclude": ["tests/test-all.sh"], "runner": "bash"}}
+{
+  "full": "bash tests/test-all.sh",
+  "always": ["make lint"],
+  "full_triggers": ["tests/lib/*"],
+  "ignore": ["frontend/*", "deploy/*"],
+  "go": {"tags": "unit"},
+  "rust": {"args": "--all-features", "exclude": ["plugins/*/component"]},
+  "python": {"runner": ".venv/bin/python -m pytest"},
+  "shell": {
+    "tests": "tests/*.sh",
+    "exclude": ["tests/test-all.sh"],
+    "runner": "bash",
+    "path_map": {
+      "tools/templates/settings-hooks.json": ["tests/setup-reuse-token.sh"]
+    }
+  }
+}
 ```
 
-`rust.args` appends Cargo options before the selected `-p` packages; `rust.exclude`
-contains glob patterns matching crate directories relative to the repository.
+`shell.path_map` maps exact changed repository-relative paths to included shell
+scripts. Each target must match `shell.tests`, must not be excluded, and must
+exist; invalid mappings are configuration errors. A mapping adds its scripts and
+records a `why:` line, but does not suppress full-suite triggers. `rust.args`
+appends Cargo options before the selected `-p` packages; `rust.exclude` contains
+glob patterns matching crate directories relative to the repository.
 `always` commands run before every selection, `full_triggers` adds paths that
 force the full suite, and `ignore` drops paths whose tests are outside this tool
 (they are still printed as `ignored:`). When a first run reports many
