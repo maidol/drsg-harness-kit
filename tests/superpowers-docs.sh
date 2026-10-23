@@ -375,6 +375,27 @@ class SuperpowersDocsTests(unittest.TestCase):
         self.assertFalse((self.reviewer / "reviews").exists())
         self.assertFalse((self.xdg / "drsg").exists())
 
+    def test_guard_reads_installer_state_end_to_end(self):
+        hook = repo / "tools/templates/hooks/superpowers-doc-guard.py"
+        self.assertTrue(superpowers_docs.install_project(str(self.project), [str(self.project)])["ok"])
+
+        def decision(path):
+            data = {"hook_event_name": "PreToolUse", "tool_name": "Write",
+                    "tool_input": {"file_path": str(path), "content": "x"},
+                    "cwd": str(self.project)}
+            env = os.environ.copy()
+            env["CLAUDE_PROJECT_DIR"] = str(self.project)
+            run = subprocess.run([sys.executable, str(hook)], input=json.dumps(data),
+                                 capture_output=True, text=True, env=env,
+                                 cwd=self.project, timeout=15, check=False)
+            self.assertEqual(run.returncode, 0, run.stderr)
+            return "deny" if '"deny"' in run.stdout else "allow"
+
+        self.assertEqual(decision(self.reviewer / "reviews/alpha/docs/superpowers/plans/x.md"), "allow")
+        self.assertEqual(decision(self.reviewer / "reviews/beta/x.md"), "deny")
+        self.assertTrue(superpowers_docs.set_opt_out(str(self.project), True)["ok"])
+        self.assertEqual(decision(self.reviewer / "reviews/beta/x.md"), "allow")
+
     def test_reviewer_project_gets_own_rule_but_no_additional_directory(self):
         settings = self.reviewer / ".claude/settings.local.json"
         settings.parent.mkdir()

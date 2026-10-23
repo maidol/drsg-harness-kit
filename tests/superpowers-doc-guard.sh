@@ -378,8 +378,8 @@ with tempfile.TemporaryDirectory(prefix="superpowers-guard-") as td:
     state_dir = xdg / "drsg" / "superpowers-docs-state"
     state_dir.mkdir(parents=True)
     (state_dir / (state_id + ".json")).write_text(json.dumps({
-        "project_realpath": project_real, "reviewer_realpath": str(reviewer),
-        "allow_path": str(allowed), "enabled": False,
+        "project": project_real, "reviewer": str(reviewer),
+        "allow": None, "enabled": False, "opt_out": True,
     }), encoding="utf-8")
     check("opt-out project is unrestricted",
           call("Write", {"file_path": str(reviewer / "outside.md"), "content": "x"}), "allow")

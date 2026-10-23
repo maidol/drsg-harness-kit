@@ -159,12 +159,15 @@ def _state_status(project_real, reviewer):
         return "missing"
     except (OSError, ValueError, TypeError):
         return "invalid"
-    if (not isinstance(state, dict)
-            or state.get("project_realpath") != project_real
-            or state.get("reviewer_realpath") != reviewer
-            or not isinstance(state.get("enabled"), bool)):
+    # Same schema as tools/superpowers_docs.py _write_state: project, reviewer,
+    # allow, enabled, opt_out. An opt-out may predate any reviewer.
+    if not isinstance(state, dict) or state.get("project") != project_real:
         return "invalid"
-    return "enabled" if state["enabled"] else "opt-out"
+    if state.get("opt_out") is True:
+        return "opt-out"
+    if state.get("reviewer") != reviewer or state.get("enabled") is not True:
+        return "invalid"
+    return "enabled"
 
 
 def _resolve(path, cwd):
