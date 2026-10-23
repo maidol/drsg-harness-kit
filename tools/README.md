@@ -150,27 +150,52 @@ handoff storage and SessionStart behavior.
 
 ### Superpowers document archive
 
-`superpowers_docs.py` is the module `install.sh` uses to merge hook
-registrations into `.claude/settings.local.json` and to install the
-Superpowers archive rule and its allow entry. The direct installer accepts the
-same per-project switches as `setup.sh`:
+`superpowers_docs.py` merges project hook registrations and installs the
+archive rule and exact allow entry. The direct installer accepts the same
+per-project switches as `setup.sh`:
 
 ```bash
 bash ./install.sh --no-superpowers-docs /path/to/project
 bash ./install.sh --superpowers-docs /path/to/project
-```
-
-`setup.sh --all-projects` passes its NUL-separated project list with
-`--known-projects-file`, so project-name conflicts are checked against the
-same list:
-
-```bash
 bash ./install.sh /path/to/project --bin /path/to/drsg --known-projects-file /path/to/projects.nul
 ```
 
-Ownership state lives under
-`${XDG_CONFIG_HOME:-$HOME/.config}/drsg/superpowers-docs-state/`; only an
-allow entry recorded there is ever removed.
+`setup.sh --all-projects` passes its NUL-separated project list for basename
+collision checks. If project discovery is unavailable during a single-project
+install, the registry fallback is a warning and only the current project can be
+checked. A known basename collision fails closed. Ownership state is stored
+under `${XDG_CONFIG_HOME:-$HOME/.config}/drsg/superpowers-docs-state/`; a
+missing or mismatched state is audit drift, and only a recorded allow is ever
+removed. `install.sh --audit` checks the managed CLAUDE.md markers and rendered
+rule, state, exact archive allow, broader reviewer paths, and the fixed guard
+registration (including when the feature is opted out or the project is the
+reviewer itself).
+
+The fixed `PreToolUse` registration matches `Bash|Write|Edit|NotebookEdit`.
+The guard allows known readers (`cat`, `head`, `tail`, `sed` without in-place
+mode, `grep`, `rg`, `ls`, `wc`, `sha256sum`, `cmp`, `diff`, `stat`) and read-only
+Git commands (`diff`, `log`, `show`, `status`) even when they mention the
+reviewer. It checks visible static writes such as shell redirections, `tee`,
+`cp`, `mv`, `touch`, `mkdir`, `rm`, `truncate`, `install`, `ln` and `sed -i`;
+reviewer writes are allowed only inside this project's archive. All Git write
+subcommands in the reviewer repository are denied: `add`, `am`, `apply`,
+`branch`, `checkout`, `cherry-pick`, `clean`, `commit`, `fetch`, `init`,
+`merge`, `mv`, `pull`, `push`, `rebase`, `reset`, `restore`, `rm`, `stash`,
+`switch`, `tag` and `worktree`. Unrecognized or dynamic commands that visibly
+involve the reviewer fail closed when the target cannot be proven safe. The
+installed Claude Code CLI reports version `2.1.284`; MultiEdit is not exposed
+in the available tool set, so it is not part of the matcher.
+
+**Coverage limits:** this parser sees the Claude Code tool input, not every
+side effect. `xargs` may forward or construct paths indirectly; an invoked
+script can write into the reviewer repository from inside its own code without
+a visible reviewer path in the command; and a path can change between the hook's
+check and the operation (TOCTOU). The hook therefore is not a sandbox or a
+substitute for review and OS/repository permissions. User `!` commands and
+processes outside Claude Code do not pass through it. Do not rely on the guard
+to constrain them.
+
+The reviewer-path cache is `${XDG_CACHE_HOME:-$HOME/.cache}/drsg/superpowers-docs/reviewer-cache.json` (override with `XDG_CACHE_HOME`). It stores the config path, its `st_dev`/`st_ino`/`st_mtime_ns`/`st_size` signature, and the reviewer realpath—not credentials. The cache directory is created with mode `0700`, the cache file uses mode `0600`, and updates use atomic replacement. Each invocation stats the config and reuses a cache entry only while that signature matches; a changed or missing cache causes a reload. This cache is separate from the ownership state under `${XDG_CONFIG_HOME:-$HOME/.config}/drsg/superpowers-docs-state/`.
 
 ## Joining an existing daemon
 

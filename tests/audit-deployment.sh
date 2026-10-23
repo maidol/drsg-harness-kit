@@ -29,7 +29,9 @@ CLAUDE_DIR="$T/claude"
 PROJ="$T/project"
 
 mkdir -p "$REPO/tools/templates/hooks" "$REPO/claude" "$REPO/skills/agent-efficiency-retro" "$REPO/skills/codegraph" "$REPO/skills/diagram-conventions"
-mkdir -p "$T/xdg"
+mkdir -p "$T/xdg" "$T/home" "$T/drsg-memory"
+export HOME="$T/home"
+export DRSG_MEM_DIR="$T/drsg-memory"
 export XDG_CONFIG_HOME="$T/xdg"
 cp "$HERE/../tools/templates/compact-instructions.md" "$REPO/tools/templates/compact-instructions.md"
 mkdir -p "$DEPLOYED_TOOLS/templates/hooks"
@@ -81,7 +83,10 @@ chmod 600 "$CLAUDE_DIR/settings.json"
 cat > "$PROJ/.claude/settings.local.json" <<'JSON'
 {
   "hooks": {
-    "PreToolUse": [{"matcher": "Bash", "hooks": [{"command": "python3 pre_tool_use.py"}]}],
+    "PreToolUse": [
+      {"matcher": "Bash", "hooks": [{"command": "python3 pre_tool_use.py"}]},
+      {"matcher": "Bash|Write|Edit|NotebookEdit", "hooks": [{"command": "python3 /path/superpowers-doc-guard.py"}]}
+    ],
     "SessionStart": [{"matcher": "startup|resume|compact|clear", "hooks": [{"command": "python3 session_start.py"}]}],
     "PreCompact": [{"hooks": [{"command": "python3 compact_handoff.py"}]}],
     "PostCompact": [{"hooks": [{"command": "python3 compact_handoff.py"}]}],
@@ -411,7 +416,10 @@ XDG_CONFIG_HOME="$XDG_CONFIG_HOME" HOME="$T/home" bash "$HERE/../tools/install.s
 cat > "$R2_PROJ/.claude/settings.local.json" <<EOF
 {
   "hooks": {
-    "PreToolUse": [{"matcher": "Bash", "hooks": [{"command": "python3 pre_tool_use.py"}]}],
+    "PreToolUse": [
+      {"matcher": "Bash", "hooks": [{"command": "python3 pre_tool_use.py"}]},
+      {"matcher": "Bash|Write|Edit|NotebookEdit", "hooks": [{"command": "python3 /path/superpowers-doc-guard.py"}]}
+    ],
     "SessionStart": [{"matcher": "startup|resume|compact|clear", "hooks": [{"command": "python3 session_start.py"}]}],
     "PreCompact": [{"hooks": [{"command": "python3 compact_handoff.py"}]}],
     "PostCompact": [{"hooks": [{"command": "python3 compact_handoff.py"}]}],
@@ -455,6 +463,201 @@ PY
 python3 "$AUDIT" --repo "$REPO" --tools-dir "$DEPLOYED_TOOLS" --claude-dir "$CLAUDE_DIR" --project "$R2_PROJ" --json > "$T/out_r2_legacy.json" 2>&1 || true
 l4_r2_legacy=$(find_layer_ok "$T/out_r2_legacy.json" "L4")
 check "r2_legacy_rule_is_drift" "$l4_r2_legacy" "failed"
+
+# Superpowers archive L4 contract. Keep this in an isolated temporary HOME/XDG.
+python3 - "$HERE/.." <<'PY' || exit $?
+import hashlib
+import importlib.util
+import json
+import os
+import pathlib
+import sys
+import tempfile
+from unittest import mock
+
+repo = pathlib.Path(sys.argv[1])
+tools = repo / "tools"
+sys.path.insert(0, str(tools))
+audit_source = pathlib.Path(os.environ.get("AUDIT_SOURCE", tools / "audit_deployment.py"))
+spec = importlib.util.spec_from_file_location("audit_deployment", audit_source)
+audit_deployment = importlib.util.module_from_spec(spec)
+sys.modules["audit_deployment"] = audit_deployment
+spec.loader.exec_module(audit_deployment)
+import superpowers_docs
+
+checks = 0
+failures = []
+def check(name, got, want):
+    global checks
+    checks += 1
+    if got == want:
+        print("ok   " + name)
+    else:
+        failures.append("%s: got %r want %r" % (name, got, want))
+        print("FAIL " + failures[-1])
+
+def has_detail(layer, text):
+    return any(text in line for line in layer["details"])
+
+def audit(project, known=...):
+    claude_json = root / "claude.json"
+    claude_json.write_text(json.dumps({"projects": {str(project): {"mcpServers": {
+        "drsg": {}, "drsg-events": {}}}}}), encoding="utf-8")
+    def run():
+        return audit_deployment.check_layer4(
+            str(project), str(claude_json), str(tools), None)
+    if known is ...:
+        return run()
+    with mock.patch.object(superpowers_docs, "_known_projects", return_value=known):
+        return run()
+
+def set_config(path, reviewer):
+    path.parent.mkdir(parents=True, exist_ok=True)
+    path.write_text(json.dumps({"reviewer": str(reviewer)}), encoding="utf-8")
+
+def project_fixture(root, name):
+    project = root / name
+    (project / ".claude" / "hooks").mkdir(parents=True)
+    (project / ".drsg").mkdir()
+    (project / ".drsg" / "env").write_text("DRSG_TOKEN=test\nDRSG_API=test\n")
+    (project / "CLAUDE.md").write_text(
+        "<!-- drsg-memory:events:begin -->\nevents\n"
+        "<!-- drsg-memory:events:end -->\n", encoding="utf-8")
+    return project
+
+with tempfile.TemporaryDirectory(prefix="audit-superpowers-") as td:
+    root = pathlib.Path(td)
+    home, memory, xdg = root / "home", root / "memory", root / "xdg"
+    reviewer, moved = root / "reviewer", root / "reviewer-moved"
+    for path in (home, memory, xdg, reviewer, moved):
+        path.mkdir(parents=True, exist_ok=True)
+    os.environ.update({"HOME": str(home), "DRSG_MEM_DIR": str(memory),
+                       "XDG_CONFIG_HOME": str(xdg), "DRSG_API": "http://127.0.0.1:1/rpc"})
+    config = memory / "commit-auth.json"
+    template = str(tools / "templates" / "settings-hooks.json")
+    project = project_fixture(root, "consumer")
+
+    # Inactive configuration is a supported state; the fixed guard is still required.
+    superpowers_docs.install_project(str(project), [str(project)], hooks_template=template)
+    layer = audit(project, [str(project)])
+    check("inactive reviewer configuration is healthy", layer["ok"], True)
+
+    set_config(config, reviewer)
+    result = superpowers_docs.install_project(str(project), [str(project)], hooks_template=template)
+    check("audit fixture installs enabled archive", result["ok"], True)
+    layer = audit(project, [str(project)])
+    check("enabled archive with matching state and narrow allow is healthy", layer["ok"], True)
+
+    # An unavailable project registry is advisory; it must not silently hide audit status.
+    layer = audit(project, None)
+    check("registry fallback warning does not fail healthy archive", layer["ok"], True)
+    check("registry fallback is visible as warning", has_detail(layer, "registry"), True)
+
+    collision = root / "other" / "consumer"
+    collision.mkdir(parents=True)
+    layer = audit(project, [str(project), str(collision)])
+    check("known basename collision is audit drift", layer["ok"], False)
+    check("basename collision reason is visible", has_detail(layer, "conflict"), True)
+
+    claude = project / "CLAUDE.md"
+    original_claude = claude.read_bytes()
+    begin = b"<!-- drsg-memory:superpowers-docs:begin -->"
+    end = b"<!-- drsg-memory:superpowers-docs:end -->"
+    claude.write_bytes(original_claude.replace(begin, b"", 1).replace(end, b"", 1))
+    layer = audit(project, [str(project)])
+    check("missing Superpowers marker is audit drift", layer["ok"], False)
+    claude.write_bytes(original_claude + b"\n" + original_claude[original_claude.find(begin):])
+    layer = audit(project, [str(project)])
+    check("duplicate Superpowers markers are audit drift", layer["ok"], False)
+    claude.write_bytes(original_claude)
+
+    settings_path = project / ".claude" / "settings.local.json"
+    original_settings = settings_path.read_bytes()
+    data = json.loads(original_settings)
+    allow = data["permissions"]["additionalDirectories"]
+    allow.append(str(reviewer))
+    settings_path.write_text(json.dumps(data), encoding="utf-8")
+    layer = audit(project, [str(project)])
+    check("reviewer-wide additionalDirectory is audit drift", layer["ok"], False)
+    settings_path.write_bytes(original_settings)
+
+    # A changed reviewer must not leave the old managed rule or allow silently accepted.
+    set_config(config, moved)
+    layer = audit(project, [str(project)])
+    check("reviewer migration residual is audit drift", layer["ok"], False)
+    check("reviewer migration reason is visible", has_detail(layer, "reviewer"), True)
+    set_config(config, reviewer)
+
+    state_path = xdg / "drsg" / "superpowers-docs-state" / (
+        hashlib.sha256(os.path.realpath(project).encode()).hexdigest() + ".json")
+    state_bytes = state_path.read_bytes()
+    state_path.unlink()
+    layer = audit(project, [str(project)])
+    check("missing ownership state is audit drift", layer["ok"], False)
+    state_path.write_bytes(state_bytes)
+    state = json.loads(state_bytes)
+    state["project"] = str(root / "wrong-project")
+    state_path.write_text(json.dumps(state), encoding="utf-8")
+    layer = audit(project, [str(project)])
+    check("mismatched ownership state is audit drift", layer["ok"], False)
+    state_path.write_bytes(state_bytes)
+
+    # The reviewer project gets its own rule but never an additionalDirectories allow.
+    self_project = project_fixture(root, "reviewer")
+    set_config(config, self_project)
+    result = superpowers_docs.install_project(str(self_project), [str(self_project)],
+                                              hooks_template=template)
+    layer = audit(self_project, [str(self_project)])
+    check("reviewer self-project is healthy", result["ok"] and layer["ok"], True)
+    self_settings = json.loads((self_project / ".claude" / "settings.local.json").read_text())
+    check("reviewer self-project has no archive allow",
+          self_settings.get("permissions", {}).get("additionalDirectories", []), [])
+
+    # Opt-out removes the rule and allow, but must not remove the fixed hook registration.
+    set_config(config, reviewer)
+    superpowers_docs.set_opt_out(str(project), True)
+    layer = audit(project, [str(project)])
+    check("opt-out project is healthy", layer["ok"], True)
+    check("opt-out retains the fixed guard registration", has_detail(layer, "superpowers-doc-guard.py"), True)
+    optout_settings = settings_path.read_bytes()
+    data = json.loads(optout_settings)
+    data["permissions"]["additionalDirectories"].append(
+        str(reviewer / "reviews" / "consumer" / "docs" / "superpowers"))
+    settings_path.write_text(json.dumps(data), encoding="utf-8")
+    layer = audit(project, [str(project)])
+    check("opt-out with stale archive allow is audit drift", layer["ok"], False)
+    settings_path.write_bytes(optout_settings)
+
+    # Settings failures do not leak file contents and all registration shapes are audited.
+    settings_path.write_bytes(b"{invalid settings")
+    layer = audit(project, [str(project)])
+    check("invalid settings JSON is audit drift", layer["ok"], False)
+    check("invalid settings contents are not reported", has_detail(layer, "invalid settings"), False)
+    settings_path.write_bytes(original_settings)
+    superpowers_docs.set_opt_out(str(project), False)
+    superpowers_docs.install_project(str(project), [str(project)], hooks_template=template)
+    original_settings = settings_path.read_bytes()
+
+    for name, change, fragment in (
+        ("missing guard registration", lambda d: d["hooks"]["PreToolUse"].pop(), "registration"),
+        ("duplicate guard registration", lambda d: d["hooks"]["PreToolUse"].append(
+            dict(d["hooks"]["PreToolUse"][-1])), "duplicate"),
+        ("wrong guard matcher", lambda d: d["hooks"]["PreToolUse"][-1].update(
+            {"matcher": "Bash|Write"}), "matcher"),
+    ):
+        data = json.loads(original_settings)
+        change(data)
+        settings_path.write_text(json.dumps(data), encoding="utf-8")
+        layer = audit(project, [str(project)])
+        check(name + " is audit drift with reason visible",
+              not layer["ok"] and has_detail(layer, fragment), True)
+        settings_path.write_bytes(original_settings)
+
+if failures:
+    print("FAIL %d/%d" % (checks - len(failures), checks))
+    sys.exit(1)
+print("PASS %d/%d" % (checks, checks))
+PY
 
 if [ -n "$ONLY" ] && [ "$RAN" -eq 0 ]; then
   echo "FAIL requested assertion was not run: $ONLY"

@@ -148,14 +148,18 @@ PY
 
 ## Superpowers 文档归档
 
-`~/.drsg-memory/commit-auth.json` 配置了审核方仓库时，setup 会让新产生的 Superpowers 文档（设计、实施计划、评审与验收记录）保存到该仓库的 `reviews/<项目>/docs/superpowers/`：在项目 `CLAUDE.md` 写入一个独立的托管区块，并只把这一个目录加进 `.claude/settings.local.json` 的 `permissions.additionalDirectories`。没有审核方配置时什么都不写；已有文档不迁移。单独为某个项目关闭或恢复：
+`~/.drsg-memory/commit-auth.json` 配置了审核方仓库时（或 `DRSG_MEM_DIR` 指向其他 memory 目录时），setup 会让新产生的 Superpowers 文档——设计、实施计划、评审与验收记录——保存到审核方仓库的 `reviews/<项目>/docs/superpowers/`：在项目 `CLAUDE.md` 写入独立托管区块，并只把这一个目录加进 `.claude/settings.local.json` 的 `permissions.additionalDirectories`。没有审核方配置时不写归档规则；已有文档不迁移。若已知项目有同名目录，会 fail closed；请重命名其中一个项目目录。`setup.sh --all-projects` 用项目清单检查重名；不得不退回 registry 查询时会显示警告。
 
 ```bash
+/tmp/drsg-harness-kit-*/setup.sh --project /path/to/project
 /tmp/drsg-harness-kit-*/setup.sh --no-superpowers-docs /path/to/project  # 关闭
 /tmp/drsg-harness-kit-*/setup.sh --superpowers-docs /path/to/project     # 恢复
+/tmp/drsg-harness-kit-*/setup.sh --all-projects
 ```
 
-关闭时删除托管区块和 kit 加的那一条 allow；已归档的文件保留不动。
+关闭时只删除托管区块和有归属记录证明由 kit 添加的 allow；已归档文件保留。项目级 `PreToolUse` 写入守卫始终注册，开启、退出、审核方自身项目都不改变该 Hook。`install.sh --audit` 会核对 Hook 注册与 matcher、托管规则、精确窄 allow、归属状态，以及 reviewer-wide 或残留 allow。
+
+auto 模式的命令权限配置也不是安全边界。守卫只对可见的工具输入做尽力检查，不是沙箱，也不是完整安全边界：`xargs` 管道可能间接转发或生成路径，脚本可在内部写入审核方仓库，文件目标也可能在检查后、实际使用前变化（TOCTOU）。它不约束通过 `!` 运行的命令或 Claude Code 外部进程。不要用这个 Hook 替代命令审查或仓库权限控制。审核方路径缓存位于 `${XDG_CACHE_HOME:-$HOME/.cache}/drsg/superpowers-docs/reviewer-cache.json`。
 
 ## 权限护栏（可选）
 

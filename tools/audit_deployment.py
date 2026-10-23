@@ -459,6 +459,8 @@ def check_layer4(project_dir, claude_json=None, tools_dir=None, compact_template
     """
     res = {"name": f"L4: Settings & Docs ({os.path.basename(project_dir)})", "ok": True, "details": []}
     issues = []
+    audit_warnings = []
+    settings_data = None
 
     # 1. settings.local.json hooks
     settings_local = os.path.join(project_dir, ".claude", "settings.local.json")
@@ -468,6 +470,7 @@ def check_layer4(project_dir, claude_json=None, tools_dir=None, compact_template
         try:
             with open(settings_local, encoding="utf-8") as f:
                 d = json.load(f)
+            settings_data = d
             hooks = d.get("hooks", {})
             commands = [
                 h.get("command", "")
@@ -513,6 +516,7 @@ def check_layer4(project_dir, claude_json=None, tools_dir=None, compact_template
     claude_md = os.path.join(project_dir, "CLAUDE.md")
     hooks_installed = os.path.isdir(os.path.join(project_dir, ".claude", "hooks"))
     compact_disabled = os.path.exists(compact_opt_out_path(project_dir))
+    claude_bytes = None
     if compact_disabled:
         res["details"].append("Compact instructions intentionally disabled (opt-out marker present); CLAUDE.md checks skipped")
     else:
@@ -566,6 +570,170 @@ def check_layer4(project_dir, claude_json=None, tools_dir=None, compact_template
                 tracked = False
             if tracked:
                 res["details"].append("Advisory: CLAUDE.md is tracked; 这一段会出现在 git diff 里，需要你自己决定要不要提交。")
+
+    # 3b. Superpowers document archive ownership and fixed write guard.
+    try:
+        import superpowers_docs
+
+        project = os.path.realpath(project_dir)
+        configured_reviewer = superpowers_docs.configured_reviewer(
+            superpowers_docs._config_path())
+        if configured_reviewer is None:
+            known_projects = [project]
+            registry_fallback = False
+        else:
+            known_projects = superpowers_docs._known_projects(None)
+            registry_fallback = known_projects is None
+            if registry_fallback:
+                known_projects = [project]
+        archive = superpowers_docs.inspect_project(project, known_projects)
+        if registry_fallback and archive.get("active"):
+            audit_warnings.append(
+                "WARN: Superpowers project registry unavailable; used current project only")
+
+        reason = archive.get("reason", "")
+        if reason == "project-name-conflict":
+            issues.append("Superpowers project basename conflict")
+        elif archive.get("active"):
+            reviewer = archive.get("reviewer")
+            slug = archive.get("slug")
+            expected_allow = (os.path.join(reviewer, "reviews", slug, "docs", "superpowers")
+                              if reviewer and slug and os.path.realpath(project_dir) != reviewer
+                              else None)
+            state, state_issue = superpowers_docs._read_state(os.path.realpath(project_dir))
+            if state_issue:
+                issues.append("Superpowers ownership state drift: " + state_issue)
+            elif state:
+                if state.get("reviewer") != reviewer:
+                    issues.append("Superpowers reviewer state mismatch")
+                if state.get("enabled") is not True or state.get("opt_out"):
+                    issues.append("Superpowers ownership state is not enabled")
+                if state.get("allow") != expected_allow:
+                    issues.append("Superpowers archive allow state mismatch")
+
+            if settings_data is not None:
+                permissions = settings_data.get("permissions", {})
+                additional = (permissions.get("additionalDirectories", [])
+                              if isinstance(permissions, dict) else [])
+                if not isinstance(additional, list):
+                    issues.append("Superpowers additionalDirectories is malformed")
+                elif expected_allow is not None:
+                    if additional.count(expected_allow) != 1:
+                        issues.append("Superpowers archive allow missing or duplicated")
+                    reviewer_path = os.path.realpath(reviewer)
+                    for item in additional:
+                        if not isinstance(item, str):
+                            continue
+                        candidate = os.path.realpath(os.path.expanduser(item))
+                        try:
+                            covers_reviewer = os.path.commonpath(
+                                [candidate, reviewer_path]) == candidate
+                        except ValueError:
+                            covers_reviewer = False
+                        if covers_reviewer and candidate != expected_allow:
+                            issues.append("Superpowers additionalDirectory is reviewer-wide")
+                        elif candidate.startswith(reviewer_path + os.sep) and candidate != expected_allow:
+                            issues.append("Superpowers unexpected reviewer additionalDirectory")
+                else:
+                    reviewer_path = os.path.realpath(reviewer) if reviewer else None
+                    for item in additional if isinstance(additional, list) else []:
+                        if not isinstance(item, str) or not reviewer_path:
+                            continue
+                        candidate = os.path.realpath(os.path.expanduser(item))
+                        try:
+                            covers_reviewer = os.path.commonpath(
+                                [candidate, reviewer_path]) == candidate
+                        except ValueError:
+                            covers_reviewer = False
+                        if covers_reviewer or candidate.startswith(reviewer_path + os.sep):
+                            issues.append("Superpowers reviewer self-project has an extra allow")
+                            break
+
+            if compact_disabled:
+                audit_warnings.append(
+                    "WARN: Superpowers CLAUDE.md rule check skipped by compact opt-out")
+            else:
+                if claude_bytes is None:
+                    issues.append("Superpowers CLAUDE.md archive rule is missing")
+                else:
+                    begin = b"<!-- drsg-memory:superpowers-docs:begin -->"
+                    end = b"<!-- drsg-memory:superpowers-docs:end -->"
+                    starts = claude_bytes.count(begin)
+                    ends = claude_bytes.count(end)
+                    if starts != 1 or ends != 1:
+                        issues.append("Superpowers CLAUDE.md archive markers missing or repeated")
+                    else:
+                        start = claude_bytes.find(begin)
+                        finish = claude_bytes.find(end, start) + len(end)
+                        expected = superpowers_docs.render_block(reviewer, slug).encode("utf-8")
+                        if finish < start or claude_bytes[start:finish].rstrip(b"\r\n") != expected.rstrip(b"\r\n"):
+                            issues.append("Superpowers CLAUDE.md archive rule differs from template")
+        elif reason == "opted-out":
+            project = os.path.realpath(project_dir)
+            state, state_issue = superpowers_docs._read_state(project)
+            if (state_issue or not state or state.get("enabled") or
+                    state.get("opt_out") is not True or state.get("allow")):
+                issues.append("Superpowers opt-out ownership state drift")
+            if not compact_disabled and claude_bytes is not None and (
+                    b"<!-- drsg-memory:superpowers-docs:begin -->" in claude_bytes or
+                    b"<!-- drsg-memory:superpowers-docs:end -->" in claude_bytes):
+                issues.append("Superpowers opt-out left a managed CLAUDE.md rule")
+            reviewer = state.get("reviewer") if state else None
+            slug = superpowers_docs.project_slug(project, known_projects)
+            expected_allow = (os.path.join(reviewer, "reviews", slug, "docs", "superpowers")
+                              if reviewer and slug and project != reviewer else None)
+            if settings_data is not None:
+                permissions = settings_data.get("permissions", {})
+                additional = (permissions.get("additionalDirectories", [])
+                              if isinstance(permissions, dict) else [])
+                if not isinstance(additional, list):
+                    issues.append("Superpowers additionalDirectories is malformed")
+                elif expected_allow and expected_allow in additional:
+                    issues.append("Superpowers opt-out left an archive allow")
+                elif reviewer and isinstance(additional, list):
+                    reviewer_path = os.path.realpath(reviewer)
+                    for item in additional:
+                        if not isinstance(item, str):
+                            continue
+                        candidate = os.path.realpath(os.path.expanduser(item))
+                        try:
+                            covers_reviewer = os.path.commonpath(
+                                [candidate, reviewer_path]) == candidate
+                        except ValueError:
+                            covers_reviewer = False
+                        if covers_reviewer or candidate.startswith(reviewer_path + os.sep):
+                            issues.append("Superpowers opt-out left a reviewer additionalDirectory")
+                            break
+        else:
+            state, state_issue = superpowers_docs._read_state(os.path.realpath(project_dir))
+            has_rule = (claude_bytes is not None and
+                        (b"<!-- drsg-memory:superpowers-docs:begin -->" in claude_bytes or
+                         b"<!-- drsg-memory:superpowers-docs:end -->" in claude_bytes))
+            if ((state and not state.get("opt_out")) or
+                    state_issue not in (None, "state-missing") or has_rule):
+                issues.append("Superpowers archive remains while reviewer is inactive")
+
+        if settings_data is not None:
+            hooks = settings_data.get("hooks", {}) if isinstance(settings_data, dict) else {}
+            registrations = []
+            if isinstance(hooks, dict):
+                for group in hooks.get("PreToolUse") or []:
+                    if not isinstance(group, dict):
+                        continue
+                    for hook in group.get("hooks", []):
+                        if isinstance(hook, dict) and "superpowers-doc-guard.py" in str(
+                                hook.get("command", "")):
+                            registrations.append((group.get("matcher"), hook))
+            if not registrations:
+                issues.append("Superpowers document guard registration missing")
+            elif len(registrations) != 1:
+                issues.append("Superpowers document guard registration duplicated")
+            elif registrations[0][0] != "Bash|Write|Edit|NotebookEdit":
+                issues.append("Superpowers document guard matcher is incorrect")
+            else:
+                res["details"].append("Superpowers document guard registered: superpowers-doc-guard.py")
+    except Exception as exc:
+        issues.append("Superpowers archive audit error: " + type(exc).__name__)
 
     # 4. pre-commit completeness-guard & forbidden-literals status. Ask git where its hooks live:
     # a project that sets core.hooksPath keeps pre-commit there, not in .git/hooks.
@@ -628,10 +796,11 @@ def check_layer4(project_dir, claude_json=None, tools_dir=None, compact_template
 
     if issues:
         res["ok"] = False
-        res["details"] = issues
+        res["details"] = issues + audit_warnings
     else:
         res["details"].append("Hooks registered, .drsg/env present, Event block documented"
                               + (", MCP drsg + drsg-events registered" if claude_json else ""))
+        res["details"].extend(audit_warnings)
     return res
 
 

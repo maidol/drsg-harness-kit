@@ -10,6 +10,9 @@ HERE="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 REPO="$(cd "$HERE/.." && pwd)"
 T="$(mktemp -d)"
 trap 'rm -rf "$T"' EXIT
+mkdir -p "$T/home" "$T/memory" "$T/xdg"
+export HOME="$T/home" DRSG_MEM_DIR="$T/memory" XDG_CONFIG_HOME="$T/xdg"
+export PYTHONPATH="$REPO/tools${PYTHONPATH:+:$PYTHONPATH}"
 
 RAN=0
 OK=0
@@ -86,7 +89,10 @@ OTHER="$T/other"
 mkdir -p "$P/.claude/hooks" "$P/.drsg" "$OTHER"
 cat > "$P/.claude/settings.local.json" <<'JSON'
 {"hooks": {
-  "PreToolUse": [{"matcher": "Bash", "hooks": [{"command": "python3 pre_tool_use.py"}]}],
+  "PreToolUse": [
+    {"matcher": "Bash", "hooks": [{"command": "python3 pre_tool_use.py"}]},
+    {"matcher": "Bash|Write|Edit|NotebookEdit", "hooks": [{"command": "python3 superpowers-doc-guard.py"}]}
+  ],
   "SessionStart": [{"matcher": "startup|resume|compact|clear", "hooks": [{"command": "python3 session_start.py"}]}],
   "UserPromptSubmit": [{"matcher": "*", "hooks": [{"command": "python3 user_prompt.py"}]}],
   "SessionEnd": [{"matcher": "*", "hooks": [{"command": "python3 session_end.py"}]}],
@@ -129,7 +135,8 @@ audit() {  # audit <mode>: prints "<ok|failed> <details joined>"
   rm -f "$T/c.json"
   [ "$1" = "unreadable" ] || cfg "$T/c.json" "$1"
   python3 - "$REPO/tools/audit_deployment.py" "$P" "$T/c.json" <<'PY'
-import importlib.util, sys
+import importlib.util, os, sys
+sys.path.insert(0, os.path.dirname(sys.argv[1]))
 spec = importlib.util.spec_from_file_location("audit", sys.argv[1])
 m = importlib.util.module_from_spec(spec)
 spec.loader.exec_module(m)
@@ -144,8 +151,10 @@ check f3_missing_events_is_drift "$(first "$out")" failed
 check f3_names_missing_server "$(echo "$out" | grep -c 'not registered for this project: drsg-events')" 1
 check f3_gives_fix_command "$(echo "$out" | grep -c 'claude mcp add --scope local drsg-events -- python3 /opt/tools/mcp_events.py')" 1
 check f3_drsg_present_not_reported "$(echo "$out" | grep -c 'not registered for this project: drsg -')" 0
-check f3_both_local_ok "$(first "$(audit local_both)")" ok
-check f3_user_scope_counts "$(first "$(audit user_both)")" ok
+local_both="$(audit local_both)"
+check f3_both_local_ok "$(first "$local_both")" ok
+user_both="$(audit user_both)"
+check f3_user_scope_counts "$(first "$user_both")" ok
 out="$(audit other_project)"
 check f3_other_project_does_not_count "$(echo "$out" | grep -o 'not registered for this project' | wc -l | tr -d ' ')" 2
 check f3_unreadable_is_drift "$(first "$(audit unreadable)")" failed

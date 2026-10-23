@@ -87,20 +87,21 @@ bash ./install.sh --compact-instructions /path/to/project
 
 ### Superpowers 文档归档
 
-`superpowers_docs.py` 是 `install.sh` 用来把 hook 注册合并进 `.claude/settings.local.json`、并安装 Superpowers 归档规则和对应 allow 的模块。直接安装器接受与 `setup.sh` 相同的单项目开关：
+`superpowers_docs.py` 合并项目 Hook 注册，并安装归档规则和精确 allow。直接安装器接受与 `setup.sh` 相同的单项目开关：
 
 ```bash
 bash ./install.sh --no-superpowers-docs /path/to/project
 bash ./install.sh --superpowers-docs /path/to/project
-```
-
-`setup.sh --all-projects` 用 `--known-projects-file` 传入 NUL 分隔的项目清单，项目重名冲突按同一份清单检查：
-
-```bash
 bash ./install.sh /path/to/project --bin /path/to/drsg --known-projects-file /path/to/projects.nul
 ```
 
-归属状态保存在 `${XDG_CONFIG_HOME:-$HOME/.config}/drsg/superpowers-docs-state/`；只有记录在那里的 allow 才会被删除。
+`setup.sh --all-projects` 传入 NUL 分隔的项目清单，用于检查目录 basename 冲突。单项目安装时若项目发现不可用，registry fallback 只会给出警告，且只能检查当前项目；已知同名冲突则 fail closed。归属状态在 `${XDG_CONFIG_HOME:-$HOME/.config}/drsg/superpowers-docs-state/`；状态缺失或错配属于审计漂移，只有归属记录明确证明由 kit 添加的 allow 才会删除。`install.sh --audit` 检查 CLAUDE.md 托管标记与展开后的规则、状态、精确归档 allow、较宽的 reviewer 路径，以及固定 Hook 注册（包括功能退出和审核方自身项目）。
+
+固定 `PreToolUse` 注册的 matcher 是 `Bash|Write|Edit|NotebookEdit`。守卫会放行已知只读命令（`cat`、`head`、`tail`、非原位编辑的 `sed`、`grep`、`rg`、`ls`、`wc`、`sha256sum`、`cmp`、`diff`、`stat`）及只读 Git 子命令（`diff`、`log`、`show`、`status`），即使参数提到审核方路径。它检查可见的静态写入，例如 shell 重定向、`tee`、`cp`、`mv`、`touch`、`mkdir`、`rm`、`truncate`、`install`、`ln`、`sed -i`；写入审核方仓库时只允许落在当前项目的归档子树。审核方仓库中的所有 Git 写子命令都会拒绝：`add`、`am`、`apply`、`branch`、`checkout`、`cherry-pick`、`clean`、`commit`、`fetch`、`init`、`merge`、`mv`、`pull`、`push`、`rebase`、`reset`、`restore`、`rm`、`stash`、`switch`、`tag`、`worktree`。若命令明显涉及审核方、但目标无法证明安全，未知或动态命令会 fail closed。已安装的 Claude Code CLI 报告版本为 `2.1.284`；当前可用工具集未暴露 MultiEdit，因此 matcher 不包含它。
+
+**覆盖边界：**解析器只能看到 Claude Code 传入的工具文本，无法检查所有间接副作用。`xargs` 可能转发或构造路径；被调用脚本可能在自身代码中写入审核方仓库，而命令文本没有显式路径；文件路径也可能在 Hook 检查后、命令实际执行前改变（TOCTOU）。因此该 Hook 不是沙箱，不能替代人工审查或操作系统/仓库权限。用户通过 `!` 执行的命令和 Claude Code 外部进程不会经过此 Hook，不能依赖它限制这些操作。
+
+审核方路径缓存为 `${XDG_CACHE_HOME:-$HOME/.cache}/drsg/superpowers-docs/reviewer-cache.json`（可用 `XDG_CACHE_HOME` 改位置）。缓存只含配置路径、配置文件的 `st_dev`/`st_ino`/`st_mtime_ns`/`st_size` 签名及 reviewer realpath，不含凭据。缓存目录创建时使用 `0700` 权限，缓存文件使用 `0600` 权限，更新采用原子替换。每次调用仍会 stat 配置文件；只有签名匹配才复用缓存，签名变化或缓存不可用时重新读取配置。它与 `${XDG_CONFIG_HOME:-$HOME/.config}/drsg/superpowers-docs-state/` 下的归属状态分开。
 
 ## 加入已有 daemon
 

@@ -18,6 +18,7 @@ bash "$REPO/tests/commit-auth.sh"
 
 echo "== 4/5: Deployment audit contract tests =="
 bash "$REPO/tests/audit-deployment.sh"
+bash "$REPO/tests/audit-deployment-mutations.sh"
 bash "$REPO/tests/compact-instructions.sh"
 bash "$REPO/tests/compact-handoff.sh"
 bash "$REPO/tests/compact-precompact.sh"
