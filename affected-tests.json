@@ -11,7 +11,8 @@
     ],
     "path_map": {
       "tools/templates/settings-hooks.json": [
-        "tests/setup-reuse-token.sh"
+        "tests/setup-reuse-token.sh",
+        "tests/superpowers-doc-guard.sh"
       ]
     }
   }
