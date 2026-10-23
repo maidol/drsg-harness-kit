@@ -76,6 +76,8 @@ done
 cp "$REPO/setup.sh" "$BUNDLE/setup.sh"
 cp "$REPO/claude/MAIN-BRANCH-WORKFLOW.md" "$BUNDLE/claude/MAIN-BRANCH-WORKFLOW.md"
 cp "$REPO/claude/AGENT-EFFICIENCY.md" "$BUNDLE/claude/AGENT-EFFICIENCY.md"
+cp "$REPO/claude/AGENT-EFFICIENCY-TESTING.md" "$BUNDLE/claude/AGENT-EFFICIENCY-TESTING.md"
+cp "$REPO/claude/AGENT-EFFICIENCY-OPERATIONS.md" "$BUNDLE/claude/AGENT-EFFICIENCY-OPERATIONS.md"
 if [ -f "$REPO/claude/CROSS-PROJECT-REVIEW.md" ]; then
   cp "$REPO/claude/CROSS-PROJECT-REVIEW.md" "$BUNDLE/claude/CROSS-PROJECT-REVIEW.md"
 fi
@@ -269,6 +271,10 @@ fi
 if [ "$CASE" = all ] || [ "$CASE" = skip-no-env ]; then
   if run_setup "$T/setup-first.out" 1; then rc=0; else rc=$?; fi
   check "skills-land-under-temporary-HOME" "$( [ -d "$HOME_DIR/.claude/skills" ] && echo yes || echo no )" yes
+  check "testing-rules-installed-byte-for-byte" \
+    "$( [ -f "$CLAUDE_DIR/AGENT-EFFICIENCY-TESTING.md" ] && cmp -s "$BUNDLE/claude/AGENT-EFFICIENCY-TESTING.md" "$CLAUDE_DIR/AGENT-EFFICIENCY-TESTING.md" && echo yes || echo no )" yes
+  check "operations-rules-installed-byte-for-byte" \
+    "$( [ -f "$CLAUDE_DIR/AGENT-EFFICIENCY-OPERATIONS.md" ] && cmp -s "$BUNDLE/claude/AGENT-EFFICIENCY-OPERATIONS.md" "$CLAUDE_DIR/AGENT-EFFICIENCY-OPERATIONS.md" && echo yes || echo no )" yes
   check "cross-review-installed-not-imported" \
     "$( [ -f "$CLAUDE_DIR/CROSS-PROJECT-REVIEW.md" ] && echo yes || echo no )/$(grep -c '^@CROSS-PROJECT-REVIEW.md' "$CLAUDE_DIR/CLAUDE.md" || true)" yes/0
   check "missing-dir-and-no-env-are-skipped" \

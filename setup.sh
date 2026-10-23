@@ -271,6 +271,11 @@ if [ "$SKILLS" -eq 1 ] && [ -d "$HERE/skills" ]; then
     CLAUDE_DIR="${CLAUDE_CONFIG_DIR:-$HOME/.claude}"
     mkdir -p "$CLAUDE_DIR"
     cp "$HERE/claude/AGENT-EFFICIENCY.md" "$CLAUDE_DIR/AGENT-EFFICIENCY.md"
+    for rule in AGENT-EFFICIENCY-TESTING.md AGENT-EFFICIENCY-OPERATIONS.md; do
+      if [ -f "$HERE/claude/$rule" ]; then
+        cp "$HERE/claude/$rule" "$CLAUDE_DIR/$rule"
+      fi
+    done
     # The cross-project review workflow sits next to the rules but is NOT
     # @-imported: it costs no context until a session reads it.
     if [ -f "$HERE/claude/CROSS-PROJECT-REVIEW.md" ]; then

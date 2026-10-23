@@ -44,14 +44,47 @@ mutants = [
         "            elif False:",
         "wrong guard matcher is audit drift with reason visible",
     ),
+    (
+        "on-demand missing-source check",
+        '            issues.append(f"Missing repository source {repo_rule}")',
+        "            pass",
+        "on-demand-OPERATIONS-missing-source-is-reported",
+        "on-demand-OPERATIONS-missing-source-is-reported",
+    ),
+    (
+        "on-demand missing-copy check",
+        '            issues.append(f"Missing {dep_rule}")',
+        "            pass",
+        "on-demand-OPERATIONS-missing-copy-is-reported",
+        "on-demand-OPERATIONS-missing-copy-is-reported",
+    ),
+    (
+        "on-demand content-drift check",
+        "        elif digest_file(repo_rule) != digest_file(dep_rule):",
+        "        elif False:",
+        "on-demand-OPERATIONS-drift-is-reported",
+        "on-demand-OPERATIONS-drift-is-reported",
+    ),
+    (
+        "on-demand @-import check",
+        '            if any(line.rstrip(b"\\r\\n") == rule',
+        '            if False and any(line.rstrip(b"\\r\\n") == rule',
+        "on-demand-OPERATIONS-import-is-reported",
+        "on-demand-OPERATIONS-import-is-reported",
+    ),
 ]
 
 
-def run(name, content):
+def run(name, content, only=None):
     audit = log_dir / (name.replace(" ", "-") + ".py")
     log = log_dir / (name.replace(" ", "-") + ".log")
     audit.write_text(content, encoding="utf-8")
-    result = subprocess.run(["bash", str(test_path)], env={**env, "AUDIT_SOURCE": str(audit)},
+    run_env = {**env, "AUDIT_SOURCE": str(audit)}
+    if only is None:
+        run_env.pop("ONLY", None)
+    else:
+        run_env["ONLY"] = only
+    result = subprocess.run(["bash", str(test_path)], env=run_env,
                             capture_output=True, text=True)
     output = result.stdout + result.stderr
     log.write_text(output, encoding="utf-8")
@@ -66,11 +99,13 @@ if baseline_rc != 0:
 print("CONTROL PASS: audit-deployment.sh exit=0; raw log: %s" % baseline_log)
 
 killed = 0
-for name, old, new, paired_case in mutants:
+for mutant in mutants:
+    name, old, new, paired_case = mutant[:4]
+    only = mutant[4] if len(mutant) == 5 else None
     if source.count(old) != 1:
         print("DID NOT RUN: %s mutation anchor count=%d" % (name, source.count(old)))
         sys.exit(2)
-    rc, output, log = run(name, source.replace(old, new, 1))
+    rc, output, log = run(name, source.replace(old, new, 1), only)
     failures = [line for line in output.splitlines()
                 if line.startswith("FAIL ") and not line[5:6].isdigit()]
     expected = [line for line in failures if paired_case in line]

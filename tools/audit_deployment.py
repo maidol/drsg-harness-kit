@@ -193,12 +193,27 @@ def check_layer2(repo_dir, claude_dir):
         elif digest_file(repo_cross) != digest_file(dep_cross):
             issues.append(f"Drift in {dep_cross} vs repository source")
 
+    # 1c. On-demand efficiency rules: installed as files, never @-imported
+    for rule in ("AGENT-EFFICIENCY-TESTING.md", "AGENT-EFFICIENCY-OPERATIONS.md"):
+        repo_rule = os.path.join(repo_dir, "claude", rule)
+        dep_rule = os.path.join(claude_dir, rule)
+        if not os.path.exists(repo_rule):
+            issues.append(f"Missing repository source {repo_rule}")
+        elif not os.path.exists(dep_rule):
+            issues.append(f"Missing {dep_rule}")
+        elif digest_file(repo_rule) != digest_file(dep_rule):
+            issues.append(f"Drift in {dep_rule} vs repository source")
+
     # 2. Global CLAUDE.md imports and managed main-branch workflow state
     global_claude_md = os.path.join(claude_dir, "CLAUDE.md")
     global_bytes = b""
     if os.path.exists(global_claude_md):
         with open(global_claude_md, "rb") as f:
             global_bytes = f.read()
+        for rule in (b"@AGENT-EFFICIENCY-TESTING.md", b"@AGENT-EFFICIENCY-OPERATIONS.md"):
+            if any(line.rstrip(b"\r\n") == rule
+                   for line in global_bytes.splitlines(keepends=True)):
+                issues.append(f"Unexpected @-import of {rule.decode()[1:]} in {global_claude_md}")
         if b"@AGENT-EFFICIENCY.md" not in global_bytes:
             issues.append(f"Missing @AGENT-EFFICIENCY.md import in {global_claude_md}")
     else:

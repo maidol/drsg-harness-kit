@@ -56,6 +56,10 @@ chmod +x "$PROJ/.claude/hooks/"*.py
 
 echo "rules" > "$REPO/claude/AGENT-EFFICIENCY.md"
 cp "$REPO/claude/AGENT-EFFICIENCY.md" "$CLAUDE_DIR/AGENT-EFFICIENCY.md"
+for rule in AGENT-EFFICIENCY-TESTING.md AGENT-EFFICIENCY-OPERATIONS.md; do
+  echo "$rule" > "$REPO/claude/$rule"
+  cp "$REPO/claude/$rule" "$CLAUDE_DIR/$rule"
+done
 cp "$HERE/../claude/MAIN-BRANCH-WORKFLOW.md" "$REPO/claude/MAIN-BRANCH-WORKFLOW.md"
 cp "$REPO/claude/MAIN-BRANCH-WORKFLOW.md" "$CLAUDE_DIR/MAIN-BRANCH-WORKFLOW.md"
 printf '@AGENT-EFFICIENCY.md\n@MAIN-BRANCH-WORKFLOW.md\n' > "$CLAUDE_DIR/CLAUDE.md"
@@ -142,6 +146,43 @@ PY
 python3 "$AUDIT" --repo "$REPO" --tools-dir "$DEPLOYED_TOOLS" --claude-dir "$CLAUDE_DIR" --project "$PROJ" --json > "$T/out1.json" 2>&1 || true
 l1_status=$(find_layer_ok "$T/out1.json" "L1")
 check "hermetic audit passes L1 when sync" "$l1_status" "ok"
+check "synced on-demand rules have no L2 audit issue" \
+  "$(find_layer_details "$T/out1.json" "L2" | grep -Ec '(Missing|Drift in|Unexpected @-import).*AGENT-EFFICIENCY-(TESTING|OPERATIONS)\.md' || true)" 0
+for rule in AGENT-EFFICIENCY-TESTING.md AGENT-EFFICIENCY-OPERATIONS.md; do
+  short="${rule#AGENT-EFFICIENCY-}"
+  short="${short%.md}"
+  deployed="$CLAUDE_DIR/$rule"
+  source_rule="$REPO/claude/$rule"
+  mv "$source_rule" "$T/$rule.source"
+  python3 "$AUDIT" --repo "$REPO" --tools-dir "$DEPLOYED_TOOLS" --claude-dir "$CLAUDE_DIR" --project "$PROJ" --json > "$T/out_${short}_source_missing.json" 2>&1 || true
+  check "on-demand-$short-missing-source-is-reported" \
+    "$(find_layer_details "$T/out_${short}_source_missing.json" "L2" | grep -Fc "Missing repository source $source_rule" || true)" 1
+  mv "$T/$rule.source" "$source_rule"
+
+  mv "$deployed" "$T/$rule"
+  python3 "$AUDIT" --repo "$REPO" --tools-dir "$DEPLOYED_TOOLS" --claude-dir "$CLAUDE_DIR" --project "$PROJ" --json > "$T/out_${short}_missing.json" 2>&1 || true
+  check "on-demand-$short-missing-copy-is-reported" \
+    "$(find_layer_details "$T/out_${short}_missing.json" "L2" | grep -Fc "Missing $deployed" || true)" 1
+  mv "$T/$rule" "$deployed"
+
+  printf 'local edit\\n' >> "$deployed"
+  python3 "$AUDIT" --repo "$REPO" --tools-dir "$DEPLOYED_TOOLS" --claude-dir "$CLAUDE_DIR" --project "$PROJ" --json > "$T/out_${short}_drift.json" 2>&1 || true
+  check "on-demand-$short-drift-is-reported" \
+    "$(find_layer_details "$T/out_${short}_drift.json" "L2" | grep -Fc "Drift in $deployed vs repository source" || true)" 1
+  cp "$REPO/claude/$rule" "$deployed"
+
+  printf '@%s\n' "$rule" >> "$CLAUDE_DIR/CLAUDE.md"
+  python3 "$AUDIT" --repo "$REPO" --tools-dir "$DEPLOYED_TOOLS" --claude-dir "$CLAUDE_DIR" --project "$PROJ" --json > "$T/out_${short}_import.json" 2>&1 || true
+  check "on-demand-$short-import-is-reported" \
+    "$(find_layer_details "$T/out_${short}_import.json" "L2" | grep -Fc "Unexpected @-import of $rule in $CLAUDE_DIR/CLAUDE.md" || true)" 1
+  python3 - "$CLAUDE_DIR/CLAUDE.md" "$rule" <<'PY'
+import pathlib, sys
+path = pathlib.Path(sys.argv[1])
+import_line = ("@" + sys.argv[2]).encode()
+path.write_bytes(b"".join(line for line in path.read_bytes().splitlines(keepends=True)
+                       if line.rstrip(b"\r\n") != import_line))
+PY
+done
 check "PostCompact registration passes L4 when present" "$(find_layer_details "$T/out1.json" "L4" | grep -c 'compact_handoff.py (PostCompact)' || true)" "0"
 check "PreCompact registration passes L4 when present" "$(find_layer_details "$T/out1.json" "L4" | grep -c 'compact_handoff.py (PreCompact)' || true)" "0"
 check "SessionStart matcher with clear passes audit" "$(find_layer_details "$T/out1.json" "L4" | grep -c 'SessionStart matcher missing clear' || true)" "0"
