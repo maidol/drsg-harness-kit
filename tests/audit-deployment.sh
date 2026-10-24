@@ -82,6 +82,16 @@ cat > "$CLAUDE_DIR/settings.json" <<'JSON'
   }
 }
 JSON
+python3 - "$CLAUDE_DIR/settings.json" "$DEPLOYED_TOOLS/reviewer-assist-stop-guard.py" <<'PY'
+import json, sys
+path, script = sys.argv[1:]
+data = json.load(open(path))
+data["hooks"]["Stop"].append({
+    "matcher": "*",
+    "hooks": [{"type": "command", "command": "python3 " + script, "timeout": 3}],
+})
+json.dump(data, open(path, "w"))
+PY
 chmod 600 "$CLAUDE_DIR/settings.json"
 
 cat > "$PROJ/.claude/settings.local.json" <<'JSON'
@@ -148,6 +158,51 @@ l1_status=$(find_layer_ok "$T/out1.json" "L1")
 check "hermetic audit passes L1 when sync" "$l1_status" "ok"
 check "synced on-demand rules have no L2 audit issue" \
   "$(find_layer_details "$T/out1.json" "L2" | grep -Ec '(Missing|Drift in|Unexpected @-import).*AGENT-EFFICIENCY-(TESTING|OPERATIONS)\.md' || true)" 0
+check "reviewer-assist-valid-registration-passes" \
+  "$(find_layer_ok "$T/out1.json" "L2")/$(find_layer_details "$T/out1.json" "L2" | grep -Fc 'Global reviewer-assist Stop hook missing or misconfigured' || true)" ok/0
+cp "$CLAUDE_DIR/settings.json" "$T/reviewer-assist-settings.json"
+reviewer_assist_audit_case() {
+  local name="$1" mutation="$2"
+  python3 - "$T/reviewer-assist-settings.json" "$CLAUDE_DIR/settings.json" \
+    "$DEPLOYED_TOOLS/reviewer-assist-stop-guard.py" "$mutation" <<'PY'
+import copy, json, sys
+source, target, script, mutation = sys.argv[1:]
+data = json.load(open(source))
+groups = data.setdefault("hooks", {}).setdefault("Stop", [])
+command = "python3 " + script
+matches = [(group, hook) for group in groups for hook in group.get("hooks", [])
+           if hook.get("command") == command]
+if mutation == "missing":
+    data["hooks"]["Stop"] = [
+        group for group in groups
+        if not any(hook.get("command") == command for hook in group.get("hooks", []))]
+elif mutation == "duplicate":
+    group, hook = matches[0]
+    group["hooks"].append(copy.deepcopy(hook))
+elif mutation == "timeout":
+    matches[0][1]["timeout"] = 5
+elif mutation == "async":
+    matches[0][1]["asyncRewake"] = True
+elif mutation == "event":
+    group, hook = matches[0]
+    group["hooks"].remove(hook)
+    data["hooks"].setdefault("SessionStart", []).append({"matcher": "*", "hooks": [hook]})
+elif mutation == "path":
+    matches[0][1]["command"] = "python3 /different/path/reviewer-assist-stop-guard.py"
+json.dump(data, open(target, "w"))
+PY
+  python3 "$AUDIT" --repo "$REPO" --tools-dir "$DEPLOYED_TOOLS" \
+    --claude-dir "$CLAUDE_DIR" --project "$PROJ" --json > "$T/out_reviewer_assist.json" 2>&1 || true
+  check "$name" \
+    "$(find_layer_ok "$T/out_reviewer_assist.json" "L2")/$(find_layer_details "$T/out_reviewer_assist.json" "L2" | grep -Fc 'Global reviewer-assist Stop hook missing or misconfigured' || true)" failed/1
+  cp "$T/reviewer-assist-settings.json" "$CLAUDE_DIR/settings.json"
+}
+reviewer_assist_audit_case "reviewer-assist-missing-registration" missing
+reviewer_assist_audit_case "reviewer-assist-duplicate-registration" duplicate
+reviewer_assist_audit_case "reviewer-assist-wrong-timeout" timeout
+reviewer_assist_audit_case "reviewer-assist-async-registration" async
+reviewer_assist_audit_case "reviewer-assist-wrong-event" event
+reviewer_assist_audit_case "reviewer-assist-wrong-command-path" path
 for rule in AGENT-EFFICIENCY-TESTING.md AGENT-EFFICIENCY-OPERATIONS.md; do
   short="${rule#AGENT-EFFICIENCY-}"
   short="${short%.md}"

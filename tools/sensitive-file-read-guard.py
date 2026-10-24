@@ -69,6 +69,8 @@ REASON = (
     "Editing one: jq '<filter>' <file> > <file>.new && mv <file>.new <file> "
     "(the output goes to the file), or write a script and ask the user to run it with !.\n"
     "If you really need the content, ask the user to run it with ! in their own shell.\n"
+    "如果需要审核方才能继续，在本回合结束前发 `kind=\"handoff\"` Event，"
+    "`summary` 以 `请求协助：` 开头；不要附上敏感文件内容。\n"
     "该文件可能带凭据，不要整段读取：用 jq 只取键名或不含密钥的字段，用 grep -c 判断键在不在；"
     "确实要看内容，请用户自己用 ! 运行；"
     "要改这类文件，用 jq 输出到新文件再 mv，或写成脚本请用户用 ! 运行。不要换个命令绕过去。"

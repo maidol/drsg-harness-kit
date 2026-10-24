@@ -181,7 +181,13 @@ def _resolve(path, cwd):
 
 
 def _deny(detail="cannot verify the write target"):
-    reason = ("%s; only this project's archive is allowed. %s" %
+    reason = ("%s; only this project's archive is allowed. %s "
+              "If only the reviewer can unblock the next step, send a "
+              '`kind="handoff"` Event with `summary` beginning `请求协助：` '
+              "before ending; this guard never sends it. "
+              "To read a reviewer file with a script, first copy it in its own "
+              "command (cp <file> /tmp/), then run the script on the copy in a "
+              "separate command." %
               (DENIAL_PREFIX, detail))
     print(json.dumps({"hookSpecificOutput": {
         "hookEventName": "PreToolUse",

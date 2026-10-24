@@ -87,6 +87,7 @@ cp "$SETUP_SOURCE" "$BUNDLE/setup.sh"
 REGISTRY_SOURCE="${REGISTRY_SOURCE:-$REPO/tools/project_registry.py}"
 if [ -f "$REGISTRY_SOURCE" ]; then cp "$REGISTRY_SOURCE" "$BUNDLE/tools/project_registry.py"; fi
 cp "$REPO/tools/drsg_rpc.py" "$BUNDLE/tools/drsg_rpc.py"
+cp "$REPO/tools/reviewer-assist-stop-guard.py" "$BUNDLE/tools/reviewer-assist-stop-guard.py"
 cat > "$BUNDLE/tools/install.sh" <<'SH'
 #!/usr/bin/env bash
 set -u
@@ -161,6 +162,7 @@ check() {
 }
 run_setup() {
   local out="$1" fail_first="$2"
+  shift 2
   : > "$FAKE_INSTALL_LOG"
   : > "$KNOWN_PROJECTS_LOG"
   FAIL_FIRST="$fail_first" HOME="$HOME_DIR" CLAUDE_CONFIG_DIR="$CLAUDE_DIR" \
@@ -168,11 +170,11 @@ run_setup() {
     FAKE_INSTALL_LOG="$FAKE_INSTALL_LOG" MAIN_BRANCH_CALLS="$MAIN_BRANCH_CALLS" \
     KNOWN_PROJECTS_LOG="$KNOWN_PROJECTS_LOG" \
     PATH="$T/bin:$PATH" bash "$BUNDLE/setup.sh" --all-projects --bin /bin/true \
-      --addr "127.0.0.1:$PORT" >"$out" 2>&1
+      --addr "127.0.0.1:$PORT" "$@" >"$out" 2>&1
 }
 
 case "$CASE" in
-  all|skip-no-env|failure-continues|mutual-exclusion|query-failure|empty-project-list|registry-from-env) ;;
+  all|skip-no-env|failure-continues|mutual-exclusion|query-failure|empty-project-list|registry-from-env|reviewer-assist-hooks) ;;
   *) echo "FAIL setup-all-projects: unknown case '$CASE'"; exit 2 ;;
 esac
 
@@ -387,6 +389,49 @@ if [ "$CASE" = all ] || [ "$CASE" = registry-from-env ]; then
   rc=$?
   check "registry-from-env-lists-projects-from-env-api" \
     "$rc/$(grep -c '^ok ' "$T/registry-from-env.out" || true)" 0/2
+fi
+
+if [ "$CASE" = all ] || [ "$CASE" = reviewer-assist-hooks ]; then
+  assist_flags=(--no-event-poller --no-streak-hint --no-textual-tool-call-guard --no-sensitive-read-guard)
+  if run_setup "$T/reviewer-assist-first.out" 0 "${assist_flags[@]}"; then assist_rc=0; else assist_rc=$?; fi
+  check "reviewer-assist-first-setup-succeeds-with-optional-hooks-disabled" "$assist_rc" 0
+  check "reviewer-assist-script-is-copied-to-temporary-tools" \
+    "$( [ -f "$MEM_DIR/tools/reviewer-assist-stop-guard.py" ] && echo yes || echo no )" yes
+  check "reviewer-assist-hook-has-exact-synchronous-registration" \
+    "$(python3 - "$CLAUDE_DIR/settings.json" "$MEM_DIR/tools/reviewer-assist-stop-guard.py" <<'PY'
+import json, sys
+try:
+    data = json.load(open(sys.argv[1]))
+except (OSError, ValueError):
+    print("no")
+else:
+    command = "python3 " + sys.argv[2]
+    matches = [(group, hook) for group in data.get("hooks", {}).get("Stop", [])
+               for hook in group.get("hooks", []) if hook.get("command") == command]
+    valid = (len(matches) == 1 and matches[0][0].get("matcher") == "*"
+             and matches[0][1].get("type") == "command"
+             and matches[0][1].get("timeout") == 3
+             and "asyncRewake" not in matches[0][1])
+    print("yes" if valid else "no")
+PY
+)" yes
+  if run_setup "$T/reviewer-assist-second.out" 0 "${assist_flags[@]}"; then assist_rc=0; else assist_rc=$?; fi
+  check "reviewer-assist-second-setup-succeeds" "$assist_rc" 0
+  check "reviewer-assist-second-setup-does-not-duplicate-hook" \
+    "$(python3 - "$CLAUDE_DIR/settings.json" "$MEM_DIR/tools/reviewer-assist-stop-guard.py" <<'PY'
+import json, sys
+try:
+    data = json.load(open(sys.argv[1]))
+except (OSError, ValueError):
+    print("no")
+else:
+    command = "python3 " + sys.argv[2]
+    count = sum(hook.get("command") == command
+                for group in data.get("hooks", {}).get("Stop", [])
+                for hook in group.get("hooks", []))
+    print("yes" if count == 1 else "no")
+PY
+)" yes
 fi
 
 if [ -n "${ONLY:-}" ] && [ "$RAN" -eq 0 ]; then

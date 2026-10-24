@@ -230,6 +230,11 @@ with tempfile.TemporaryDirectory(prefix="superpowers-guard-") as td:
           call("Write", {"file_path": str(allowed / "plans" / "x.md"), "content": "x"}), "allow")
     result = call("Write", {"file_path": str(reviewer / "reviews" / "other" / "x.md"), "content": "x"})
     check("project Write outside the allowed archive is denied", denied(result), True)
+    check("denial includes reviewer assistance route",
+          result.startswith("Writing to the reviewer repository is restricted")
+          and 'kind="handoff"' in result and "请求协助：" in result, True)
+    check("denial gives the two-step copy-then-read route",
+          "cp <file> /tmp/" in result and "separate command" in result, True)
     check("denial names only this project's allowed archive",
           str(allowed) in result and "never display" not in result, True)
     check("project Edit outside the allowed archive is denied",

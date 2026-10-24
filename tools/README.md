@@ -820,6 +820,10 @@ DRSG_STOP_FAILURE_NOTIFY_DISABLED=1 claude
 DRSG_STOP_TEXTUAL_TOOL_CALL_GUARD_DISABLED=1 claude
 ```
 
+## Reviewer-assistance Stop guard (`reviewer-assist-stop-guard.py`)
+
+`setup.sh` always registers this script as a synchronous global `Stop` hook in `~/.claude/settings.json`, including when the existing optional global hooks are disabled. It blocks only when reviewer-controlled work is holding up the session; it does not send Events. The hook inspects a bounded tail of the active transcript and, on a match, asks the session to send a reviewer-assistance `kind="handoff"` Event with the blocked step, exact requested reviewer action, current tree, and original denial/error text. The reviewer replies with a `kind="handoff"` Event whose summary starts `协助完成：`; this request does not authorize user-only decisions. There is no opt-out flag. Re-run `setup.sh` when upgrading to install the hook, then restart Claude Code sessions.
+
 ## Sensitive file read guard (`sensitive-file-read-guard.py`)
 
 `setup.sh` registers this script as a global `PreToolUse` hook with matcher `Bash|Read|Grep` (skip with `--no-sensitive-read-guard`). It denies whole-file reads of files that may hold credentials (`.mcp.json`, `~/.claude.json`, `.claude/settings*.json`, env files, `.netrc`, private keys) and allows structure-only reads such as `jq '.mcpServers | keys' .mcp.json`, `jq -r '.hooks[][] | .hooks[].command' ~/.claude/settings.json` and `grep -c KEY config.env`. Any parse error lets the call through. Full rules are in the top-level README.

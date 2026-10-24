@@ -79,6 +79,13 @@ mutants = [
         "on-demand-TESTING-prefixed-import-is-reported",
         "on-demand-TESTING-prefixed-import-is-reported",
     ),
+    (
+        "reviewer-assist missing-registration audit check",
+        '            if not reviewer_assist_valid:\n                issues.append("Global reviewer-assist Stop hook missing or misconfigured in settings.json")',
+        '            if False:\n                issues.append("Global reviewer-assist Stop hook missing or misconfigured in settings.json")',
+        "reviewer-assist-missing-registration",
+        "reviewer-assist-missing-registration",
+    ),
 ]
 
 

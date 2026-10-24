@@ -99,6 +99,8 @@ actual_reason() {
     jq) printf '%s' "$output" | grep -c "jq '.mcpServers | keys'" ;;
     settings) printf '%s' "$output" | grep -c "jq '.hooks | keys'" ;;
     edit) printf '%s' "$output" | grep -c "> <file>.new && mv <file>.new <file>" ;;
+    assist) printf '%s' "$output" | grep -c '请求协助：' ;;
+    no-assist-content) printf '%s' "$output" | grep -c '不要附上敏感文件内容' ;;
     no-command) printf '%s' "$output" | grep -c 'secret-dir-name' ;;
   esac
 }
@@ -194,6 +196,8 @@ check "reason names the category" 1 actual_reason category
 check "reason gives the jq alternative" 1 actual_reason jq
 check "reason gives the settings alternative" 1 actual_reason settings
 check "reason gives the edit alternative" 1 actual_reason edit
+check "reason offers reviewer assistance route" 1 actual_reason assist
+check "assistance route excludes sensitive file contents" 1 actual_reason no-assist-content
 check "reason does not echo the command" 0 actual_reason no-command
 
 actual_setup() {

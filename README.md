@@ -420,6 +420,14 @@ A dispatch has three layers: criteria, design and execution plan (definitions, t
 Show me the criteria (success criteria, edge cases, out of scope) of A and B tasks before dispatching them.
 ```
 
+### Reviewer assistance
+
+When the next step is blocked on work only the configured reviewer can do—such as a denied command that must not be retried, a change in the reviewer archive, a pending reviewer verdict, or an unresolved starting-tree/ownership question—send a `kind="handoff"` Event before ending the turn. Start its `summary` with `请求协助：`. Include four facts in the body: (1) the blocked step; (2) the exact reviewer action, with the verbatim command or file to change; (3) the full current tree; and (4) the original denial/error text, with secret values redacted. Do not include sensitive file contents or unrelated transcript text. If `event_post` itself is blocked, do not retry or switch tools; ask the user to relay the request in the reviewer session. The subsequent Stop call is allowed by `stop_hook_active`.
+
+The reviewer checks the tree and scope, performs only the requested reviewer work, then replies with `kind="handoff"`, a `summary` beginning `协助完成：`, and `reply_to` set to the original request Event. The executor's Event owner closes the original Event; the reply does not close it automatically or authorize user-only decisions. Push, release, external sends and persistent configuration changes remain for the user to decide.
+
+Setup registers `reviewer-assist-stop-guard.py` as an idempotent global synchronous Stop hook with a 3-second timeout. After upgrading, run `setup.sh --all-projects` once before relying on the new audit. The 3-second synchronous Stop reminder appears at most once when a downstream project is ending while blocked on reviewer-controlled work. It is inert without a valid reviewer configuration or in the reviewer project, and user-only decisions do not trigger it. The hook never sends Events; it only reminds the model to send one.
+
 Delegated commit authority is also opt-in and belongs only in your own global `CLAUDE.md`. If you choose to enable it, use a rule as strict as this one; installation and updates never add it:
 
 ```text

@@ -57,6 +57,7 @@ HERE="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 PROJECT=""; ALL_PROJECTS=0; REPO=""; HUB=""; ROUTER=""; USAGE_REPORT=""; BIN=""; ADDR=""; TOKEN=""; PORT=""
 TOOLS="${DRSG_MEM_DIR:-$HOME/.drsg-memory}/tools"
 FETCH=0; SKILLS=1; MAIN_BRANCH_WORKFLOW=1; POLLER=1; STREAK_HINT=1; TEXTUAL_TOOL_GUARD=1; SENSITIVE_READ_GUARD=1
+REVIEWER_ASSIST_GUARD=1
 PG_DIR=""; REVIEWS_DIR=""; PRUNE=0; SELF_COMMIT=0; MODEL_PICKER=0
 COMPACT_ACTION=""; COMPACT_PROJECT=""
 SUPERPOWERS_ACTION=""; SUPERPOWERS_PROJECT=""
@@ -201,16 +202,17 @@ fi
 # open Events every 15 minutes without a model call, and wakes the model only
 # when there is one it has not been told about. Projects without .drsg/env are
 # skipped by the script itself. Idempotent: an existing registration is kept.
-if [ "$POLLER" -eq 1 ] || [ "$STREAK_HINT" -eq 1 ] || [ "$TEXTUAL_TOOL_GUARD" -eq 1 ] || [ "$SENSITIVE_READ_GUARD" -eq 1 ]; then
+if [ "$REVIEWER_ASSIST_GUARD" -eq 1 ] || [ "$POLLER" -eq 1 ] || [ "$STREAK_HINT" -eq 1 ] || [ "$TEXTUAL_TOOL_GUARD" -eq 1 ] || [ "$SENSITIVE_READ_GUARD" -eq 1 ]; then
   CLAUDE_DIR="${CLAUDE_CONFIG_DIR:-$HOME/.claude}"
   mkdir -p "$CLAUDE_DIR"
-  python3 - "$CLAUDE_DIR/settings.json" "$TOOLS/event-poller.py" "$TOOLS/single-tool-streak.py" "$POLLER" "$STREAK_HINT" "$TOOLS/stop-failure-notify.py" "$TOOLS/textual-tool-call-guard.py" "$TEXTUAL_TOOL_GUARD" "$TOOLS/sensitive-file-read-guard.py" "$SENSITIVE_READ_GUARD" <<'PY'
+  python3 - "$CLAUDE_DIR/settings.json" "$TOOLS/event-poller.py" "$TOOLS/single-tool-streak.py" "$POLLER" "$STREAK_HINT" "$TOOLS/stop-failure-notify.py" "$TOOLS/textual-tool-call-guard.py" "$TEXTUAL_TOOL_GUARD" "$TOOLS/sensitive-file-read-guard.py" "$SENSITIVE_READ_GUARD" "$TOOLS/reviewer-assist-stop-guard.py" <<'PY'
 import json, os, sys
 path, script, streak_script = sys.argv[1], sys.argv[2], sys.argv[3]
 poller_enabled, streak_hint = sys.argv[4] == "1", sys.argv[5] == "1"
 notify_script, textual_guard_script = sys.argv[6], sys.argv[7]
 textual_guard_enabled = sys.argv[8] == "1"
 sensitive_guard_script, sensitive_guard_enabled = sys.argv[9], sys.argv[10] == "1"
+reviewer_assist_script = sys.argv[11]
 d = json.load(open(path)) if os.path.exists(path) and os.path.getsize(path) else {}
 cmd = "python3 " + script
 hooks = d.setdefault("hooks", {})
@@ -246,6 +248,8 @@ if textual_guard_enabled:
 if sensitive_guard_enabled:
     add("PreToolUse", {"type": "command", "command": "python3 " + sensitive_guard_script,
                        "timeout": 5}, "sensitive-file-read-guard.py", matcher="Bash|Read|Grep")
+add("Stop", {"type": "command", "command": "python3 " + reviewer_assist_script,
+             "timeout": 3}, "reviewer-assist-stop-guard.py")
 if added:
     tmp = path + ".tmp"
     with open(tmp, "w") as f:

@@ -471,6 +471,10 @@ DRSG_STOP_FAILURE_NOTIFY_DISABLED=1 claude
 DRSG_STOP_TEXTUAL_TOOL_CALL_GUARD_DISABLED=1 claude
 ```
 
+## 审核协助 Stop 守卫（`reviewer-assist-stop-guard.py`）
+
+`setup.sh` 始终会将此脚本注册为 `~/.claude/settings.json` 中的同步全局 `Stop` hook；即使关闭已有的可选全局 hook，也仍会注册。只有审核方控制的工作阻塞会话时才会拦截；此 hook 不会自行发送 Event。它只检查当前 transcript 有界的尾部，命中时要求会话发送审核协助 `kind="handoff"` Event，写明阻塞步骤、要求审核方执行的准确动作、当前 tree，以及原始拒绝/错误文本。审核方用 `kind="handoff"` Event 回复，summary 以 `协助完成：` 开头；此请求不授权任何必须由用户决定的事项。没有关闭开关。升级时重新运行 `setup.sh` 安装此 hook，然后重启 Claude Code 会话。
+
 ## 敏感文件读取守卫（`sensitive-file-read-guard.py`）
 
 `setup.sh` 会把这个脚本注册成全局 `PreToolUse` 钩子，matcher 是 `Bash|Read|Grep`（`--no-sensitive-read-guard` 可跳过）。它拒绝整段读取可能带凭据的文件（`.mcp.json`、`~/.claude.json`、`.claude/settings*.json`、各类 env、`.netrc`、私钥），放行只看结构的读法，例如 `jq '.mcpServers | keys' .mcp.json`、`jq -r '.hooks[][] | .hooks[].command' ~/.claude/settings.json`、`grep -c KEY config.env`。解析出错一律放行。完整规则见仓库根目录的 README。

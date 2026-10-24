@@ -168,7 +168,7 @@ def check_layer1(repo_dir, repo_tools_dir, deployed_tools_dir):
     return res
 
 
-def check_layer2(repo_dir, claude_dir):
+def check_layer2(repo_dir, claude_dir, deployed_tools_dir=None):
     """Layer 2: Global Configuration & Skills.
 
     Includes N2: settings.json permissions 0600.
@@ -297,6 +297,30 @@ def check_layer2(repo_dir, claude_dir):
                 issues.append("Global textual-tool-call-guard hook missing in settings.json")
             if not has_sensitive_guard:
                 issues.append("Global sensitive-file-read-guard hook missing in settings.json")
+
+            tools_dir = deployed_tools_dir or os.path.join(
+                os.path.expanduser("~/.drsg-memory"), "tools")
+            expected_script = os.path.join(tools_dir, "reviewer-assist-stop-guard.py")
+            expected_command = "python3 " + expected_script
+            reviewer_assist_matches = []
+            stop_groups = hooks.get("Stop", []) if isinstance(hooks, dict) else []
+            if isinstance(stop_groups, list):
+                for group in stop_groups:
+                    if not isinstance(group, dict):
+                        continue
+                    for hook in group.get("hooks", []):
+                        if (isinstance(hook, dict) and
+                                hook.get("command") == expected_command):
+                            reviewer_assist_matches.append((group, hook))
+            reviewer_assist_valid = (
+                len(reviewer_assist_matches) == 1 and
+                reviewer_assist_matches[0][0].get("matcher") == "*" and
+                reviewer_assist_matches[0][1].get("type") == "command" and
+                reviewer_assist_matches[0][1].get("timeout") == 3 and
+                "asyncRewake" not in reviewer_assist_matches[0][1]
+            )
+            if not reviewer_assist_valid:
+                issues.append("Global reviewer-assist Stop hook missing or misconfigured in settings.json")
         except Exception as e:
             issues.append(f"Error reading {settings_file}: {e}")
     else:
@@ -947,7 +971,7 @@ def main():
     report["layers"].append(l1)
 
     # Layer 2
-    l2 = check_layer2(repo_dir, claude_dir)
+    l2 = check_layer2(repo_dir, claude_dir, deployed_tools)
     report["layers"].append(l2)
 
     for p in projects:
