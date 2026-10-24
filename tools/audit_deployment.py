@@ -198,6 +198,8 @@ def check_layer2(repo_dir, claude_dir, deployed_tools_dir=None):
     for rule in ("AGENT-EFFICIENCY-TESTING.md", "AGENT-EFFICIENCY-OPERATIONS.md"):
         repo_rule = os.path.join(repo_dir, "claude", rule)
         dep_rule = os.path.join(claude_dir, rule)
+        if not os.path.exists(repo_eff):
+            continue
         if not os.path.exists(repo_rule):
             issues.append(f"Missing repository source {repo_rule}")
         elif not os.path.exists(dep_rule):

@@ -249,6 +249,11 @@ path.write_bytes(b"".join(line for line in path.read_bytes().splitlines(keepends
                        if line.rstrip(b"\r\n") != import_line))
 PY
 done
+
+# install.sh --audit run from the deployed copy passes a --repo that has no claude/; the on-demand source check must stay quiet there.
+python3 "$AUDIT" --repo "$DEPLOYED_TOOLS" --tools-dir "$DEPLOYED_TOOLS" --claude-dir "$CLAUDE_DIR" --project "$PROJ" --json > "$T/out_on_demand_not_kit.json" 2>&1 || true
+check "on-demand-source-check-skipped-outside-kit-checkout" \
+  "$(find_layer_details "$T/out_on_demand_not_kit.json" "L2" | grep -Fc "Missing repository source" || true)" 0
 check "PostCompact registration passes L4 when present" "$(find_layer_details "$T/out1.json" "L4" | grep -c 'compact_handoff.py (PostCompact)' || true)" "0"
 check "PreCompact registration passes L4 when present" "$(find_layer_details "$T/out1.json" "L4" | grep -c 'compact_handoff.py (PreCompact)' || true)" "0"
 check "SessionStart matcher with clear passes audit" "$(find_layer_details "$T/out1.json" "L4" | grep -c 'SessionStart matcher missing clear' || true)" "0"

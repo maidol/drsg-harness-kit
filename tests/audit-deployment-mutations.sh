@@ -52,6 +52,13 @@ mutants = [
         "on-demand-OPERATIONS-missing-source-is-reported",
     ),
     (
+        "on-demand source check outside a kit checkout",
+        "        if not os.path.exists(repo_eff):\n            continue\n",
+        "",
+        "on-demand-source-check-skipped-outside-kit-checkout",
+        "on-demand-source-check-skipped-outside-kit-checkout",
+    ),
+    (
         "on-demand missing-copy check",
         '            issues.append(f"Missing {dep_rule}")',
         "            pass",
