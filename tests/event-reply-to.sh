@@ -182,6 +182,30 @@ class ReplyToTests(unittest.TestCase):
                         "reply_to": key}, "fake-token")
         self.assertEqual(self.graph.created, [])
 
+    def test_reply_to_own_sent_event_names_the_reply_to_use(self):
+        self.graph.add_event("evt-mine", {
+            "kind": "handoff", "status": "open", "summary": "my dispatch",
+            "from_project": os.path.basename(sender), "from_path": sender}, recipient)
+        self.graph.add_event("evt-their-receipt", {
+            "kind": "handoff", "status": "open", "summary": "receipt",
+            "from_project": os.path.basename(recipient), "from_path": recipient,
+            "reply_to": "evt-mine", "created_at": 2}, sender)
+        with self.assertRaisesRegex(ValueError, "你自己发给对方的 Event evt-mine.*evt-their-receipt"):
+            self.mcp.call_tool("event_post", {
+                "recipient": recipient, "summary": "验收通过：x",
+                "reply_to": "evt-mine"}, "fake-token")
+        self.assertEqual(self.graph.created, [])
+
+    def test_reply_to_own_sent_event_without_replies_says_drop_it(self):
+        self.graph.add_event("evt-mine-alone", {
+            "kind": "handoff", "status": "open", "summary": "my dispatch",
+            "from_project": os.path.basename(sender), "from_path": sender}, recipient)
+        with self.assertRaisesRegex(ValueError, "你自己发给对方的 Event evt-mine-alone.*去掉 reply_to"):
+            self.mcp.call_tool("event_post", {
+                "recipient": recipient, "summary": "x",
+                "reply_to": "evt-mine-alone"}, "fake-token")
+        self.assertEqual(self.graph.created, [])
+
     def test_cli_accepts_reply_to(self):
         source = self.source_event("evt-cli")
         old_project_id = event_cli.project_id

@@ -511,6 +511,21 @@ def _reply_to_source(reply_to, target, sender_path, token):
         events = res.get("nodes", [])
         if not events or any("Event" not in (e.get("labels") or []) for e in events):
             raise ValueError("reply_to 目标 Event 不存在或不是 Event；请核对 key，或去掉 reply_to 重发。")
+        own_path = (events[0].get("properties") or {}).get("from_path")
+        if (len(events) == 1 and isinstance(own_path, str)
+                and canon_path(own_path) == canon_path(sender_path)):
+            # The commonest mistake: replying to one's own dispatch instead of
+            # the recipient's receipt, whose reply_to points at that dispatch.
+            replies = [n.get("external_key") for n in fetch(sender_path, token)
+                       if (n.get("properties") or {}).get("reply_to") == reply_to]
+            if replies:
+                raise ValueError(
+                    "reply_to 指向的是你自己发给对方的 Event %s；reply_to 要填对方发给你、"
+                    "你正在回复的那一条。对方回复它的 Event：%s。"
+                    % (reply_to, ", ".join(replies[:3])))
+            raise ValueError(
+                "reply_to 指向的是你自己发给对方的 Event %s；对方还没有发来回复它的 Event。"
+                "不是在回复对方发来的单，就去掉 reply_to 重发。" % reply_to)
         raise ValueError("reply_to 目标 Event 未发给当前项目；请核对 key，或去掉 reply_to 重发。")
     if len(matches) != 1 or "Event" not in (matches[0].get("labels") or []):
         raise ValueError("reply_to 目标 Event 不唯一或不是 Event；请核对 key，或去掉 reply_to 重发。")
