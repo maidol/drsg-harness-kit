@@ -122,6 +122,27 @@ def fd_number_input(reviewer, project):
 def git_input(reviewer, project):
     return "Bash", {"command": "git -C %s add reviews/consumer/docs/superpowers/plans/x.md" % reviewer}
 
+def find_fprint_input(reviewer, project):
+    return "Bash", {"command": "find %s -maxdepth 0 -fprint %s/reviews/other/x.md" % (project, reviewer)}
+
+def sort_short_output_input(reviewer, project):
+    return "Bash", {"command": "sort -o %s/reviews/other/x.md %s/a" % (reviewer, project)}
+
+def sort_long_output_input(reviewer, project):
+    return "Bash", {"command": "sort --output=%s/reviews/other/x.md %s/a" % (reviewer, project)}
+
+def sort_tempdir_input(reviewer, project):
+    return "Bash", {"command": "sort -T %s/reviews/other %s/a" % (reviewer, project)}
+
+def uniq_output_input(reviewer, project):
+    return "Bash", {"command": "uniq %s/a %s/reviews/other/x.md" % (project, reviewer)}
+
+def sort_pipe_input(reviewer, project):
+    return "Bash", {"command": "ls %s | sort -r" % reviewer}
+
+def cut_reader_input(reviewer, project):
+    return "Bash", {"command": "ls %s | cut -c1-3" % reviewer}
+
 mutants = [
     ("read-only sha256sum allow",
      '    "cat", "head", "tail", "sed", "grep", "rg", "ls", "wc", "sha256sum",\n',
@@ -168,6 +189,34 @@ mutants = [
      '    command = re.sub(r"(?<![^\\s;&|(])\\d+(?=>)", "", command)\n',
      "",
      fd_number_input, True, False, "consumer"),
+    ("find -fprint target is a write",
+     'FIND_FILE_ACTIONS = ("-fprint", "-fprint0", "-fprintf", "-fls")\n',
+     'FIND_FILE_ACTIONS = ()\n',
+     find_fprint_input, True, False, "consumer"),
+    ("sort short -o target is a write",
+     '                    if char == "o":\n',
+     '                    if False:\n',
+     sort_short_output_input, True, False, "consumer"),
+    ("sort long --output target is a write",
+     '                elif "--output".startswith(name):\n',
+     '                elif False:\n',
+     sort_long_output_input, True, False, "consumer"),
+    ("sort -T is unverifiable",
+     '                    if char == "T":\n                        return [], True\n',
+     '',
+     sort_tempdir_input, True, False, "consumer"),
+    ("uniq second operand is a write",
+     '        return values[1:2], False\n',
+     '        return [], False\n',
+     uniq_output_input, True, False, "consumer"),
+    ("sort and uniq are known commands",
+     '                  "rsync", "sed", "sort", "tee", "touch", "truncate", "uniq"}\n',
+     '                  "rsync", "sed", "tee", "touch", "truncate"}\n',
+     sort_pipe_input, False, True, "consumer"),
+    ("cut tr nl are readers",
+     '    "cmp", "diff", "stat", "cut", "tr", "nl",\n',
+     '    "cmp", "diff", "stat",\n',
+     cut_reader_input, False, True, "consumer"),
 ]
 
 

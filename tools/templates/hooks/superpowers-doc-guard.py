@@ -7,7 +7,7 @@ import sys
 DENIAL_PREFIX = "Writing to the reviewer repository is restricted"
 READERS = {
     "cat", "head", "tail", "sed", "grep", "rg", "ls", "wc", "sha256sum",
-    "cmp", "diff", "stat",
+    "cmp", "diff", "stat", "cut", "tr", "nl",
 }
 GIT_READERS = {"diff", "log", "show", "status"}
 GIT_WRITERS = {
@@ -16,7 +16,8 @@ GIT_WRITERS = {
     "reset", "restore", "rm", "stash", "switch", "tag", "worktree",
 }
 STATIC_WRITERS = {"cp", "dd", "find", "install", "ln", "mkdir", "mv", "rm",
-                  "rsync", "sed", "tee", "touch", "truncate"}
+                  "rsync", "sed", "sort", "tee", "touch", "truncate", "uniq"}
+FIND_FILE_ACTIONS = ("-fprint", "-fprint0", "-fprintf", "-fls")
 SHELL_SEPARATORS = {";", "&&", "||", "|", "|&", "&", "\n"}
 REDIRECTS = {">", ">>", ">|", "&>", "&>>", "1>", "1>>", "2>", "2>>"}
 def _inside(path, root):
@@ -506,17 +507,87 @@ def _writer_targets(executable, args, cwd):
         return values[1:], len(values) < 2
     if executable == "find":
         start = []
+        files = []
         has_action = False
-        for arg in args:
+        i = 0
+        while i < len(args):
+            arg = args[i]
+            if arg in FIND_FILE_ACTIONS:
+                # -fprint FILE and its siblings create or truncate FILE.
+                if i + 1 >= len(args):
+                    return [], True
+                files.append(args[i + 1])
+                i += 2
+                continue
             if arg in ("-delete", "-exec", "-execdir", "-ok", "-okdir"):
                 has_action = True
-            elif arg.startswith("-"):
-                continue
-            elif not has_action:
+            elif not arg.startswith("-") and not has_action:
                 start.append(arg)
+            i += 1
         if not has_action:
-            return [], False
-        return start or ["."], False
+            return files, False
+        return (start or ["."]) + files, False
+    if executable == "sort":
+        # -o/--output names the output file; -T/--temporary-directory writes
+        # temporary files and --compress-program runs a program, so neither
+        # can be verified here.
+        targets = []
+        i = 0
+        while i < len(args):
+            arg = args[i]
+            if arg == "--":
+                break
+            if arg.startswith("--"):
+                name, has_value, value = arg.partition("=")
+                if len(name) < 3:
+                    pass
+                elif "--output".startswith(name):
+                    if has_value:
+                        targets.append(value)
+                    elif i + 1 < len(args):
+                        i += 1
+                        targets.append(args[i])
+                    else:
+                        return [], True
+                elif ("--temporary-directory".startswith(name)
+                      or "--compress-program".startswith(name)):
+                    return [], True
+            elif arg.startswith("-") and arg != "-":
+                for j in range(1, len(arg)):
+                    char = arg[j]
+                    if char in "kSt":
+                        if j == len(arg) - 1:
+                            i += 1
+                        break
+                    if char == "T":
+                        return [], True
+                    if char == "o":
+                        if j < len(arg) - 1:
+                            targets.append(arg[j + 1:])
+                        elif i + 1 < len(args):
+                            i += 1
+                            targets.append(args[i])
+                        else:
+                            return [], True
+                        break
+            i += 1
+        return targets, False
+    if executable == "uniq":
+        # uniq [INPUT [OUTPUT]] writes its second operand; "-" is an operand.
+        values = []
+        after_separator = False
+        i = 0
+        while i < len(args):
+            arg = args[i]
+            if not after_separator and arg == "--":
+                after_separator = True
+            elif not after_separator and arg in ("-f", "-s", "-w", "--skip-fields",
+                                                 "--skip-chars", "--check-chars"):
+                i += 1
+            elif after_separator or arg == "-" or not arg.startswith("-"):
+                values.append(arg)
+            i += 1
+        return values[1:2], False
     if executable == "dd":
         destinations = [arg[3:] for arg in args if arg.startswith("of=")]
         return destinations, not bool(destinations)

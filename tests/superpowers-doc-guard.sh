@@ -296,6 +296,14 @@ with tempfile.TemporaryDirectory(prefix="superpowers-guard-") as td:
         "git -C %s diff" % reviewer,
         "git -C %s show HEAD" % reviewer,
         "git -C %s status --short" % reviewer,
+        "find %s/reviews/consumer/docs/superpowers -maxdepth 1 -type f -iname '*x*' -printf '%%f\\n' | sort" % reviewer,
+        "ls %s | sort -r" % reviewer,
+        "ls %s | sort -k2 -t, | uniq -c" % reviewer,
+        "uniq %s/README.md" % reviewer,
+        "cut -d: -f1 %s/README.md" % reviewer,
+        "ls %s | tr a-z A-Z" % reviewer,
+        "nl %s/README.md" % reviewer,
+        "find %s -maxdepth 0 -fprint %s/out.txt" % (reviewer, project),
     ]
     for command in readers:
         check("read-only command allowed: " + command,
@@ -330,6 +338,19 @@ with tempfile.TemporaryDirectory(prefix="superpowers-guard-") as td:
         "find %s -delete" % reviewer,
         "rsync -a %s/a %s/reviews/other/" % (project, reviewer),
         "dd if=/dev/zero of=%s/reviews/other/x.md" % reviewer,
+        "find %s -maxdepth 0 -fprint %s/reviews/other/x.md" % (project, reviewer),
+        "find %s -maxdepth 0 -fprint0 %s/reviews/other/x.md" % (project, reviewer),
+        "find %s -maxdepth 0 -fprintf %s/reviews/other/x.md '%%p'" % (project, reviewer),
+        "find %s -maxdepth 0 -fls %s/reviews/other/x.md" % (project, reviewer),
+        "ls %s | sort -o %s/reviews/other/x.md" % (project, reviewer),
+        "sort -o%s/reviews/other/x.md %s/a" % (reviewer, project),
+        "sort -ro %s/reviews/other/x.md %s/a" % (reviewer, project),
+        "sort --output=%s/reviews/other/x.md %s/a" % (reviewer, project),
+        "sort --out %s/reviews/other/x.md %s/a" % (reviewer, project),
+        "sort -T %s/reviews/other %s/a" % (reviewer, project),
+        "sort --compress-program=%s/reviews/other/x.sh %s/a" % (reviewer, project),
+        "uniq %s/a %s/reviews/other/x.md" % (project, reviewer),
+        "ls %s | uniq -c - %s/reviews/other/x.md" % (project, reviewer),
     ]
     for command in writers:
         check("out-of-scope write denied: " + command,
@@ -343,6 +364,9 @@ with tempfile.TemporaryDirectory(prefix="superpowers-guard-") as td:
         "install -t %s/plans %s/a" % (allowed, project),
         "ln -t %s/plans %s/a" % (allowed, project),
         "touch %s/plans/x.md" % allowed,
+        "find %s -maxdepth 0 -fprint %s/plans/x.md" % (project, allowed),
+        "ls %s | sort -o %s/plans/x.md" % (project, allowed),
+        "uniq %s/a %s/plans/x.md" % (project, allowed),
     ]
     for command in safe_writers:
         check("in-scope write allowed: " + command,
