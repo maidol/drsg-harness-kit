@@ -877,9 +877,15 @@ the tool directly. It has two scopes:
   use (`git`, `rtk git`, `/usr/bin/git`; bare, with `-C DIR`, with `-c k=v`) and
   for `gh pr create`. An ask rule wins over an allow rule, so a broad
   `Bash(rtk git *)` already in the file can no longer commit or push without
-  asking. It also adds narrow `allow` rules for read-only git, `event.py
-  list|done` and the modern-go guideline script: auto mode keeps narrow rules
-  and settles them without a classifier call. Broad interpreter rules such as
+  asking. It also adds narrow `allow` rules for read-only git, the modern-go
+  guideline script and four verification tools — `affected-tests.py`,
+  `completeness-guard.py`, `check-docs.py`, `check-no-machine-paths.py` — run
+  as `python3 <path>` from the tools dir (absolute and `~/` spellings) and,
+  when the project has them, from its own `tools/` (relative and absolute):
+  auto mode keeps narrow rules and settles them without a classifier call. The
+  repo copy is allowed even after the session edits it; nothing compares it
+  with git. Re-run `apply --project DIR` after upgrading to pick the new rules
+  up. Broad interpreter rules such as
   `Bash(python3 *)` — dropped by auto mode, allow-everything outside it — are
   reported; `--prune-broad` removes them. With `--self-commit` the `git commit`
   ask rules are left out and any this tool wrote before are removed (rules you

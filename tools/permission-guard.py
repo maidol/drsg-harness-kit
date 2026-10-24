@@ -10,9 +10,11 @@ is never touched, because a project may track it in git.
     with --self-commit the commit ask rules are left out (and removed if this
     tool wrote them earlier), for users whose global CLAUDE.md lets unreviewed
     local commits through; push and gh pr create still ask;
-  - narrow allow rules for read-only git, event.py list/done and the
-    modern-go guideline script. Auto mode keeps narrow rules and resolves them
-    without a classifier call;
+  - narrow allow rules for read-only git, the modern-go guideline script and
+    four verification tools (affected-tests, completeness-guard, check-docs,
+    check-no-machine-paths) in the tools dir and, when present, the project's
+    own tools/ copy; an edited repo copy is allowed too. Auto mode keeps
+    narrow rules and resolves them without a classifier call;
   - a report of broad interpreter rules (`Bash(python3 *)` ...) that auto mode
     drops anyway, and of git write rules the ask rules now cover.
     --prune-broad removes the interpreter ones; nothing else is ever removed.
@@ -37,6 +39,10 @@ import re
 import sys
 
 MARK = "(drsg-harness-kit permission-guard) "
+# Run on every review round; both the deployed copy and a repo's own tools/
+# copy are allowed as-is (an edited repo copy is allowed too, by user choice).
+VERIFY_TOOLS = ("affected-tests.py", "completeness-guard.py", "check-docs.py",
+                "check-no-machine-paths.py")
 GIT_READ = ("status", "diff", "log", "show", "rev-parse", "ls-files",
             "merge-base", "write-tree", "ls-tree")
 BROAD = re.compile(r"^Bash\((?:python3?|node|bash|sh|ruby|perl|npx|deno|bun)(?: \*|\*|:\*)\)$")
@@ -57,6 +63,17 @@ def commit_ask_rules():
     return [r for r in ask_rules() if r not in ask_rules(self_commit=True)]
 
 
+def tool_paths(project, tools_dir, script):
+    """Every spelling a session uses for one verification tool."""
+    home = os.path.expanduser("~")
+    paths = [os.path.join(tools_dir, script)]
+    if tools_dir.startswith(home + os.sep):
+        paths.append("~" + os.path.join(tools_dir[len(home):], script))
+    if os.path.isfile(os.path.join(project, "tools", script)):
+        paths += ["tools/" + script, os.path.join(project, "tools", script)]
+    return paths
+
+
 def allow_rules(project, tools_dir):
     home = os.path.expanduser("~")
     out = ['Bash(sh "%s/.claude/plugins/cache/goland-claude-marketplace/modern-go-guidelines/'
@@ -64,6 +81,9 @@ def allow_rules(project, tools_dir):
     for sub in GIT_READ:
         out += ["Bash(git %s)" % sub, "Bash(git %s *)" % sub,
                 "Bash(git -C %s %s)" % (project, sub), "Bash(git -C %s %s *)" % (project, sub)]
+    for script in VERIFY_TOOLS:
+        for path in tool_paths(project, tools_dir, script):
+            out += ["Bash(python3 %s)" % path, "Bash(python3 %s *)" % path]
     return out
 
 

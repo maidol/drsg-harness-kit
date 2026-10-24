@@ -50,6 +50,10 @@ check "ask covers rtk git push"                   "$(count "$L" ask 'Bash(rtk gi
 check "ask covers gh pr create"                   "$(count "$L" ask 'Bash(gh pr create *)')" 1
 check "allow adds git -C <project> status"        "$(count "$L" allow "Bash(git -C $P status *)")" 1
 check "allow does not add event.py done"          "$(count "$L" allow "Bash(python3 $DRSG_MEM_DIR/tools/event.py done *)")" 0
+check "allow adds deployed affected-tests.py"     "$(count "$L" allow "Bash(python3 $DRSG_MEM_DIR/tools/affected-tests.py *)")" 1
+check "allow adds deployed completeness-guard.py" "$(count "$L" allow "Bash(python3 $DRSG_MEM_DIR/tools/completeness-guard.py)")" 1
+check "no repo-copy rule without tools/ scripts"  "$(count "$L" allow 'Bash(python3 tools/check-docs.py *)')" 0
+check "no ~ form when tools dir is outside HOME"  "$(count "$L" allow '~Bash(python3 ~/')" 0
 check "foreign allow rule kept"                   "$(count "$L" allow 'Bash(make build *)')" 1
 check "broad rule kept without --prune-broad"     "$(count "$L" allow 'Bash(python3 *)')" 1
 check "broad rule reported"                       "$(echo "$OUT" | grep -c 'broad: *Bash(python3 \*)')" 1
@@ -96,6 +100,23 @@ check "remove drops our ask rules"                "$(count "$L" ask 'Bash(git pu
 check "remove drops our allow rules"              "$(count "$L" allow "Bash(git -C $P status *)")" 0
 check "remove drops legacy event.py rule"         "$(count "$L" allow "Bash(python3 $DRSG_MEM_DIR/tools/event.py list *)")" 0
 check "remove keeps foreign rules"                "$(count "$L" allow 'Bash(make build *)')" 1
+
+# --- verification tools: repo copies and the ~ spelling ------------------
+K="$T/kitproj"; KL="$K/.claude/settings.local.json"
+mkdir -p "$K/tools"
+for f in affected-tests.py completeness-guard.py check-docs.py check-no-machine-paths.py; do
+  : > "$K/tools/$f"
+done
+python3 "$PG" apply --project "$K" --tools-dir "$HOME/.drsg-memory/tools" >/dev/null
+check "repo copy relative rule"                   "$(count "$KL" allow 'Bash(python3 tools/check-docs.py *)')" 1
+check "repo copy relative rule without args"      "$(count "$KL" allow 'Bash(python3 tools/completeness-guard.py)')" 1
+check "repo copy absolute rule"                   "$(count "$KL" allow "Bash(python3 $K/tools/check-no-machine-paths.py *)")" 1
+check "~ form when tools dir is under HOME"       "$(count "$KL" allow 'Bash(python3 ~/.drsg-memory/tools/affected-tests.py *)')" 1
+check "absolute form when tools dir is under HOME" "$(count "$KL" allow "Bash(python3 $HOME/.drsg-memory/tools/affected-tests.py *)")" 1
+python3 "$PG" check --project "$K" --tools-dir "$HOME/.drsg-memory/tools" >/dev/null
+check "check is clean with repo-copy rules"       "$?" 0
+python3 "$PG" remove --project "$K" --tools-dir "$HOME/.drsg-memory/tools" >/dev/null
+check "remove drops repo-copy rules"              "$(count "$KL" allow '~tools/check-docs.py')" 0
 
 # --- user scope ----------------------------------------------------------
 python3 - "$U" "$T/ws" "$R" <<'PY'
@@ -176,4 +197,4 @@ bash "$HERE/../setup.sh" --no-skills --no-event-poller --no-streak-hint --self-c
 check "setup rejects --self-commit alone"             "$?" 1
 
 printf '\nPASS %d/%d\n' "$OK" "$RAN"
-[ "$RAN" -eq 66 ] && [ "$OK" -eq "$RAN" ]
+[ "$RAN" -eq 77 ] && [ "$OK" -eq "$RAN" ]
