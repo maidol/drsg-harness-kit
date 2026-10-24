@@ -182,7 +182,7 @@ mutants = [
      "",
      gate_input, False, True, "consumer"),
     ("related command with a variable write is unverifiable",
-     "        if _related_unverifiable(command):\n            return \"only %s is allowed\" % allowed\n",
+     "        if _related_unverifiable(command):\n            return only\n",
      "",
      local_var_input, True, False, "consumer"),
     ("fd number is not taken as a cp argument",

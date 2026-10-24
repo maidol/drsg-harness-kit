@@ -412,7 +412,20 @@ with tempfile.TemporaryDirectory(prefix="superpowers-guard-") as td:
     }), encoding="utf-8")
     check("opt-out project is unrestricted",
           call("Write", {"file_path": str(reviewer / "outside.md"), "content": "x"}), "allow")
+    (state_dir / (state_id + ".json")).write_text(json.dumps({
+        "project": project_real, "reviewer": str(reviewer),
+        "allow": None, "enabled": False, "opt_out": False,
+    }), encoding="utf-8")
+    invalid_state = call("Write", {"file_path": str(reviewer / "outside.md"), "content": "x"})
+    check("invalid ownership state denial names the cause, not None",
+          denied(invalid_state) and "ownership state" in invalid_state
+          and "None" not in invalid_state, True)
     (state_dir / (state_id + ".json")).unlink()
+    unknown_root = call("Write", {"file_path": str(reviewer / "outside.md"), "content": "x"},
+                        cwd=neighbor)
+    check("unknown project root denial names the cause, not None",
+          denied(unknown_root) and "project root is unknown" in unknown_root
+          and "None" not in unknown_root, True)
 
     # Corrupt/ambiguous hook input must fail closed while a reviewer is active.
     raw = subprocess.run([sys.executable, hook], input="not json", text=True,

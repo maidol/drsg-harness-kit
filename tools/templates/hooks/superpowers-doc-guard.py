@@ -881,13 +881,22 @@ def decide(data):
         allowed = (os.path.join(reviewer_real, "reviews", os.path.basename(project_real),
                                 "docs", "superpowers")
                    if project_real and not state_invalid else None)
+        if allowed is not None:
+            only = "only %s is allowed" % allowed
+        elif project_real:
+            only = ("no archive is allowed: this project's Superpowers ownership state "
+                    "does not match the configured reviewer; ask the user to run "
+                    "setup.sh --superpowers-docs <project>")
+        else:
+            only = ("no archive is allowed: the project root is unknown "
+                    "(CLAUDE_PROJECT_DIR is unset or the command runs outside it)")
         if tool in ("Write", "Edit", "NotebookEdit"):
             field = "notebook_path" if tool == "NotebookEdit" else "file_path"
             target = tool_input.get(field)
             if not isinstance(target, str) or not target:
                 return "cannot verify the write target"
             if not _check_target(target, cwd, reviewer_real, allowed):
-                return "only %s is allowed" % allowed
+                return only
             return None
         command = tool_input.get("command")
         if not isinstance(command, str) or not command:
@@ -895,9 +904,9 @@ def decide(data):
         if not _bash_related(command, cwd, reviewer_real):
             return None
         if _related_unverifiable(command):
-            return "only %s is allowed" % allowed
+            return only
         if _bash_decision(_strip_heredocs(command), cwd, reviewer_real, allowed):
-            return "only %s is allowed" % allowed
+            return only
         return None
     except (OSError, ValueError, TypeError):
         return "cannot safely resolve the write target"
