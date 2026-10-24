@@ -157,10 +157,10 @@ check "--self-commit keeps the gh pr create ask"  "$(count "$L2" ask 'Bash(gh pr
 check "--self-commit keeps user-written asks"     "$(count "$L2" ask 'Bash(make deploy *)')" 1
 check "--self-commit leaves 11 ask rules"         "$(python3 -c "import json;print(len(json.load(open('$L2'))['permissions']['ask']))")" 11
 python3 "$PG" check --project "$P2" --self-commit >/dev/null; check "check --self-commit is clean" "$?" 0
-python3 "$PG" check --project "$P2" >/dev/null;               check "check without --self-commit wants commit asks" "$?" 1
+python3 "$PG" check --project "$P2" --no-self-commit >/dev/null; check "check without --self-commit wants commit asks" "$?" 1
 OUT="$(python3 "$PG" apply --project "$P2" --self-commit)"
 check "second --self-commit apply adds nothing"   "$(echo "$OUT" | grep -c 'already current')" 1
-python3 "$PG" apply --project "$P2" >/dev/null
+python3 "$PG" apply --project "$P2" --no-self-commit >/dev/null
 check "apply without --self-commit restores commit asks" "$(count "$L2" ask 'Bash(git commit *)')" 1
 python3 "$PG" check --project "$P2" --self-commit >/dev/null; check "check --self-commit reports leftover commit asks" "$?" 1
 
@@ -168,11 +168,31 @@ python3 "$PG" apply --user --reviews-dir "$R" --self-commit >/dev/null
 check "user --self-commit adds a third marked entry" "$(count "$U" allow '~(drsg-harness-kit permission-guard)' autoMode)" 3
 check "user --self-commit entry covers local commit" "$(count "$U" allow '~A local `git commit`' autoMode)" 1
 python3 "$PG" check --user --reviews-dir "$R" --self-commit >/dev/null; check "user check --self-commit clean" "$?" 0
-python3 "$PG" check --user --reviews-dir "$R" >/dev/null;               check "user check without --self-commit reports the extra entry" "$?" 1
-python3 "$PG" apply --user --reviews-dir "$R" >/dev/null
+python3 "$PG" check --user --reviews-dir "$R" --no-self-commit >/dev/null; check "user check without --self-commit reports the extra entry" "$?" 1
+python3 "$PG" apply --user --reviews-dir "$R" --no-self-commit >/dev/null
 check "user apply without --self-commit drops it" "$(count "$U" allow '~A local `git commit`' autoMode)" 0
 check "user apply without --self-commit keeps two" "$(count "$U" allow '~(drsg-harness-kit permission-guard)' autoMode)" 2
+python3 "$PG" apply --user --reviews-dir "$R" --self-commit >/dev/null
+python3 "$PG" apply --user --reviews-dir "$R" >/dev/null
+check "plain user apply keeps the local-commit entry" "$(count "$U" allow '~A local `git commit`' autoMode)" 1
+python3 "$PG" check --user --reviews-dir "$R" >/dev/null; check "plain user check accepts the self-commit state" "$?" 0
 python3 "$PG" remove --user >/dev/null
+
+# sticky state: without --self-commit / --no-self-commit, keep the state found
+P3="$T/proj3"; L3="$P3/.claude/settings.local.json"
+mkdir -p "$P3/.claude"
+python3 "$PG" apply --project "$P3" >/dev/null
+check "fresh project gets commit asks"            "$(count "$L3" ask 'Bash(git commit *)')" 1
+python3 "$PG" apply --project "$P3" --self-commit >/dev/null
+OUT="$(python3 "$PG" apply --project "$P3")"
+check "plain apply keeps the self-commit state"   "$(count "$L3" ask 'Bash(git commit *)')" 0
+check "plain apply says it kept --self-commit"    "$(echo "$OUT" | grep -c 'keeping --self-commit')" 1
+python3 "$PG" check --project "$P3" >/dev/null;   check "plain check accepts the self-commit state" "$?" 0
+python3 "$PG" apply --project "$P3" --no-self-commit >/dev/null
+python3 "$PG" apply --project "$P3" >/dev/null
+check "plain apply keeps the asking state"        "$(count "$L3" ask 'Bash(git commit *)')" 1
+python3 "$PG" apply --project "$P3" --self-commit --no-self-commit >/dev/null 2>&1
+check "both flags together are rejected"          "$?" 2
 
 python3 "$PG" apply --user >/dev/null 2>&1;                       check "--user needs --reviews-dir" "$?" 2
 python3 "$PG" apply --user --reviews-dir "$T/nope" >/dev/null 2>&1; check "--reviews-dir must exist" "$?" 2
@@ -197,4 +217,4 @@ bash "$HERE/../setup.sh" --no-skills --no-event-poller --no-streak-hint --self-c
 check "setup rejects --self-commit alone"             "$?" 1
 
 printf '\nPASS %d/%d\n' "$OK" "$RAN"
-[ "$RAN" -eq 77 ] && [ "$OK" -eq "$RAN" ]
+[ "$RAN" -eq 85 ] && [ "$OK" -eq "$RAN" ]

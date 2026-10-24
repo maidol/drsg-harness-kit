@@ -9,7 +9,9 @@ is never touched, because a project may track it in git.
     `Bash(rtk git *)` can no longer commit or push without asking;
     with --self-commit the commit ask rules are left out (and removed if this
     tool wrote them earlier), for users whose global CLAUDE.md lets unreviewed
-    local commits through; push and gh pr create still ask;
+    local commits through; push and gh pr create still ask; --no-self-commit
+    writes them back, and with neither flag apply and check keep the state
+    they find (a project the tool never touched still gets the commit asks);
   - narrow allow rules for read-only git, the modern-go guideline script and
     four verification tools (affected-tests, completeness-guard, check-docs,
     check-no-machine-paths) in the tools dir and, when present, the project's
@@ -61,6 +63,27 @@ def ask_rules(self_commit=False):
 
 def commit_ask_rules():
     return [r for r in ask_rules() if r not in ask_rules(self_commit=True)]
+
+
+def project_self_commit_state(project):
+    """True when this tool's push asks are present but none of its commit asks are."""
+    ask = project_lists(project)[2]
+    return (any(r in ask for r in ask_rules(self_commit=True))
+            and not any(r in ask for r in commit_ask_rules()))
+
+
+def user_self_commit_state():
+    return SELF_COMMIT in load(user_settings_path()).get("autoMode", {}).get("allow", [])
+
+
+def resolve_self_commit(flag, current):
+    """An explicit --self-commit / --no-self-commit wins; without either, keep the state found."""
+    if flag is not None:
+        return flag
+    if current:
+        print("permission guard: keeping --self-commit (found in the current settings); "
+              "pass --no-self-commit to change that")
+    return current
 
 
 def tool_paths(project, tools_dir, script):
@@ -290,9 +313,13 @@ def main(argv):
     ap.add_argument("--reviews-dir", metavar="DIR", help="reviews directory the user-scope rules trust")
     ap.add_argument("--tools-dir", metavar="DIR", help="where event.py lives (default ~/.drsg-memory/tools)")
     ap.add_argument("--prune-broad", action="store_true", help="with apply --project: remove Bash(python3 *)-style rules")
-    ap.add_argument("--self-commit", action="store_true",
-                    help="with apply/check: no commit ask rules (push and PR still ask); "
-                         "user scope adds an autoMode rule allowing local commits")
+    mode = ap.add_mutually_exclusive_group()
+    mode.add_argument("--self-commit", dest="self_commit", action="store_const", const=True,
+                      help="with apply/check: no commit ask rules (push and PR still ask); "
+                           "user scope adds an autoMode rule allowing local commits")
+    mode.add_argument("--no-self-commit", dest="self_commit", action="store_const", const=False,
+                      help="with apply/check: write the commit ask rules and drop the user-scope "
+                           "local-commit rule; without either flag the state found is kept")
     args = ap.parse_args(argv)
     if bool(args.project) == bool(args.user):
         ap.error("give exactly one of --project DIR or --user")
@@ -302,19 +329,21 @@ def main(argv):
         if not args.reviews_dir or not os.path.isabs(args.reviews_dir) or not os.path.isdir(args.reviews_dir):
             ap.error("--user %s needs --reviews-dir with an existing absolute directory" % args.action)
         reviews = os.path.normpath(args.reviews_dir)
+        self_commit = resolve_self_commit(args.self_commit, user_self_commit_state())
         if args.action == "apply":
-            return user_apply(reviews, args.self_commit)
-        return user_check(reviews, args.self_commit)
+            return user_apply(reviews, self_commit)
+        return user_check(reviews, self_commit)
     if not os.path.isdir(args.project):
         ap.error("--project %s is not a directory" % args.project)
     project = os.path.abspath(args.project)
     tools_dir = args.tools_dir or os.path.join(
         os.environ.get("DRSG_MEM_DIR") or os.path.expanduser("~/.drsg-memory"), "tools")
+    if args.action == "remove":
+        return project_remove(project, tools_dir)
+    self_commit = resolve_self_commit(args.self_commit, project_self_commit_state(project))
     if args.action == "apply":
-        return project_apply(project, tools_dir, args.prune_broad, args.self_commit)
-    if args.action == "check":
-        return project_check(project, tools_dir, args.self_commit)
-    return project_remove(project, tools_dir)
+        return project_apply(project, tools_dir, args.prune_broad, self_commit)
+    return project_check(project, tools_dir, self_commit)
 
 
 if __name__ == "__main__":

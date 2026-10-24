@@ -903,7 +903,8 @@ the tool directly. It has two scopes:
   `--self-commit` adds a fourth rule: a local `git commit` of the files the
   session changed, on the checked-out branch, without amending pushed history
   or `--no-verify`, is allowed without asking; push, tags, releases and PRs are
-  never covered. Re-running `apply --user` without the flag removes it.
+  never covered. Re-running `apply --user` without the flag keeps it;
+  `--no-self-commit` removes it.
 
 ```bash
 # project scope; re-running adds nothing
@@ -913,6 +914,7 @@ python3 ~/.drsg-memory/tools/permission-guard.py check --project /path/to/projec
 python3 ~/.drsg-memory/tools/permission-guard.py remove --project /path/to/project
 python3 ~/.drsg-memory/tools/permission-guard.py apply --project /path/to/project --self-commit
 python3 ~/.drsg-memory/tools/permission-guard.py check --project /path/to/project --self-commit
+python3 ~/.drsg-memory/tools/permission-guard.py apply --project /path/to/project --no-self-commit
 
 # user scope
 python3 ~/.drsg-memory/tools/permission-guard.py apply --user --reviews-dir /path/to/workspace/reviews
@@ -928,6 +930,13 @@ Use `--self-commit` only when your global `CLAUDE.md` lets changes that no
 review covers be committed without asking; the rules only stop the prompt,
 the model still follows your instructions. To switch every installed project,
 run the project-scope `apply --self-commit` once per project directory.
+
+Without `--self-commit` or `--no-self-commit`, `apply` and `check` keep the
+state they find: a project that already has this tool's push ask rules but
+none of its commit ask rules stays in `--self-commit` state, and a user
+`autoMode` that already has the local-commit entry keeps it; `apply` then
+prints `keeping --self-commit`. A project the tool has never touched still
+gets the commit ask rules. Pass `--no-self-commit` to go back to asking.
 
 Rules take effect in sessions started afterwards. `claude auto-mode config`
 shows the user-scope entries the classifier will read.
