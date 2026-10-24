@@ -4,7 +4,7 @@
 set -u
 
 HERE="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
-CHECK_DOCS="$HERE/../tools/check-docs.py"
+CHECK_DOCS="${CHECK_DOCS_SOURCE:-$HERE/../tools/check-docs.py}"
 T="$(mktemp -d)"
 trap 'rm -rf "$T"' EXIT
 
@@ -105,8 +105,36 @@ touch "$REPO/tools/doc-coverage-baseline.txt"
 cp "$CHECK_DOCS" "$REPO/tools/check-docs.py"
 mkdir -p "$REPO/claude"
 printf '%*s' 8010 '' | tr ' ' 'x' > "$REPO/claude/AGENT-EFFICIENCY.md"
+cat > "$REPO/claude/CROSS-PROJECT-REVIEW.md" <<'MD'
+# Full cross-project rules
 
-git -C "$REPO" add .
+This sentence is shared.
+| key | value |
+
+```bash
+printf shared
+```
+MD
+cat > "$REPO/claude/CROSS-PROJECT-EXECUTION.md" <<'MD'
+# Full cross-project rules
+
+审核方专用规则见完整版「入口与职责」「授权提交判定与时机」「Event 交接材料」各节。
+This sentence is shared.
+| key | value |
+
+```bash
+printf shared
+```
+MD
+cat > "$REPO/claude/CROSS-PROJECT-COMMIT.md" <<'MD'
+# Full cross-project rules
+
+审核方的授权提交判定规则见完整版「授权提交判定与时机」一节。
+This sentence is shared.
+MD
+cp "$REPO/claude/CROSS-PROJECT-EXECUTION.md" "$T/execution-valid.md"
+
+git -C "$REPO" add setup.sh README.md README.zh-CN.md tools skills claude/AGENT-EFFICIENCY.md
 git -C "$REPO" commit -q -m "initial baseline"
 
 run_check() {
@@ -154,7 +182,7 @@ cat >> "$REPO/README.zh-CN.md" <<'MD'
 ./setup.sh --brand-new-flag
 ```
 MD
-git -C "$REPO" add .
+git -C "$REPO" add -u
 git -C "$REPO" commit -q -m "add brand new flag"
 
 # 场景 4: 擅自往基线清单里加不存在或未出现的条目 -> 应该在 COV0 失败
@@ -247,6 +275,82 @@ check "resident_efficiency_legacy_calibration_is_7672" "$legacy_tokens" 7672
 (cd "$REPO/tools" && python3 check-docs.py) > "$T/out.txt" 2>&1 || true
 check "check_docs_from_tools_dir_reports_ae1" \
   "$(grep -q 'AE1.*3501.*3500' "$T/out.txt" && echo yes || echo no)" yes
+
+# Cross-project short rules are fixed inputs, budgeted per file and per read path.
+git -C "$REPO" checkout -q -- claude/AGENT-EFFICIENCY.md
+run_check && cross_base_rc=0 || cross_base_rc=$?
+check "cross_project_valid_subset_passes" "$cross_base_rc" 0
+check "cross_project_full_and_short_estimates_are_reported" \
+  "$(grep -c 'CROSS-PROJECT-.*estimated .* tokens' "$T/out.txt" || true)" 3
+
+cp "$REPO/claude/CROSS-PROJECT-REVIEW.md" "$T/full-valid.md"
+python3 - "$CHECK_DOCS" "$REPO/claude/CROSS-PROJECT-EXECUTION.md" "$REPO/claude/CROSS-PROJECT-REVIEW.md" <<'PY'
+import pathlib, runpy, sys
+estimate = runpy.run_path(sys.argv[1])["estimate_tokens"]
+paths = [pathlib.Path(p) for p in sys.argv[2:]]
+size = 1
+while estimate("x" * size) < 5001:
+    size += 1
+text = "x" * size
+assert estimate(text) == 5001
+for path in paths:
+    path.write_text(text, encoding="utf-8")
+PY
+run_check && cross_oversize_rc=0 || cross_oversize_rc=$?
+check "cross_project_5001_tokens_fails" "$cross_oversize_rc" 1
+check "cross_project_5001_diagnostic_names_file_and_limit" \
+  "$(grep -Fq 'FAIL  XPT   claude/CROSS-PROJECT-EXECUTION.md estimated 5001 tokens (limit 5000)' "$T/out.txt" && echo yes || echo no)" yes
+
+cp "$T/full-valid.md" "$REPO/claude/CROSS-PROJECT-REVIEW.md"
+cp "$T/execution-valid.md" "$REPO/claude/CROSS-PROJECT-EXECUTION.md"
+rm "$REPO/claude/CROSS-PROJECT-EXECUTION.md"
+run_check && cross_missing_rc=0 || cross_missing_rc=$?
+check "cross_project_missing_required_file_fails" "$cross_missing_rc" 1
+check "cross_project_missing_diagnostic_names_fixed_path" \
+  "$(grep -Fq 'Missing required cross-project document: claude/CROSS-PROJECT-EXECUTION.md' "$T/out.txt" && echo yes || echo no)" yes
+
+cp "$T/execution-valid.md" "$REPO/claude/CROSS-PROJECT-EXECUTION.md"
+mv "$REPO/claude/CROSS-PROJECT-EXECUTION.md" "$REPO/claude/CROSS-PROJECT-EXECUTION-renamed.md"
+run_check && cross_renamed_rc=0 || cross_renamed_rc=$?
+check "cross_project_renamed_file_fails" "$cross_renamed_rc" 1
+check "cross_project_rename_diagnostic_names_fixed_path" \
+  "$(grep -Fq 'Missing required cross-project document: claude/CROSS-PROJECT-EXECUTION.md' "$T/out.txt" && echo yes || echo no)" yes
+rm "$REPO/claude/CROSS-PROJECT-EXECUTION-renamed.md"
+cp "$T/execution-valid.md" "$REPO/claude/CROSS-PROJECT-EXECUTION.md"
+python3 - "$REPO/claude/CROSS-PROJECT-EXECUTION.md" <<'PY'
+import pathlib, sys
+path = pathlib.Path(sys.argv[1])
+text = path.read_text(encoding="utf-8")
+path.write_text(text.replace("This sentence is shared.", "This sentence was changed."), encoding="utf-8")
+PY
+run_check && cross_sentence_rc=0 || cross_sentence_rc=$?
+check "cross_project_non_subset_sentence_fails" "$cross_sentence_rc" 1
+check "cross_project_sentence_diagnostic_names_unmatched_text" \
+  "$(grep -Fq 'This sentence was changed.' "$T/out.txt" && echo yes || echo no)" yes
+
+aggregate_budget=$(python3 - "$CHECK_DOCS" <<'PY'
+import runpy, sys
+ns = runpy.run_path(sys.argv[1])
+violations = ns["cross_project_budget_violations"](
+    {"a.md": 3000, "b.md": 3000}, {"combined": ("a.md", "b.md")})
+print("yes" if any("combined" in v and "6000" in v for v in violations) else "no")
+PY
+)
+check "cross_project_read_path_sum_is_checked" "$aggregate_budget" yes
+
+route_coverage=$(python3 - "$CHECK_DOCS" <<'PY'
+import runpy, sys
+ns = runpy.run_path(sys.argv[1])
+valid = ns["cross_project_routes_match_short_files"](
+    ("execution.md", "commit.md"), {"execution": ("execution.md",), "commit": ("commit.md",)})
+missing = ns["cross_project_routes_match_short_files"](
+    ("execution.md", "commit.md"), {"execution": ("execution.md",)})
+extra = ns["cross_project_routes_match_short_files"](
+    ("execution.md", "commit.md"), {"execution": ("execution.md",), "commit": ("commit.md", "other.md")})
+print("yes" if valid and not missing and not extra else "no")
+PY
+)
+check "cross_project_routes_cover_short_files" "$route_coverage" yes
 
 printf '\nPASS %d/%d\n' "$OK" "$RAN"
 [ "$OK" -eq "$RAN" ]

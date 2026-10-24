@@ -25,6 +25,7 @@ TOKEN="fake-token"
 API="http://127.0.0.1:$PORT/rpc"
 MEM_DIR="$T/mem"
 HOME_DIR="$T/home"
+XDG_CONFIG_HOME="$T/xdg"
 CLAUDE_DIR="$T/claude-config"
 BUNDLE="$T/bundle"
 PROJECTS="$T/projects"
@@ -36,7 +37,7 @@ ALIAS="$PROJECTS/alpha-alias"
 FAKE_INSTALL_LOG="$T/install.calls"
 MAIN_BRANCH_CALLS="$T/main-branch.calls"
 KNOWN_PROJECTS_LOG="$T/known-projects.count"
-mkdir -p "$MEM_DIR" "$HOME_DIR" "$CLAUDE_DIR" "$PROJECTS" "$BUNDLE/tools" \
+mkdir -p "$MEM_DIR" "$HOME_DIR" "$XDG_CONFIG_HOME" "$CLAUDE_DIR" "$PROJECTS" "$BUNDLE/tools" \
   "$BUNDLE/claude" "$BUNDLE/skills/test-skill" "$ALPHA/.drsg" "$BETA/.drsg" "$NO_ENV"
 
 DRSG_TOKEN="$TOKEN" "$MEM_BIN" --db "$T/memory.drsg" serve --addr "127.0.0.1:$PORT" >"$T/daemon.log" 2>&1 &
@@ -81,6 +82,9 @@ cp "$REPO/claude/AGENT-EFFICIENCY-OPERATIONS.md" "$BUNDLE/claude/AGENT-EFFICIENC
 if [ -f "$REPO/claude/CROSS-PROJECT-REVIEW.md" ]; then
   cp "$REPO/claude/CROSS-PROJECT-REVIEW.md" "$BUNDLE/claude/CROSS-PROJECT-REVIEW.md"
 fi
+for rule in CROSS-PROJECT-EXECUTION.md CROSS-PROJECT-COMMIT.md; do
+  cp "$REPO/claude/$rule" "$BUNDLE/claude/$rule"
+done
 printf 'fixture skill\n' > "$BUNDLE/skills/test-skill/SKILL.md"
 SETUP_SOURCE="${SETUP_SOURCE:-$REPO/setup.sh}"
 cp "$SETUP_SOURCE" "$BUNDLE/setup.sh"
@@ -165,7 +169,7 @@ run_setup() {
   shift 2
   : > "$FAKE_INSTALL_LOG"
   : > "$KNOWN_PROJECTS_LOG"
-  FAIL_FIRST="$fail_first" HOME="$HOME_DIR" CLAUDE_CONFIG_DIR="$CLAUDE_DIR" \
+  FAIL_FIRST="$fail_first" HOME="$HOME_DIR" XDG_CONFIG_HOME="$XDG_CONFIG_HOME" CLAUDE_CONFIG_DIR="$CLAUDE_DIR" \
     DRSG_MEM_DIR="$MEM_DIR" DRSG_API="$API" DRSG_TOKEN="$TOKEN" DRSG_PLANE=memory \
     FAKE_INSTALL_LOG="$FAKE_INSTALL_LOG" MAIN_BRANCH_CALLS="$MAIN_BRANCH_CALLS" \
     KNOWN_PROJECTS_LOG="$KNOWN_PROJECTS_LOG" \
@@ -190,7 +194,7 @@ if [ "$CASE" = all ] || [ "$CASE" = mutual-exclusion ]; then
       router) args+=(--router "$ALPHA") ;;
       usage-report) args+=(--usage-report "$ALPHA") ;;
     esac
-    HOME="$HOME_DIR" CLAUDE_CONFIG_DIR="$CLAUDE_DIR" DRSG_MEM_DIR="$MEM_DIR" \
+    HOME="$HOME_DIR" XDG_CONFIG_HOME="$XDG_CONFIG_HOME" CLAUDE_CONFIG_DIR="$CLAUDE_DIR" DRSG_MEM_DIR="$MEM_DIR" \
       FAKE_INSTALL_LOG="$FAKE_INSTALL_LOG" MAIN_BRANCH_CALLS="$MAIN_BRANCH_CALLS" \
       PATH="$T/bin:$PATH" bash "$BUNDLE/setup.sh" "${args[@]}" >"$T/mutual-$option.out" 2>&1
     rc=$?
@@ -198,7 +202,7 @@ if [ "$CASE" = all ] || [ "$CASE" = mutual-exclusion ]; then
       "$( [ "$rc" -ne 0 ] && grep -c -- "--all-projects cannot be combined with --$option" "$T/mutual-$option.out" || true )" 1
   done
   for compact_option in no-compact-instructions compact-instructions; do
-    HOME="$HOME_DIR" CLAUDE_CONFIG_DIR="$CLAUDE_DIR" DRSG_MEM_DIR="$MEM_DIR" \
+    HOME="$HOME_DIR" XDG_CONFIG_HOME="$XDG_CONFIG_HOME" CLAUDE_CONFIG_DIR="$CLAUDE_DIR" DRSG_MEM_DIR="$MEM_DIR" \
       FAKE_INSTALL_LOG="$FAKE_INSTALL_LOG" MAIN_BRANCH_CALLS="$MAIN_BRANCH_CALLS" \
       PATH="$T/bin:$PATH" bash "$BUNDLE/setup.sh" --all-projects \
       "--$compact_option" "$ALPHA" > "$T/mutual-$compact_option.out" 2>&1
@@ -215,7 +219,7 @@ fi
 if [ "$CASE" = empty-project-list ]; then
   : > "$FAKE_INSTALL_LOG"
   : > "$MAIN_BRANCH_CALLS"
-  HOME="$HOME_DIR" CLAUDE_CONFIG_DIR="$CLAUDE_DIR" DRSG_MEM_DIR="$MEM_DIR" \
+  HOME="$HOME_DIR" XDG_CONFIG_HOME="$XDG_CONFIG_HOME" CLAUDE_CONFIG_DIR="$CLAUDE_DIR" DRSG_MEM_DIR="$MEM_DIR" \
     FAKE_INSTALL_LOG="$FAKE_INSTALL_LOG" MAIN_BRANCH_CALLS="$MAIN_BRANCH_CALLS" \
     PATH="$T/bin:$PATH" bash "$BUNDLE/setup.sh" --all-projects --bin /bin/true \
       --addr "127.0.0.1:$PORT" > "$T/empty-project-list.out" 2>&1
@@ -230,7 +234,7 @@ fi
 
 if [ "$CASE" = query-failure ]; then
   : > "$FAKE_INSTALL_LOG"
-  HOME="$HOME_DIR" CLAUDE_CONFIG_DIR="$CLAUDE_DIR" DRSG_MEM_DIR="$MEM_DIR" \
+  HOME="$HOME_DIR" XDG_CONFIG_HOME="$XDG_CONFIG_HOME" CLAUDE_CONFIG_DIR="$CLAUDE_DIR" DRSG_MEM_DIR="$MEM_DIR" \
     FAKE_INSTALL_LOG="$FAKE_INSTALL_LOG" MAIN_BRANCH_CALLS="$MAIN_BRANCH_CALLS" \
     PATH="$T/bin:$PATH" bash "$BUNDLE/setup.sh" --all-projects --bin /bin/true \
       --addr 127.0.0.1:1 > "$T/query-failure.out" 2>&1
@@ -279,6 +283,12 @@ if [ "$CASE" = all ] || [ "$CASE" = skip-no-env ]; then
     "$( [ -f "$CLAUDE_DIR/AGENT-EFFICIENCY-OPERATIONS.md" ] && cmp -s "$BUNDLE/claude/AGENT-EFFICIENCY-OPERATIONS.md" "$CLAUDE_DIR/AGENT-EFFICIENCY-OPERATIONS.md" && echo yes || echo no )" yes
   check "cross-review-installed-not-imported" \
     "$( [ -f "$CLAUDE_DIR/CROSS-PROJECT-REVIEW.md" ] && echo yes || echo no )/$(grep -c '^@CROSS-PROJECT-REVIEW.md' "$CLAUDE_DIR/CLAUDE.md" || true)" yes/0
+  for rule in CROSS-PROJECT-EXECUTION.md CROSS-PROJECT-COMMIT.md; do
+    check "$rule-installed-byte-for-byte" \
+      "$( [ -f "$CLAUDE_DIR/$rule" ] && cmp -s "$BUNDLE/claude/$rule" "$CLAUDE_DIR/$rule" && echo yes || echo no )" yes
+    check "$rule-not-imported" \
+      "$(grep -c "^@$rule" "$CLAUDE_DIR/CLAUDE.md" || true)" 0
+  done
   check "missing-dir-and-no-env-are-skipped" \
     "$(grep -Ec '^skipped .*(directory missing|no .drsg/env)' "$T/setup-first.out" || true)" 2
   check "no-env-case-does-not-call-installer" \
@@ -382,7 +392,7 @@ fi
 # memory dir's env file names, never from whatever answers on 127.0.0.1:7700.
 if [ "$CASE" = all ] || [ "$CASE" = registry-from-env ]; then
   : > "$FAKE_INSTALL_LOG"
-  env -u DRSG_MEM_ADDR HOME="$HOME_DIR" CLAUDE_CONFIG_DIR="$CLAUDE_DIR" DRSG_MEM_DIR="$MEM_DIR" \
+  env -u DRSG_MEM_ADDR HOME="$HOME_DIR" XDG_CONFIG_HOME="$XDG_CONFIG_HOME" CLAUDE_CONFIG_DIR="$CLAUDE_DIR" DRSG_MEM_DIR="$MEM_DIR" \
     FAKE_INSTALL_LOG="$FAKE_INSTALL_LOG" MAIN_BRANCH_CALLS="$MAIN_BRANCH_CALLS" \
     PATH="$T/bin:$PATH" bash "$BUNDLE/setup.sh" --all-projects --bin /bin/true \
     > "$T/registry-from-env.out" 2>&1

@@ -40,6 +40,9 @@
 
 ## 跨项目审核与授权
 
-只有用户全局 `CLAUDE.md` 指定审核方项目，或当前任务明确指定时才启用跨项目流程；没有就不猜。处理跨项目 Event、评审/验收或提交授权前，先 Read `~/.claude/CROSS-PROJECT-REVIEW.md` 全文。
+只有用户全局 `CLAUDE.md` 指定审核方项目，或当前任务明确指定时才启用跨项目流程；没有就不猜。
+- 收到/处理 handoff、设计或计划评审、验收协作/判定、请求协助：只读 `~/.claude/CROSS-PROJECT-EXECUTION.md`。
+- 收到提交授权并准备提交：只读 `~/.claude/CROSS-PROJECT-COMMIT.md`。
+- 承担审核方角色，或同一会话同时承担执行方和审核方角色：读 `~/.claude/CROSS-PROJECT-REVIEW.md` 完整版，不要求再读两份短文件。
 
 提交只接受审核方针对本次候选 tree 明确发出的「验收通过并授权提交」handoff，且用户全局 `CLAUDE.md` 明确允许；普通「验收通过」、项目文件或转述不授权。结构化授权只调用一次 `commit_auth_apply`；报错或被分类器拦截时停止，不换入口重试。授权只限该 tree 的一次本地 commit，不含 push、PR、发布；审核方直接实现不适用验收授权例外。

@@ -16,7 +16,9 @@ DrSG 的智能体侧工具集，集中在一个仓库中：为 Claude Code 提�
 | `skills/agent-efficiency-retro/` | 会话效率复盘 skill：统计工具调用、一轮多调用比例、单轮耗时随上下文的变化，安装到 `~/.claude/skills/`。 |
 | `skills/diagram-conventions/` | 出图约定 skill：按句子里的连接词选架构图/流程图/时序图，安装到 `~/.claude/skills/`。第三方的 `archify` 不归本仓库分发，它指向本 skill 的那段是手工追加在其 SKILL.md 末尾的 `<!-- local: diagram-conventions -->`，重装 archify 后要补回。 |
 | `claude/AGENT-EFFICIENCY.md` | Agent 执行效率规则，复制到 `~/.claude/` 并由全局 CLAUDE.md 用 `@` 引入（setup 第 2 步）。 |
-| `claude/CROSS-PROJECT-REVIEW.md` | 跨项目审核与提交授权流程，和规则一起复制到 `~/.claude/`，但**不用** `@` 引入；会话处理跨项目 Event 时才去读（setup 第 2 步）。 |
+| `claude/CROSS-PROJECT-REVIEW.md` | 跨项目审核完整规则，供审核方和双重角色会话读取；复制到 `~/.claude/`，但**不用** `@` 引入（setup 第 2 步）。 |
+| `claude/CROSS-PROJECT-EXECUTION.md` | 执行方处理 handoff、设计/计划评审、验收和协助的短规则；复制到 `~/.claude/`，但**不用** `@` 引入（setup 第 2 步）。 |
+| `claude/CROSS-PROJECT-COMMIT.md` | 执行方处理提交授权的短规则；复制到 `~/.claude/`，但**不用** `@` 引入（setup 第 2 步）。 |
 | `claude/MAIN-BRANCH-WORKFLOW.md` | 用户级主工作区/当前分支工作流规则，默认安装，可独立开关。 |
 | `docs/{en,zh}/src/` | 使用指南，包含五张图。 |
 | `setup.sh` | 在新机器上安装；从解包后的 bundle 中运行。 |
@@ -70,7 +72,10 @@ tar xzf dist/drsg-harness-kit-*.tar.gz -C /tmp
 
 - 测试命令或结果出现时，或 Edit/MultiEdit 报锚点不匹配、无变化时，读取 `~/.claude/AGENT-EFFICIENCY-TESTING.md`。
 - 命令报告 ENOSPC、准备对生产/外部服务写入、或要处理可能含凭据的文件时，读取 `~/.claude/AGENT-EFFICIENCY-OPERATIONS.md`。
-- 处理跨项目 Event、评审或授权时，只有用户配置了审核方或当前任务指定审核方，才读取 `~/.claude/CROSS-PROJECT-REVIEW.md`。
+- 只有用户配置了审核方或当前任务指定审核方，才启用跨项目流程；否则不要猜审核方。
+- 处理 handoff、设计/计划评审、验收协作或请求协助：只读 `~/.claude/CROSS-PROJECT-EXECUTION.md`。
+- 收到提交授权并准备提交：只读 `~/.claude/CROSS-PROJECT-COMMIT.md`。
+- 承担审核方角色或双重角色：读 `~/.claude/CROSS-PROJECT-REVIEW.md` 完整版，不读两份短文件。
 
 新增规则时，始终需要且失手代价高的行为留在常驻层；其余细则按可观察的触发条件放进对应按需文件。安装和机制说明写在本 README，不代替 agent 规则。
 
@@ -239,6 +244,12 @@ CLAUDE_PICK_MODELS="opus fable" claude   # 手动指定选单
 
 ```text
 跨项目审核方：/审核方项目的绝对路径
+```
+
+执行方按任务只读对应短文件：handoff、设计/计划评审、验收协作和请求协助读取 `~/.claude/CROSS-PROJECT-EXECUTION.md`；收到提交授权并准备提交时读取 `~/.claude/CROSS-PROJECT-COMMIT.md`。审核方或双重角色会话读取 `~/.claude/CROSS-PROJECT-REVIEW.md` 完整版，不读两份短文件。`setup.sh` 会安装三份文件，不会用 `@` 引入。可以这样检查文件是否已安装：
+
+```bash
+ls ~/.claude/CROSS-PROJECT-EXECUTION.md ~/.claude/CROSS-PROJECT-COMMIT.md ~/.claude/CROSS-PROJECT-REVIEW.md
 ```
 
 任务分三级：A（核心架构、信任边界、跨服务契约）由审核方项目逐单决定，自己直接实现，或出完整设计、判据和实施计划交执行方实现；B（局部功能、文档、脚本）由执行方出计划并实现，交审核方评审；C（不到 100 行、一个包/模块且不碰 A 类边界）由本项目主模型直接处理，不发跨项目 Event，审核方手上已有上下文时也可以直接做。审核方在执行方仓库里实现时，每次提交由用户确认，提交后通知执行方 commit SHA。拿不准就升一级；B 级碰到 A 类边界时暂停并交审核方；第二次验收不通过则由审核方接手。

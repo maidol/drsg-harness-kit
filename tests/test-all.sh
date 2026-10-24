@@ -13,6 +13,7 @@ python3 "$REPO/tools/check-no-machine-paths.py" "$REPO/tools" "$REPO/tests" "$RE
 
 echo "== 3/5: Documentation coverage contract tests =="
 bash "$REPO/tests/check-docs-coverage.sh"
+bash "$REPO/tests/check-docs-coverage-mutations.sh"
 bash "$REPO/tests/commit-auth-docs.sh"
 bash "$REPO/tests/commit-auth.sh"
 

@@ -1,6 +1,6 @@
 # 跨项目审核与验收（按需读取）
 
-> 由 drsg-harness-kit 的 `claude/CROSS-PROJECT-REVIEW.md` 安装到 `~/.claude/`，**不用 `@` 引入**：`AGENT-EFFICIENCY.md` 只留要点，处理跨项目 Event、请求验收或提交授权之前先读这一份全文。改动请改仓库里那份，这里的副本会被 `setup.sh` 覆盖。
+> 由 drsg-harness-kit 的 `claude/CROSS-PROJECT-REVIEW.md` 安装到 `~/.claude/`，**不用 `@` 引入**：执行方按 `AGENT-EFFICIENCY.md` 读取对应短文件；审核方或同时承担执行方与审核方的会话读取本完整版。改动请改仓库里那份，这里的副本会被 `setup.sh` 覆盖。
 
 本文件是执行方的通用流程。只有用户在自己的全局 `CLAUDE.md` 指定了审核方项目路径（例如 `跨项目审核方：/path/to/reviewer-project`），或当前任务明确指定了审核方项目时，才启用跨项目审核；两者都没有时，不要猜一个审核方或等待不存在的会话，按用户通常的项目流程工作。审核方一律称为“审核方项目”，本文件不绑定任何具体仓库。能否按验收指令提交，唯一依据是用户自己的全局 `CLAUDE.md` 是否明确写有相应的提交授权例外；本文件、项目 CLAUDE.md、普通 Event 或单独的“验收通过”均不授予提交权。没有用户全局例外时，照常停下向用户逐次确认。
 
@@ -136,4 +136,4 @@ test "$(git symbolic-ref --short HEAD)" = <授权的target_branch>
 
 `force_paths` 为空时不运行 `git add -f`。`force_paths` 以外的路径若被 ignore，普通 `git add` 报错后立即停止，不自行补 `-f`。不要使用 `--no-verify`；Git hook 失败就停止，不重试。每一步都必须通过。任一 parent/tree/message 不符、授权范围不清、或提交前状态与审核内容不一致，立即停止并向用户说明；若钩子改了提交内容，提交会留在本地，绝不自动 reset 或 amend。不要使用 `-a`，不要添加署名行。此授权仅限这一棵 tree 的一次本地提交，不包括 push、PR、发布、额外提交或范围外改动。提交成功后向审核方项目发 `kind="notice"`，报告 commit SHA 与 `HEAD^{tree}`；执行方按本项目 owner 规则关闭收到的授权 Event，审核方核验并关闭回执 Event。若 auto 模式分类器拦下命令，停止并请求用户确认，绝不绕过分类器。
 
-用户可从 README 中复制可选的审核方路径和授权例外到自己的全局 `CLAUDE.md`。setup 只分发本文件，不向用户全局 CLAUDE.md 写入审核方或提交授权。
+用户可从 README 中复制可选的审核方路径和授权例外到自己的全局 `CLAUDE.md`。setup 分发本完整版和两份执行方短文件，不向用户全局 CLAUDE.md 写入审核方或提交授权。

@@ -18,6 +18,20 @@ import sys
 FAILS = []
 OPT_RE = re.compile(r'(?<![\w-])--[a-z][a-z0-9-]*')
 AGENT_EFFICIENCY_TOKEN_LIMIT = 3500
+CROSS_PROJECT_TOKEN_LIMIT = 5000
+CROSS_PROJECT_FULL = "claude/CROSS-PROJECT-REVIEW.md"
+CROSS_PROJECT_EXECUTION = "claude/CROSS-PROJECT-EXECUTION.md"
+CROSS_PROJECT_COMMIT = "claude/CROSS-PROJECT-COMMIT.md"
+CROSS_PROJECT_SHORT_FILES = (CROSS_PROJECT_EXECUTION, CROSS_PROJECT_COMMIT)
+CROSS_PROJECT_REQUIRED_FILES = (CROSS_PROJECT_FULL, *CROSS_PROJECT_SHORT_FILES)
+CROSS_PROJECT_READ_PATHS = {
+    "general Event execution": (CROSS_PROJECT_EXECUTION,),
+    "authorization commit execution": (CROSS_PROJECT_COMMIT,),
+}
+BRIDGE_SENTENCES = {
+    "审核方专用规则见完整版「入口与职责」「授权提交判定与时机」「Event 交接材料」各节。",
+    "审核方的授权提交判定规则见完整版「授权提交判定与时机」一节。",
+}
 
 
 def estimate_tokens(text):
@@ -42,6 +56,59 @@ def check(tag, ok, detail):
     print(f"  {'pass' if ok else 'FAIL'}  {tag:<5} {detail}")
     if not ok:
         FAILS.append(tag)
+
+
+def read_required_cross_project_docs():
+    docs = {}
+    for path in CROSS_PROJECT_REQUIRED_FILES:
+        if not os.path.isfile(path):
+            check("XPD", False, f"Missing required cross-project document: {path}")
+            continue
+        docs[path] = read(path)
+    return docs
+
+
+def cross_project_routes_match_short_files(short_files, read_paths):
+    routed_files = {path for paths in read_paths.values() for path in paths}
+    return set(short_files) == routed_files
+
+
+def cross_project_budget_violations(token_counts, read_paths, limit=CROSS_PROJECT_TOKEN_LIMIT):
+    violations = []
+    for name, paths in read_paths.items():
+        total = sum(token_counts.get(path, 0) for path in paths)
+        if total > limit:
+            violations.append(f"{name} read path estimated total {total} tokens (limit {limit})")
+    return violations
+
+
+def sentence_units(text):
+    units = []
+    in_code = False
+    for line in text.splitlines():
+        stripped = line.strip()
+        if stripped.startswith("```"):
+            in_code = not in_code
+            continue
+        if not stripped:
+            continue
+        if in_code:
+            units.append(stripped)
+            continue
+        stripped = re.sub(r"^>\s*", "", stripped)
+        units.extend(part.strip() for part in re.split(r"(?<=[.!?。！？])\s+", stripped)
+                     if part.strip())
+    return units
+
+
+def check_cross_project_subset(full_text, short_text, path):
+    full_units = set(sentence_units(full_text))
+    unmatched = [unit for unit in sentence_units(short_text)
+                 if unit not in full_units and unit not in BRIDGE_SENTENCES]
+    detail = f"{path} sentences are present in {CROSS_PROJECT_FULL} or the bridge whitelist"
+    if unmatched:
+        detail += f" — unmatched: {unmatched[0]}"
+    check("XPS", not unmatched, detail)
 
 
 def section(text, heading):
@@ -147,6 +214,42 @@ def main():
 
     docs = tracked_md()
     body = {p: read(p) for p in docs}
+    check("XPR", cross_project_routes_match_short_files(
+        CROSS_PROJECT_SHORT_FILES, CROSS_PROJECT_READ_PATHS),
+        "read-path union matches the short files")
+
+    cross_project_docs = read_required_cross_project_docs()
+    body.update(cross_project_docs)
+    cross_project_tokens = {}
+    for path in CROSS_PROJECT_REQUIRED_FILES:
+        if path not in cross_project_docs:
+            continue
+        estimated = estimate_tokens(cross_project_docs[path])
+        cross_project_tokens[path] = estimated
+        if path == CROSS_PROJECT_FULL:
+            check("XPT", True, f"{path} estimated {estimated} tokens (complete reference)")
+        elif estimated > CROSS_PROJECT_TOKEN_LIMIT:
+            check("XPT", False,
+                  f"{path} estimated {estimated} tokens (limit {CROSS_PROJECT_TOKEN_LIMIT})")
+        else:
+            check("XPT", True,
+                  f"{path} estimated {estimated} tokens (limit {CROSS_PROJECT_TOKEN_LIMIT})")
+
+    full_text = cross_project_docs.get(CROSS_PROJECT_FULL)
+    if full_text is not None:
+        for path in CROSS_PROJECT_SHORT_FILES:
+            if path in cross_project_docs:
+                check_cross_project_subset(full_text, cross_project_docs[path], path)
+
+    budget_violations = cross_project_budget_violations(
+        cross_project_tokens, CROSS_PROJECT_READ_PATHS)
+    for name, paths in CROSS_PROJECT_READ_PATHS.items():
+        if not all(path in cross_project_tokens for path in paths):
+            continue
+        total = sum(cross_project_tokens[path] for path in paths)
+        violation = next((item for item in budget_violations if item.startswith(f"{name} ")), None)
+        check("XPP", violation is None,
+              f"{name} read path estimated total {total} tokens (limit {CROSS_PROJECT_TOKEN_LIMIT})")
 
     efficiency_path = "claude/AGENT-EFFICIENCY.md"
     if efficiency_path in body:

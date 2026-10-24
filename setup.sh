@@ -31,7 +31,8 @@
 #   --tools-dir DIR   where the runtime copies go   (default ~/.drsg-memory/tools)
 #   --fetch-drsg      download a release binary if none is found (network)
 #   --no-skills       do not install the bundled skills, AGENT-EFFICIENCY.md
-#                     or CROSS-PROJECT-REVIEW.md
+#                     or the CROSS-PROJECT-REVIEW.md, CROSS-PROJECT-EXECUTION.md,
+#                     and CROSS-PROJECT-COMMIT.md rules
 #   --no-main-branch-workflow  leave the managed main-branch rule disabled
 #   --no-event-poller do not register the global to-do poller hooks
 #   --no-streak-hint do not register the global single-tool reminder hook
@@ -280,11 +281,12 @@ if [ "$SKILLS" -eq 1 ] && [ -d "$HERE/skills" ]; then
         cp "$HERE/claude/$rule" "$CLAUDE_DIR/$rule"
       fi
     done
-    # The cross-project review workflow sits next to the rules but is NOT
-    # @-imported: it costs no context until a session reads it.
-    if [ -f "$HERE/claude/CROSS-PROJECT-REVIEW.md" ]; then
-      cp "$HERE/claude/CROSS-PROJECT-REVIEW.md" "$CLAUDE_DIR/CROSS-PROJECT-REVIEW.md"
-    fi
+    # Cross-project rules are installed as files, never @-imported.
+    for rule in CROSS-PROJECT-REVIEW.md CROSS-PROJECT-EXECUTION.md CROSS-PROJECT-COMMIT.md; do
+      if [ -f "$HERE/claude/$rule" ]; then
+        cp "$HERE/claude/$rule" "$CLAUDE_DIR/$rule"
+      fi
+    done
     touch "$CLAUDE_DIR/CLAUDE.md"
     if ! grep -qx '@AGENT-EFFICIENCY.md' "$CLAUDE_DIR/CLAUDE.md"; then
       printf '\n@AGENT-EFFICIENCY.md\n' >> "$CLAUDE_DIR/CLAUDE.md"

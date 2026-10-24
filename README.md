@@ -23,7 +23,9 @@ read it before running it.
 | `skills/agent-efficiency-retro/` | retrospective on why a session was slow: tool-call counts, calls per turn, latency vs context size — installed under `~/.claude/skills/` |
 | `skills/diagram-conventions/` | choosing architecture / workflow / sequence diagrams by the connective in the sentence — installed under `~/.claude/skills/`. The third-party `archify` skill is not ours to ship, so its pointer to this one is a hand-added `<!-- local: diagram-conventions -->` block at the end of its SKILL.md; re-add it after reinstalling archify |
 | `claude/AGENT-EFFICIENCY.md` | agent efficiency rules, copied to `~/.claude/` and `@`-imported by the global CLAUDE.md (setup step 2) |
-| `claude/CROSS-PROJECT-REVIEW.md` | cross-project review and commit-authorization workflow, copied to `~/.claude/` next to the rules but **not** `@`-imported; sessions read it when they handle cross-project Events (setup step 2) |
+| `claude/CROSS-PROJECT-REVIEW.md` | full cross-project workflow for reviewer and dual-role sessions, copied to `~/.claude/` but **not** `@`-imported (setup step 2) |
+| `claude/CROSS-PROJECT-EXECUTION.md` | short rules for executor handoffs, design/plan review, acceptance and assistance, copied to `~/.claude/` but **not** `@`-imported (setup step 2) |
+| `claude/CROSS-PROJECT-COMMIT.md` | short rules for executor commit authorization, copied to `~/.claude/` but **not** `@`-imported (setup step 2) |
 | `claude/MAIN-BRANCH-WORKFLOW.md` | user-level primary-worktree/current-branch workflow, installed by default and independently toggleable |
 | `docs/{en,zh}/src/` | the guide, with five diagrams |
 | `setup.sh` | install on a fresh machine — runs from an unpacked bundle |
@@ -104,9 +106,14 @@ files to `~/.claude/`; only the resident file is imported by the global
 - When a command reports ENOSPC, before a production/external write, or when
   handling a file that may contain credentials, read
   `~/.claude/AGENT-EFFICIENCY-OPERATIONS.md`.
-- For a cross-project Event, review or authorization, when a reviewer is
-  configured or named by the current task, read
-  `~/.claude/CROSS-PROJECT-REVIEW.md`.
+- Use cross-project rules only when a reviewer is configured or named by the
+  current task; otherwise, do not assume a reviewer.
+- For handoffs, design/plan review, acceptance or assistance, read only
+  `~/.claude/CROSS-PROJECT-EXECUTION.md`.
+- When receiving commit authorization and preparing to commit, read only
+  `~/.claude/CROSS-PROJECT-COMMIT.md`.
+- Reviewer-role or dual-role sessions read the full
+  `~/.claude/CROSS-PROJECT-REVIEW.md`, not the two short files.
 
 When adding a rule, keep always-needed, high-risk behavior in the resident file;
 put details with observable triggers in the matching on-demand file. Installation
@@ -410,6 +417,12 @@ The distributed [agent workflow](claude/CROSS-PROJECT-REVIEW.md) supports plan r
 
 ```text
 跨项目审核方：/absolute/path/to/reviewer-project
+```
+
+For executor sessions, read only the matching short file: handoffs, design/plan review, acceptance and assistance use `~/.claude/CROSS-PROJECT-EXECUTION.md`; a received commit authorization being prepared for commit uses `~/.claude/CROSS-PROJECT-COMMIT.md`. Reviewer-role and dual-role sessions read the full `~/.claude/CROSS-PROJECT-REVIEW.md`, not the short files. `setup.sh` installs all three files without `@`-importing them. Check that they are present with:
+
+```bash
+ls ~/.claude/CROSS-PROJECT-EXECUTION.md ~/.claude/CROSS-PROJECT-COMMIT.md ~/.claude/CROSS-PROJECT-REVIEW.md
 ```
 
 Use three tiers: for A (core architecture, trust boundaries, or cross-service contracts) the reviewer project decides per task whether to implement it directly or to write the full design, criteria and plan for the executor; B (local features, docs, scripts) is planned and implemented by the executor and reviewed by the reviewer project; C (under 100 lines, one package/module, no A boundary) is handled locally by the project’s main model without a cross-project Event, or directly by the reviewer project when it already has the context. When the reviewer implements in an executor repository, the user confirms each commit and the executor is notified with the commit SHA. When uncertain, move up a tier; if B reaches an A boundary, pause for the reviewer project; after a second failed acceptance, the reviewer project takes the task over.

@@ -207,6 +207,19 @@ def check_layer2(repo_dir, claude_dir, deployed_tools_dir=None):
         elif digest_file(repo_rule) != digest_file(dep_rule):
             issues.append(f"Drift in {dep_rule} vs repository source")
 
+    # 1d. Cross-project execution rules: installed as files, never @-imported
+    for rule in ("CROSS-PROJECT-EXECUTION.md", "CROSS-PROJECT-COMMIT.md"):
+        repo_rule = os.path.join(repo_dir, "claude", rule)
+        dep_rule = os.path.join(claude_dir, rule)
+        if not os.path.exists(repo_eff):
+            continue
+        if not os.path.exists(repo_rule):
+            issues.append(f"Missing repository source {repo_rule}")
+        elif not os.path.exists(dep_rule):
+            issues.append(f"Missing {dep_rule}")
+        elif digest_file(repo_rule) != digest_file(dep_rule):
+            issues.append(f"Drift in {dep_rule} vs repository source")
+
     # 2. Global CLAUDE.md imports and managed main-branch workflow state
     global_claude_md = os.path.join(claude_dir, "CLAUDE.md")
     global_bytes = b""

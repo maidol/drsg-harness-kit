@@ -56,6 +56,10 @@ chmod +x "$PROJ/.claude/hooks/"*.py
 
 echo "rules" > "$REPO/claude/AGENT-EFFICIENCY.md"
 cp "$REPO/claude/AGENT-EFFICIENCY.md" "$CLAUDE_DIR/AGENT-EFFICIENCY.md"
+for rule in CROSS-PROJECT-REVIEW.md CROSS-PROJECT-EXECUTION.md CROSS-PROJECT-COMMIT.md; do
+  printf '%s source\n' "$rule" > "$REPO/claude/$rule"
+  cp "$REPO/claude/$rule" "$CLAUDE_DIR/$rule"
+done
 for rule in AGENT-EFFICIENCY-TESTING.md AGENT-EFFICIENCY-OPERATIONS.md; do
   echo "$rule" > "$REPO/claude/$rule"
   cp "$REPO/claude/$rule" "$CLAUDE_DIR/$rule"
@@ -433,6 +437,7 @@ check "n2_settings_permissions_reported" "$l2_n2_status" "failed"
 # modified copy fails L2, a synced copy passes.
 chmod 600 "$CLAUDE_DIR/settings.json"
 echo "cross" > "$REPO/claude/CROSS-PROJECT-REVIEW.md"
+rm -f "$CLAUDE_DIR/CROSS-PROJECT-REVIEW.md"
 python3 "$AUDIT" --repo "$REPO" --tools-dir "$DEPLOYED_TOOLS" --claude-dir "$CLAUDE_DIR" --project "$PROJ" --json > "$T/out_cross_missing.json" 2>&1 || true
 check "cross_review_missing_copy_is_drift" "$(find_layer_ok "$T/out_cross_missing.json" "L2")/$(find_layer_details "$T/out_cross_missing.json" "L2" | grep -c 'Missing .*CROSS-PROJECT-REVIEW.md' || true)" "failed/1"
 cp "$REPO/claude/CROSS-PROJECT-REVIEW.md" "$CLAUDE_DIR/CROSS-PROJECT-REVIEW.md"
@@ -442,6 +447,28 @@ echo "local edit" >> "$CLAUDE_DIR/CROSS-PROJECT-REVIEW.md"
 python3 "$AUDIT" --repo "$REPO" --tools-dir "$DEPLOYED_TOOLS" --claude-dir "$CLAUDE_DIR" --project "$PROJ" --json > "$T/out_cross_drift.json" 2>&1 || true
 check "cross_review_modified_copy_is_drift" "$(find_layer_ok "$T/out_cross_drift.json" "L2")/$(find_layer_details "$T/out_cross_drift.json" "L2" | grep -c 'Drift in .*CROSS-PROJECT-REVIEW.md' || true)" "failed/1"
 rm -f "$REPO/claude/CROSS-PROJECT-REVIEW.md" "$CLAUDE_DIR/CROSS-PROJECT-REVIEW.md"
+for rule in CROSS-PROJECT-EXECUTION.md CROSS-PROJECT-COMMIT.md; do
+  source_rule="$REPO/claude/$rule"
+  deployed="$CLAUDE_DIR/$rule"
+
+  mv "$source_rule" "$T/$rule.source"
+  python3 "$AUDIT" --repo "$REPO" --tools-dir "$DEPLOYED_TOOLS" --claude-dir "$CLAUDE_DIR" --project "$PROJ" --json > "$T/out_${rule}_source_missing.json" 2>&1 || true
+  check "${rule}-missing-source-is-reported" \
+    "$(find_layer_details "$T/out_${rule}_source_missing.json" "L2" | grep -Fc "Missing repository source $source_rule" || true)" 1
+  mv "$T/$rule.source" "$source_rule"
+
+  mv "$deployed" "$T/$rule.copy"
+  python3 "$AUDIT" --repo "$REPO" --tools-dir "$DEPLOYED_TOOLS" --claude-dir "$CLAUDE_DIR" --project "$PROJ" --json > "$T/out_${rule}_missing.json" 2>&1 || true
+  check "${rule}-missing-copy-is-reported" \
+    "$(find_layer_details "$T/out_${rule}_missing.json" "L2" | grep -Fc "Missing $deployed" || true)" 1
+  mv "$T/$rule.copy" "$deployed"
+
+  printf 'local edit\\n' >> "$deployed"
+  python3 "$AUDIT" --repo "$REPO" --tools-dir "$DEPLOYED_TOOLS" --claude-dir "$CLAUDE_DIR" --project "$PROJ" --json > "$T/out_${rule}_drift.json" 2>&1 || true
+  check "${rule}-drift-is-reported" \
+    "$(find_layer_details "$T/out_${rule}_drift.json" "L2" | grep -Fc "Drift in $deployed vs repository source" || true)" 1
+  cp "$source_rule" "$deployed"
+done
 chmod 644 "$CLAUDE_DIR/settings.json"
 chmod 600 "$CLAUDE_DIR/settings.json"
 
