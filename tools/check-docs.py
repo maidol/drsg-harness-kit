@@ -17,6 +17,12 @@ import sys
 
 FAILS = []
 OPT_RE = re.compile(r'(?<![\w-])--[a-z][a-z0-9-]*')
+AGENT_EFFICIENCY_TOKEN_LIMIT = 3500
+
+
+def estimate_tokens(text):
+    scaled = sum(1633 if ord(ch) >= 0x2E80 else 437 for ch in text)
+    return (scaled + 500) // 1000
 
 
 def tracked_md():
@@ -135,8 +141,18 @@ def main():
     parser.add_argument("--base", help="Git revision to compare against for new options/tools.")
     args = parser.parse_args()
 
+    top = subprocess.run(["git", "rev-parse", "--show-toplevel"], capture_output=True, text=True)
+    if top.returncode == 0:
+        os.chdir(top.stdout.strip())
+
     docs = tracked_md()
     body = {p: read(p) for p in docs}
+
+    efficiency_path = "claude/AGENT-EFFICIENCY.md"
+    if efficiency_path in body:
+        estimated = estimate_tokens(body[efficiency_path])
+        check("AE1", estimated <= AGENT_EFFICIENCY_TOKEN_LIMIT,
+              f"{efficiency_path} estimated {estimated} tokens (limit {AGENT_EFFICIENCY_TOKEN_LIMIT})")
 
     hits = [f"{n}: {l.strip()}" for n, l in enumerate(body["tools/README.md"].split("\n"), 1)
             if "python3 tools/" in l]

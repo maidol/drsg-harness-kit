@@ -19,6 +19,7 @@ import argparse
 import hashlib
 import json
 import os
+import re
 import subprocess
 import sys
 import urllib.request
@@ -210,10 +211,10 @@ def check_layer2(repo_dir, claude_dir):
     if os.path.exists(global_claude_md):
         with open(global_claude_md, "rb") as f:
             global_bytes = f.read()
-        for rule in (b"@AGENT-EFFICIENCY-TESTING.md", b"@AGENT-EFFICIENCY-OPERATIONS.md"):
-            if any(line.rstrip(b"\r\n") == rule
-                   for line in global_bytes.splitlines(keepends=True)):
-                issues.append(f"Unexpected @-import of {rule.decode()[1:]} in {global_claude_md}")
+        for match in re.finditer(
+                rb"(?<!\S)@\S*AGENT-EFFICIENCY-(TESTING|OPERATIONS)\.md", global_bytes):
+            rule = "AGENT-EFFICIENCY-" + match.group(1).decode("ascii") + ".md"
+            issues.append(f"Unexpected @-import of {rule} in {global_claude_md}")
         if b"@AGENT-EFFICIENCY.md" not in global_bytes:
             issues.append(f"Missing @AGENT-EFFICIENCY.md import in {global_claude_md}")
     else:

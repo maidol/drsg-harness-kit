@@ -654,6 +654,14 @@ python3 completeness-guard.py --json                  # 结构化输出
 
 它看哪些文件：名字只从 `.sh`、`.bash`、`.yml`、`.yaml`、`.py`、`.go` 和没有扩展名的脚本里抽，测试文件（`tests/`、`*_test.go`、`test_*.py` 等）一律不看；shell 的选项只认 `case` 分支标签。没写 `docs` 列表时，搜 `README*`、`*/README*.md` 和 `docs/**/*.md`。
 
+## 常驻 Agent 规则体积门（`check-docs.py`）
+
+`check-docs.py` 的 `AE1` 检查常驻文件 `claude/AGENT-EFFICIENCY.md`，估算上限为 3,500 tokens。从 `tools/` 目录运行下面的命令，可显示当前估算值和检查结果：
+
+```bash
+python3 check-docs.py
+```
+
 ## 受影响的测试（`affected-tests.py`）
 
 按工作区的改动选出它能影响到的测试，回归时不必每次跑整包。它读 `git diff <base>` 和未跟踪的文件，打印要跑的命令：

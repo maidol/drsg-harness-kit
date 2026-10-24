@@ -92,6 +92,26 @@ If the session runs in a worktree, `/exit` returns to the primary worktree but
 does not terminate Claude Code. Prefer `tmux attach` to reconnect to an existing
 process when one is running.
 
+## Agent efficiency rules
+
+`claude/AGENT-EFFICIENCY.md` is the always-loaded layer for high-risk rules and
+is capped at 3,500 estimated tokens. `setup.sh` copies it and the two on-demand
+files to `~/.claude/`; only the resident file is imported by the global
+`CLAUDE.md`.
+
+- When a test command or result occurs, or Edit/MultiEdit reports an unmatched
+  anchor or no change, read `~/.claude/AGENT-EFFICIENCY-TESTING.md`.
+- When a command reports ENOSPC, before a production/external write, or when
+  handling a file that may contain credentials, read
+  `~/.claude/AGENT-EFFICIENCY-OPERATIONS.md`.
+- For a cross-project Event, review or authorization, when a reviewer is
+  configured or named by the current task, read
+  `~/.claude/CROSS-PROJECT-REVIEW.md`.
+
+When adding a rule, keep always-needed, high-risk behavior in the resident file;
+put details with observable triggers in the matching on-demand file. Installation
+and mechanism notes belong in this README, not in agent rules.
+
 ## Compact handoff
 
 Project setup installs a managed `# Compact instructions` block in `CLAUDE.md`.
@@ -100,6 +120,18 @@ plan, current step, next action, unresolved errors, exact user constraints, and
 uncommitted files. The block is refreshed idempotently on setup; the rest of
 `CLAUDE.md` remains project-owned. If `CLAUDE.md` is tracked, setup prints an
 advisory because the managed block will appear in `git diff`.
+
+On a 1M-context setup, configure a 300k auto-compaction window in
+`.claude/settings.local.json` under `env`:
+
+```json
+{"env":{"CLAUDE_CODE_AUTO_COMPACT_WINDOW":"300000"}}
+```
+
+Use digits: `300k` is interpreted as 100k, not 300k. Longer contexts still make
+turns slower; caching saves cost, not time. `/clear` is a user-triggered new-session
+boundary; SessionStart injects an eligible pending handoff on `clear` after its
+hook output succeeds.
 
 The project PreCompact hook prints that block (read from the current
 `CLAUDE.md` on disk, alias comment removed) before each manual or automatic

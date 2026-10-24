@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Synthetic contract tests for documentation completeness & coverage gate (COV0-COV4).
+# Synthetic contract tests for documentation completeness & coverage gate (COV0-COV4) and resident rules size.
 # Fully hermetic: uses temporary git repositories.
 set -u
 
@@ -103,6 +103,8 @@ MD
 
 touch "$REPO/tools/doc-coverage-baseline.txt"
 cp "$CHECK_DOCS" "$REPO/tools/check-docs.py"
+mkdir -p "$REPO/claude"
+printf '%*s' 8010 '' | tr ' ' 'x' > "$REPO/claude/AGENT-EFFICIENCY.md"
 
 git -C "$REPO" add .
 git -C "$REPO" commit -q -m "initial baseline"
@@ -212,6 +214,39 @@ run_check && s8_res=0 || s8_res=$?
 cov2_staged=$(grep -q "COV2.*new-tool.py" "$T/out.txt" && echo "yes" || echo "no")
 check "scene8_staged_new_tool_fails_cov2" "$cov2_staged" "yes"
 git -C "$REPO" rm -q -f tools/new-tool.py
+
+# The resident efficiency rules stay at or below the fixed token budget.
+run_check && gate_under_rc=0 || gate_under_rc=$?
+check "resident_efficiency_at_limit_passes" "$gate_under_rc" 0
+check "resident_efficiency_at_limit_reports_estimate" \
+  "$(grep -q 'AE1.*3500.*3500' "$T/out.txt" && echo yes || echo no)" yes
+printf 'x' >> "$REPO/claude/AGENT-EFFICIENCY.md"
+run_check && gate_over_rc=0 || gate_over_rc=$?
+check "resident_efficiency_over_limit_fails" "$gate_over_rc" 1
+check "resident_efficiency_over_limit_reports_estimate_and_limit" \
+  "$(grep -q 'AE1.*3501.*3500' "$T/out.txt" && echo yes || echo no)" yes
+
+legacy_tokens=$(python3 - "$CHECK_DOCS" "$HERE/.." <<'PY'
+import pathlib
+import runpy
+import subprocess
+import sys
+
+check_docs, repo = sys.argv[1:]
+namespace = runpy.run_path(check_docs)
+legacy = subprocess.check_output(
+    ["git", "-C", repo, "show", "83f8ce3:claude/AGENT-EFFICIENCY.md"],
+    text=True,
+)
+print(namespace["estimate_tokens"](legacy))
+PY
+)
+check "resident_efficiency_legacy_calibration_is_7672" "$legacy_tokens" 7672
+
+# tools/README tells users to run check-docs.py from tools/; from there it must still check the whole repository.
+(cd "$REPO/tools" && python3 check-docs.py) > "$T/out.txt" 2>&1 || true
+check "check_docs_from_tools_dir_reports_ae1" \
+  "$(grep -q 'AE1.*3501.*3500' "$T/out.txt" && echo yes || echo no)" yes
 
 printf '\nPASS %d/%d\n' "$OK" "$RAN"
 [ "$OK" -eq "$RAN" ]

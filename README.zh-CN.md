@@ -64,9 +64,27 @@ tar xzf dist/drsg-harness-kit-*.tar.gz -C /tmp
 
 重新连接时，`claude -c` 会继续当前目录中最近的会话，不接收会话 ID；按 ID 恢复请用 `claude -r <session-id>`。如果会话在 worktree 中，`/exit` 会返回主工作区，但不会终止 Claude Code。若原进程仍在运行，优先使用 `tmux attach` 回到该进程。
 
+## Agent 执行效率规则
+
+`claude/AGENT-EFFICIENCY.md` 是常驻层，放高风险规则，估算上限为 3,500 tokens。`setup.sh` 会把它和两份按需文件复制到 `~/.claude/`；全局 `CLAUDE.md` 只引入常驻文件。
+
+- 测试命令或结果出现时，或 Edit/MultiEdit 报锚点不匹配、无变化时，读取 `~/.claude/AGENT-EFFICIENCY-TESTING.md`。
+- 命令报告 ENOSPC、准备对生产/外部服务写入、或要处理可能含凭据的文件时，读取 `~/.claude/AGENT-EFFICIENCY-OPERATIONS.md`。
+- 处理跨项目 Event、评审或授权时，只有用户配置了审核方或当前任务指定审核方，才读取 `~/.claude/CROSS-PROJECT-REVIEW.md`。
+
+新增规则时，始终需要且失手代价高的行为留在常驻层；其余细则按可观察的触发条件放进对应按需文件。安装和机制说明写在本 README，不代替 agent 规则。
+
 ## 压缩交接
 
 项目安装会在 `CLAUDE.md` 中加入 kit 管理的 `# Compact instructions` 区块，要求压缩摘要单列结构化的「交接」章节，记录计划、当前步骤、下一步、未解决报错、用户原话约束和未提交文件。重复安装会幂等刷新这一区块，文件其余部分仍归项目所有。若 `CLAUDE.md` 已被 Git 跟踪，安装时会提示该区块会出现在 `git diff` 中，供你自行决定是否提交。
+
+使用 1M 上下文时，可在 `.claude/settings.local.json` 的 `env` 中把自动压缩窗口设为 300k：
+
+```json
+{"env":{"CLAUDE_CODE_AUTO_COMPACT_WINDOW":"300000"}}
+```
+
+请填纯数字：`300k` 会被读成 100k，而不是 300k。上下文越长，每轮仍会变慢；缓存只省钱，不省时间。`/clear` 是用户主动触发的新会话边界；SessionStart 会在 `clear` 时注入符合条件的待处理交接，并在 hook 成功输出后标记为已消费。
 
 项目 PreCompact hook 在每次手动或自动压缩前输出这一区块（读自磁盘上当前的 `CLAUDE.md`，去掉别名注释），Claude Code 会把它作为 `Additional Instructions` 附在压缩提示词末尾。没有它时，长会话的摘要常常漏掉「交接」，续接的会话也只能看到上次压缩时保存的旧版 `CLAUDE.md`。项目没有该区块或设置了 `DRSG_COMPACT_HANDOFF=0` 时不输出任何内容。`/compact` 之后 Claude Code 会在界面上回显这段文字。
 

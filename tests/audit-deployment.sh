@@ -182,6 +182,17 @@ import_line = ("@" + sys.argv[2]).encode()
 path.write_bytes(b"".join(line for line in path.read_bytes().splitlines(keepends=True)
                        if line.rstrip(b"\r\n") != import_line))
 PY
+
+  printf '@~/.claude/%s \n' "$rule" >> "$CLAUDE_DIR/CLAUDE.md"
+  python3 "$AUDIT" --repo "$REPO" --tools-dir "$DEPLOYED_TOOLS" --claude-dir "$CLAUDE_DIR" --project "$PROJ" --json > "$T/out_${short}_prefixed_import.json" 2>&1 || true
+  check "on-demand-$short-prefixed-import-is-reported" "$(find_layer_details "$T/out_${short}_prefixed_import.json" "L2" | grep -Fc "Unexpected @-import of $rule in $CLAUDE_DIR/CLAUDE.md" || true)" 1
+  python3 - "$CLAUDE_DIR/CLAUDE.md" "$rule" <<'PY'
+import pathlib, sys
+path = pathlib.Path(sys.argv[1])
+import_line = ("@~/.claude/" + sys.argv[2] + " ").encode()
+path.write_bytes(b"".join(line for line in path.read_bytes().splitlines(keepends=True)
+                       if line.rstrip(b"\r\n") != import_line))
+PY
 done
 check "PostCompact registration passes L4 when present" "$(find_layer_details "$T/out1.json" "L4" | grep -c 'compact_handoff.py (PostCompact)' || true)" "0"
 check "PreCompact registration passes L4 when present" "$(find_layer_details "$T/out1.json" "L4" | grep -c 'compact_handoff.py (PreCompact)' || true)" "0"

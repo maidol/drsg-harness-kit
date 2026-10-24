@@ -28,25 +28,72 @@ check claude/CROSS-PROJECT-REVIEW.md 'C 级被用户要求发给审核方时，�
 check claude/CROSS-PROJECT-REVIEW.md '能否授权看这次有没有真的验收，不看级别标签'
 check claude/CROSS-PROJECT-REVIEW.md 'commit_auth_apply'
 check claude/CROSS-PROJECT-REVIEW.md '审核方直接实现时'
-check claude/AGENT-EFFICIENCY.md 'old_string` 和 `new_string` 完全相同的 Edit 不要发'
-check claude/AGENT-EFFICIENCY.md '`old_string` 取能唯一定位的最短片段，一般一两行、80 个字符以内'
-check claude/AGENT-EFFICIENCY.md '文件里嵌着另一种语言时，不做细粒度 Edit'
-check claude/AGENT-EFFICIENCY.md '变异自检：每个变异要配一个只有那一道门拦得住的用例。'
-check claude/AGENT-EFFICIENCY.md '变异自检只跑对应的用例'
-check claude/AGENT-EFFICIENCY.md '算出候选 tree 之后就不再改文件'
+check claude/AGENT-EFFICIENCY-TESTING.md 'old_string` 和 `new_string` 完全相同的 Edit 不要发'
+check claude/AGENT-EFFICIENCY-TESTING.md '`old_string` 取能唯一定位的最短片段，一般一两行、80 个字符以内'
+check claude/AGENT-EFFICIENCY-TESTING.md '文件里嵌着另一种语言时，不做细粒度 Edit'
+check claude/AGENT-EFFICIENCY-TESTING.md '变异自检：每个变异要配一个只有那一道门拦得住的用例。'
+check claude/AGENT-EFFICIENCY-TESTING.md '变异自检只跑对应的用例'
+check claude/AGENT-EFFICIENCY-TESTING.md '算出候选 tree 之后就不再改文件'
 check claude/AGENT-EFFICIENCY.md '挨得近的几处合成一个覆盖整段的 Edit'
+check claude/AGENT-EFFICIENCY.md '这时不要凭记忆换个写法再发。先确认现状：用 Grep 搜你要加的新内容，或者 Read 那一段。'
+check claude/AGENT-EFFICIENCY.md 'tree 没变，就不重做验证'
+check claude/AGENT-EFFICIENCY.md '回归只跑受影响的测试'
+check claude/AGENT-EFFICIENCY.md '先在父提交上单跑'
+check claude/AGENT-EFFICIENCY.md '被权限检查拦下的命令，本会话不再重跑'
+check claude/AGENT-EFFICIENCY.md '私钥的值不进任何输出'
+check claude/AGENT-EFFICIENCY.md '可能带凭据的文件'
+check claude/AGENT-EFFICIENCY.md '真实账号、邮箱、域名、主机名不进代码、测试、文档和提交'
+check claude/AGENT-EFFICIENCY.md '/compact'
+check claude/AGENT-EFFICIENCY.md '/clear'
+check claude/AGENT-EFFICIENCY.md '压缩摘要'
+check claude/AGENT-EFFICIENCY.md 'completeness-guard.py'
+check claude/AGENT-EFFICIENCY.md 'affected-tests.py --base'
+check claude/CROSS-PROJECT-REVIEW.md '只调用 `event_done`，不回 notice'
+check claude/CROSS-PROJECT-REVIEW.md '挂起 handoff 时先发 notice，写明等待什么及满足条件后会做什么'
+check README.md 'AGENT-EFFICIENCY-TESTING.md'
+check README.zh-CN.md 'AGENT-EFFICIENCY-OPERATIONS.md'
+check tools/README.md 'AE1'
+check tools/README.md '3,500 estimated tokens'
+check tools/README.md 'python3 check-docs.py'
+check tools/README.md 'prints the estimate'
+check tools/README.zh-CN.md 'AE1'
+check tools/README.zh-CN.md '3,500 tokens'
+check tools/README.zh-CN.md 'python3 check-docs.py'
+check tools/README.zh-CN.md '显示当前估算值'
 if grep -q '^- 由来' "$REPO/claude/AGENT-EFFICIENCY.md"; then
   printf 'FAIL claude/AGENT-EFFICIENCY.md still has 由来 bullets; keep origins out of the distributed rules\n' >&2
   CONTENT_FAILS=$((CONTENT_FAILS + 1))
 fi
 check claude/CROSS-PROJECT-REVIEW.md '不适用验收授权例外'
 check claude/AGENT-EFFICIENCY.md '不适用验收授权例外'
+check claude/AGENT-EFFICIENCY.md '先 Read `~/.claude/AGENT-EFFICIENCY-TESTING.md`'
+check claude/AGENT-EFFICIENCY.md '先 Read `~/.claude/AGENT-EFFICIENCY-OPERATIONS.md`'
 if grep -q '^@' "$REPO/claude/CROSS-PROJECT-REVIEW.md"; then
   printf 'FAIL claude/CROSS-PROJECT-REVIEW.md must not contain @-imports; it is read on demand\n' >&2
   CONTENT_FAILS=$((CONTENT_FAILS + 1))
 fi
 check README.md 'decides per task whether to implement it directly'
 check README.zh-CN.md '自己直接实现，或出完整设计、判据和实施计划交执行方实现'
+check README.md 'When a test command or result occurs'
+check README.zh-CN.md '测试命令或结果出现时'
+check README.md 'AGENT-EFFICIENCY-TESTING.md'
+check README.zh-CN.md 'AGENT-EFFICIENCY-TESTING.md'
+check README.md 'AGENT-EFFICIENCY-OPERATIONS.md'
+check README.zh-CN.md 'AGENT-EFFICIENCY-OPERATIONS.md'
+check README.md 'CROSS-PROJECT-REVIEW.md'
+check README.zh-CN.md 'CROSS-PROJECT-REVIEW.md'
+check README.md '300000'
+check README.zh-CN.md '300000'
+check README.md '300k'
+check README.zh-CN.md '300k'
+check README.md 'The default retention is 72'
+check README.zh-CN.md '72 小时'
+check README.md '10 records'
+check README.zh-CN.md '10 条'
+check README.md 'DRSG_COMPACT_HANDOFF=0'
+check README.zh-CN.md 'DRSG_COMPACT_HANDOFF=0'
+check README.md '/clear'
+check README.zh-CN.md '/clear'
 check tools/README.md 'commit_auth_post'
 check tools/README.md 'commit_auth_apply'
 check tools/README.md 'target_branch'
@@ -66,11 +113,11 @@ if [ "$CONTENT_FAILS" -ne 0 ]; then
   printf 'FAIL %d content check(s) failed\n' "$CONTENT_FAILS" >&2
   exit 1
 fi
-python3 - "$REPO/claude/AGENT-EFFICIENCY.md" "$REPO/claude/CROSS-PROJECT-REVIEW.md" <<'PY'
+python3 - "$REPO/claude/AGENT-EFFICIENCY.md" "$REPO/claude/AGENT-EFFICIENCY-TESTING.md" "$REPO/claude/CROSS-PROJECT-REVIEW.md" <<'PY'
 import sys
 text = open(sys.argv[1], encoding="utf-8").read()
-cross = open(sys.argv[2], encoding="utf-8").read()
-assert len(text) <= 7000, "AGENT-EFFICIENCY.md has %d chars; keep it at most 7000 and put details in CROSS-PROJECT-REVIEW.md" % len(text)
+testing = open(sys.argv[2], encoding="utf-8").read()
+cross = open(sys.argv[3], encoding="utf-8").read()
 e1 = """## Edit 失败：先看文件现状，再重发
 
 - **发之前**：`old_string` 和 `new_string` 完全相同的 Edit 不要发，它什么也不改，只会报 `No changes to make`。一批 Edit 只放这一轮真正要改的地方；本会话里已经改成功的不要再发一遍，拿不准就先 Grep 新内容在不在。锚点从最近一次 Read 的原文里抄，不凭记忆写；同一批里前一处改过的文字，后一处不要再拿来当锚点。
@@ -90,10 +137,11 @@ e7 = """## 旧测试被你的改动弄红了：先分清是行为错了，还是
 status = text.index("## 状态检查：")
 verification = text.index("## 验证：")
 context = text.index("## 上下文：")
-e1_at = text.index(e1)
-e7_at = text.index(e7)
-assert status < e1_at < verification
-assert verification < e7_at < context
+e1_at = testing.index(e1)
+testing_verification = testing.index("## 验证：")
+e7_at = testing.index(e7)
+assert status < verification < context
+assert e1_at < testing_verification < e7_at
 checklist = "改过的现有断言清单（没改过就写「无」）"
 request = cross.index("- **实现验收请求**：")
 next_item = cross.find("\n- ", request + 1)

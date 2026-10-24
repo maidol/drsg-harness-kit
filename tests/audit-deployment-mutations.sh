@@ -67,10 +67,17 @@ mutants = [
     ),
     (
         "on-demand @-import check",
-        '            if any(line.rstrip(b"\\r\\n") == rule',
-        '            if False and any(line.rstrip(b"\\r\\n") == rule',
+        '        for match in re.finditer(\n                rb"(?<!\\S)@\\S*AGENT-EFFICIENCY-(TESTING|OPERATIONS)\\.md", global_bytes):\n            rule = "AGENT-EFFICIENCY-" + match.group(1).decode("ascii") + ".md"\n            issues.append(f"Unexpected @-import of {rule} in {global_claude_md}")',
+        '        if False:\n            pass',
         "on-demand-OPERATIONS-import-is-reported",
         "on-demand-OPERATIONS-import-is-reported",
+    ),
+    (
+        "on-demand @-import exact-line matcher",
+        '        for match in re.finditer(\n                rb"(?<!\\S)@\\S*AGENT-EFFICIENCY-(TESTING|OPERATIONS)\\.md", global_bytes):\n            rule = "AGENT-EFFICIENCY-" + match.group(1).decode("ascii") + ".md"\n            issues.append(f"Unexpected @-import of {rule} in {global_claude_md}")',
+        '        for rule in (b"@AGENT-EFFICIENCY-TESTING.md", b"@AGENT-EFFICIENCY-OPERATIONS.md"):\n            if any(line.rstrip(b"\\r\\n") == rule\n                   for line in global_bytes.splitlines(keepends=True)):\n                issues.append(f"Unexpected @-import of {rule.decode()[1:]} in {global_claude_md}")',
+        "on-demand-TESTING-prefixed-import-is-reported",
+        "on-demand-TESTING-prefixed-import-is-reported",
     ),
 ]
 

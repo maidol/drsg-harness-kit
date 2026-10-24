@@ -1060,6 +1060,16 @@ What it reads: names are taken from `.sh`, `.bash`, `.yml`, `.yaml`, `.py`,
 Without a `docs` list it searches `README*`, `*/README*.md` and
 `docs/**/*.md`.
 
+## Resident agent-rules budget (`check-docs.py`)
+
+`check-docs.py` reports `AE1` when the resident `claude/AGENT-EFFICIENCY.md`
+exceeds 3,500 estimated tokens. From `tools/`, run it; it prints the estimate and
+result:
+
+```bash
+python3 check-docs.py
+```
+
 ## Affected tests (`affected-tests.py`)
 
 Selects the tests a working-tree change can reach, so a regression run does not
