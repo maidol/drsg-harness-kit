@@ -24,6 +24,9 @@
 #                    itself needs this named once; it is remembered after that.
 #   DRSG_CODE_DB     <repo>/graph.drsg        the db *directory* (native backend)
 #   DRSG_CODE_PLANE  the repo's own name      plane to keep in sync
+#   DRSG_CODE_CONFIG ~/.drsg-memory/codegraph.toml
+#                    the drsg config every daemon started here reads, when it
+#                    exists; with no such file, none at all (see code_config_env)
 #
 # Usage: codegraph.sh {install|start|stop|restart|status|rules|hook|logs}
 #                     [--dir PATH] [--port N] [--force]
@@ -46,6 +49,8 @@
 #   --port N    listen on 127.0.0.1:N instead of the port .mcp.json records.
 #               `start`/`restart` persist the new port into .mcp.json, because
 #               a daemon the clients cannot reach is worse than no daemon.
+#   A daemon reads $DRSG_CODE_CONFIG if that file exists and no config
+#   otherwise — not the caller's DRSG_CONFIG, not a drsg.toml where it stood.
 #   --force     rebuild the plane from the whole tree before serving (drop,
 #               re-create, fold every file). Only needed after changing which
 #               plugins are installed; a normal start catches up incrementally
@@ -92,6 +97,9 @@ if [ -z "$REPO" ]; then
 fi
 
 DB="${DRSG_CODE_DB:-$REPO/graph.drsg}"
+# Absolute, because the daemon is started from $STATE rather than from the
+# caller's directory (see start()): a relative path would point somewhere else.
+case "$DB" in /*) ;; *) DB="$PWD/$DB" ;; esac
 # Matches drsg's own default_plane(): the source directory's name.
 PLANE="${DRSG_CODE_PLANE:-$(basename "$REPO")}"
 MCP_JSON="$REPO/.mcp.json"
@@ -132,6 +140,26 @@ elif [ -x "$SELF_REPO/target/release/drsg" ]; then
 else
   BIN="drsg"
 fi
+# Same reason as DB: a path with a slash in it means the caller's directory.
+# A bare name stays a PATH lookup.
+case "$BIN" in /*) ;; */*) BIN="$PWD/$BIN" ;; esac
+
+# The one drsg config every daemon this script starts reads, for every
+# repository alike — `[plugins] hostcall_mb`, say, for a Go tree whose
+# `assemble` passes wasmtime's 128 MiB in one call. drsg reads `--config`, then
+# `$DRSG_CONFIG`, then `./drsg.toml` in its working directory; left to that last
+# one, a daemon read whichever drsg.toml sat where the session that happened to
+# start it was standing (on 2026-10-25, 12 of 13 daemons were reading one
+# repository's own). So: this file if it exists, and no config at all if it
+# does not — never one inherited from the caller's environment or directory.
+CODE_CONFIG="${DRSG_CODE_CONFIG:-$HOME/.drsg-memory/codegraph.toml}"
+code_config_env() {
+  if [ -f "$CODE_CONFIG" ]; then
+    CODE_ENV=(DRSG_CONFIG="$CODE_CONFIG")
+  else
+    CODE_ENV=(-u DRSG_CONFIG)
+  fi
+}
 
 # Address and token both come from .mcp.json, the file the MCP clients read.
 # Regenerating a token here would silently invalidate every client config that
@@ -267,10 +295,16 @@ start() {
     exit 1
   fi
   mkdir -p "$STATE"
-  # setsid so the daemon outlives the shell that ran this script.
-  DRSG_TOKEN="$TOKEN" setsid nohup "$BIN" --db "$DB" serve --addr "$ADDR" \
-      watch --dir "$REPO" --plane "$PLANE" ${force:+$force} \
-      >> "$LOG" 2>&1 < /dev/null &
+  code_config_env
+  # setsid so the daemon outlives the shell that ran this script. Started from
+  # $STATE, which holds no drsg.toml, with DRSG_CONFIG set or removed by
+  # code_config_env: which config it reads must not depend on who started it.
+  (
+    cd "$STATE"
+    env "${CODE_ENV[@]}" DRSG_TOKEN="$TOKEN" setsid nohup "$BIN" --db "$DB" serve --addr "$ADDR" \
+        watch --dir "$REPO" --plane "$PLANE" ${force:+$force} \
+        >> "$LOG" 2>&1 < /dev/null &
+  )
   for _ in $(seq 1 40); do healthy && break; sleep 0.5; done
   local pid; pid="$(db_holder_pid)"
   if [ -z "$pid" ] || ! healthy; then
@@ -625,7 +659,12 @@ install() {
   require_bin
   if [ ! -f "$MCP_JSON" ] || ! grep -q '"drsg-watch"' "$MCP_JSON" 2>/dev/null; then
     echo "== bootstrapping $REPO with \`drsg init\` (full digest, this takes a while)"
-    "$BIN" init --dir "$REPO" ${port:+--addr "127.0.0.1:$port"} || {
+    code_config_env
+    # drsg init starts its own daemon from $REPO and passes its environment on;
+    # DRSG_CONFIG wins over a drsg.toml sitting there. With no shared file there
+    # is no DRSG_CONFIG to win, so this first daemon reads the repository's own
+    # drsg.toml, if it has one, until a restart starts it from $STATE.
+    env "${CODE_ENV[@]}" "$BIN" init --dir "$REPO" ${port:+--addr "127.0.0.1:$port"} || {
       echo "ERROR: \`drsg init\` failed — nothing was changed in $REPO." >&2
       exit 1
     }

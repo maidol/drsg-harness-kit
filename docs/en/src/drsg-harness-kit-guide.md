@@ -375,6 +375,26 @@ it is remembered afterwards:
 DRSG_CODE_BIN=<path-to-drsg> tools/codegraph.sh install --dir <repo-root> --port <port>
 ```
 
+Every code-graph daemon `codegraph.sh` starts reads one drsg config,
+`~/.drsg-memory/codegraph.toml` (`DRSG_CODE_CONFIG` names another file), and no
+config at all when that file does not exist — never a `drsg.toml` from the
+directory the caller stood in, nor a `DRSG_CONFIG` inherited from the caller.
+One exception: the first daemon `install` starts through `drsg init` runs in the
+repository root, so with no `codegraph.toml` it reads that repository's own
+`drsg.toml`, if there is one, until the next `restart`.
+A repository whose Go tree passes wasmtime's 128 MiB in one `assemble` needs:
+
+```toml
+[plugins]
+hostcall_mb = 2048
+```
+
+A change takes effect when the daemon restarts:
+
+```bash
+~/.drsg-memory/tools/codegraph.sh restart --dir <repo-root>
+```
+
 ### 2.4 Install the router and usage report independently
 
 The router and usage report are separate optional components. Installing the memory layer or a local code

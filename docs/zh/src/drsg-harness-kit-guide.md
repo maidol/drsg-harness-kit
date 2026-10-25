@@ -320,6 +320,24 @@ tools/codegraph.sh restart --dir <repo-root> --force   # 整库重建，见下
 DRSG_CODE_BIN=<path-to-drsg> tools/codegraph.sh install --dir <repo-root> --port <port>
 ```
 
+`codegraph.sh` 启动的每个代码图守护进程只读一份 drsg 配置：`~/.drsg-memory/codegraph.toml`
+（用 `DRSG_CODE_CONFIG` 可以指定别的文件）；这个文件不存在时什么配置都不读。
+不会读调用方所在目录下的 `drsg.toml`，也不会继承调用方的 `DRSG_CONFIG`。
+例外：`install` 通过 `drsg init` 拉起的第一个守护进程在仓库根目录运行，没有 `codegraph.toml` 时，
+它会读这个仓库自己的 `drsg.toml`（如果有），直到下一次 `restart`。
+Go 仓库的 `assemble` 一次超过 wasmtime 的 128 MiB 时，写上：
+
+```toml
+[plugins]
+hostcall_mb = 2048
+```
+
+改完重启守护进程才生效：
+
+```bash
+~/.drsg-memory/tools/codegraph.sh restart --dir <repo-root>
+```
+
 ### 2.4 独立安装 router 和用量报告
 
 router 和用量报告是两个独立的可选组件，不会因为安装记忆层或代码图而自动启用。
