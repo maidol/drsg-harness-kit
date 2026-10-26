@@ -767,8 +767,8 @@ def call_tool(name, args, token):
                     os.path.basename(proj), token,
                     symbols=args.get("symbols"), verb=args.get("verb"),
                     plane=args.get("plane"), from_path=proj,
-                    reply_to=args.get("reply_to"),
-                    supersedes=args.get("supersedes")),
+                    reply_to=args.get("reply_to") or None,
+                    supersedes=args.get("supersedes") or None),
             target)
 
     if name == "event_list":

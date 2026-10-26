@@ -152,6 +152,20 @@ class ReplyToTests(unittest.TestCase):
         self.assertEqual(props["from_path"], sender)
         self.assertNotIn("reply_to", props)
 
+    def test_empty_optional_strings_are_treated_as_absent(self):
+        # 10-26 dr-strange (gpt-6-luna) filled every optional field with ""
+        # and was refused ~20 times with "reply_to must be a non-empty Event key".
+        result = self.mcp.call_tool("event_post", {
+            "recipient": recipient, "summary": "请求协助：empty optionals",
+            "kind": "handoff", "ref": "", "reply_to": "", "supersedes": "",
+            "symbols": [], "verb": "context", "plane": ""}, "fake-token")
+        props = self.graph.created[-1]["properties"]
+        self.assertEqual(props["summary"], "请求协助：empty optionals")
+        self.assertNotIn("reply_to", props)
+        self.assertNotIn("supersedes", props)
+        self.assertTrue(result.startswith("posted "), result)
+        self.assertNotIn("superseded", result)
+
     def test_invalid_reply_targets_refuse_before_event_creation(self):
         cases = [
             ("missing", "不存在"),
