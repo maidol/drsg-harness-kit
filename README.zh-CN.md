@@ -210,7 +210,7 @@ Event lane for this session (Enter = default lane, Ctrl+C = cancel):
 > 1
 ```
 
-设置 `CLAUDE_PICK_LANES=0` 可单次关闭车道菜单。它与 `CLAUDE_PICK_MODEL=0` 相互独立：后者只跳过模型菜单。父 shell 已设置 `DRSG_EVENT_LANES`（包括空值）时不显示车道菜单，并原样传给子进程。菜单中直接回车不会给子进程设置该变量；选中的名字只传给这一次 Claude 进程。也可不弹菜单而手动指定，例如 `DRSG_EVENT_LANES=alpha,beta claude --resume`。
+设置 `CLAUDE_PICK_LANES=0` 可单次关闭车道菜单。它与 `CLAUDE_PICK_MODEL=0` 相互独立：后者只跳过模型菜单。父 shell 已设置 `DRSG_EVENT_LANES`（包括空值）时不显示车道菜单，并原样传给子进程。菜单中直接回车不会给子进程设置该变量；选中的名字只传给这一次 Claude 进程。也可不弹菜单而手动指定，例如 `DRSG_EVENT_LANES=alpha,beta claude --resume`。resume 时改选车道后，首次可见的提示会显示当前车道，并说明之前的车道声明已失效。
 
 ```bash
 /tmp/drsg-harness-kit-*/setup.sh --model-picker  # 安装/更新时显式启用

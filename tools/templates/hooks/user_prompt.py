@@ -457,13 +457,34 @@ def main():
     # swallow it. Swallowed whole on error for the same reason shadow_bm25 is —
     # a coordination extra must never cost the user a prompt.
     global NOTICE
+    NOTICE = None
+    pending = None
+    lane_notice = ""
+    try:
+        pending = _common.take_resume_lane_change(proj_dir, rec["session"])
+        if pending:
+            old_lanes = pending["old_lanes"]
+            new_lanes = pending["new_lanes"]
+            old_text = "默认车道" if old_lanes == ["*"] else "、".join(old_lanes)
+            new_text = "默认车道" if new_lanes == ["*"] else "、".join(new_lanes)
+            owner = event_owner(proj_dir, rec["session"])
+            lane_notice = ("车道已变：当前车道 %s；之前声明的车道 %s 已失效。%s"
+                           % (new_text, old_text, owner or ""))
+            NOTICE = lane_notice
+            _common.commit_resume_lane_change(proj_dir, rec["session"], pending)
+    except Exception as e:
+        rec["lane_notice_error"] = type(e).__name__
     try:
         ev_lines = event_notice(proj_dir, rec["session"], token)
         if ev_lines:
             # Which session acts on them: every session sees the list, one executes it.
             owner = event_owner(proj_dir, rec["session"])
-            NOTICE = ("⏳ drsg memory — open for this project:\n"
-                      + "\n".join(([owner] if owner else []) + ev_lines))
+            if lane_notice:
+                NOTICE = ("⏳ drsg memory — open for this project:\n"
+                          + "\n".join([lane_notice] + ev_lines))
+            else:
+                NOTICE = ("⏳ drsg memory — open for this project:\n"
+                          + "\n".join(([owner] if owner else []) + ev_lines))
             rec["events_shown"] = len(ev_lines)
     except Exception as e:
         rec["events_error"] = type(e).__name__

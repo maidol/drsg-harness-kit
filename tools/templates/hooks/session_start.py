@@ -779,6 +779,16 @@ def main(now=None):
         hook_out(system_message=drift_message or None,
                  **compact_context_kwargs(source))
         return
+    sid = data.get("session_id", "")
+    try:
+        lanes = _common._hook_lanes(_common._claude_pid())
+        if source in ("startup", "clear"):
+            _common.write_last_lanes(proj_dir, sid, lanes)
+        elif source == "resume":
+            _common.stage_resume_lane_change(proj_dir, sid)
+        owner_context = _common._owner_context(proj_dir, sid, source)
+    except Exception:
+        owner_context = ""
     try:
         rpc("db.stats", {}, token)  # liveness probe
     except Exception:
@@ -791,7 +801,6 @@ def main(now=None):
         return
 
     backup_notice = backup_warning(now) if source == "startup" else ""
-    sid = data.get("session_id", "")
     slug = os.path.basename(os.path.normpath(proj_dir))
     ts = int(time.time())
 
@@ -859,7 +868,7 @@ def main(now=None):
         print(f"[drsg-memory] orphan_facts failed: {e}", file=sys.stderr)
 
     # 2. Inject the compressed briefing and recent sessions except after compaction.
-    parts = []
+    parts = [owner_context] if owner_context else []
     # After a compaction the briefing is not injected, so building it would be
     # RPC round trips thrown away; telemetry records facts=None for compact.
     brief, n_facts = (ensure_briefing(proj_dir, pid, token)
@@ -899,10 +908,12 @@ def main(now=None):
     user_msg = None
     if events:
         ev_lines = [e["line"] for e in events]
-        # Which session acts on them: every session sees the list, one executes it.
+        # Keep the established owner wording in the terminal Event block; the
+        # model owner snapshot was injected independently above.
+        terminal_lines = list(ev_lines)
         owner = event_owner(proj_dir, sid)
         if owner:
-            ev_lines.insert(0, owner)
+            terminal_lines.insert(0, owner)
         ev_block = ("⏳ Open for you (set the Event node's `status` to \"done\" "
                     "once handled):\n" + "\n".join(ev_lines))
         parts.append(ev_block)
@@ -911,7 +922,7 @@ def main(now=None):
         # decision someone has to make now, and it is the user who decides
         # whether this session is the one that takes it.
         user_msg = ("⏳ drsg memory — open for this project:\n"
-                    + "\n".join(ev_lines))
+                    + "\n".join(terminal_lines))
         # Only claim it was shown where the REPL actually renders it. On a
         # resume the message above goes nowhere, and marking it seen would
         # make user_prompt.py stay quiet too — the one path left that can

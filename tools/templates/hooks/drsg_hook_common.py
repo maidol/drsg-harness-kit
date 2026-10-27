@@ -216,6 +216,150 @@ def event_owner(proj_dir, sid):
         return ""
 
 
+def _lane_state_dir(proj_dir):
+    root = os.environ.get("DRSG_MEM_DIR") or os.path.expanduser("~/.drsg-memory")
+    project = hashlib.sha256(os.path.realpath(proj_dir).encode()).hexdigest()
+    return os.path.join(root, "hook-state", "resume-lane-change", project)
+
+
+def _last_lanes_path(proj_dir, sid):
+    session = hashlib.sha256(str(sid).encode()).hexdigest()
+    return os.path.join(_lane_state_dir(proj_dir), session + ".last.json")
+
+
+def _process_lane_path(proj_dir, sid):
+    pid = _claude_pid()
+    proc = _proc(pid) if pid else None
+    if not proc:
+        return None, None
+    session = hashlib.sha256(str(sid).encode()).hexdigest()
+    identity = hashlib.sha256((str(pid) + ":" + str(proc[0])).encode()).hexdigest()
+    path = os.path.join(_lane_state_dir(proj_dir), session + "." + identity + ".pending.json")
+    return path, (pid, proc[0])
+
+
+def _atomic_json(path, value):
+    import tempfile
+    directory = os.path.dirname(path)
+    os.makedirs(directory, mode=0o700, exist_ok=True)
+    fd, temporary = tempfile.mkstemp(prefix=".lane-", dir=directory)
+    try:
+        os.fchmod(fd, 0o600)
+        with os.fdopen(fd, "w", encoding="utf-8") as stream:
+            json.dump(value, stream, separators=(",", ":"))
+            stream.flush()
+            os.fsync(stream.fileno())
+        os.replace(temporary, path)
+        return True
+    except Exception:
+        try:
+            os.unlink(temporary)
+        except OSError:
+            pass
+        return False
+
+
+def write_last_lanes(proj_dir, sid, lanes):
+    try:
+        normalized = sorted(set(lanes))
+        if not normalized or any(not re.match(r"^[A-Za-z0-9._-]+$", lane) and lane != "*"
+                                 for lane in normalized):
+            return False
+        return _atomic_json(_last_lanes_path(proj_dir, sid),
+                            {"version": 1, "lanes": normalized})
+    except Exception:
+        return False
+
+
+def read_last_lanes(proj_dir, sid):
+    try:
+        with open(_last_lanes_path(proj_dir, sid), encoding="utf-8") as stream:
+            data = json.load(stream)
+        lanes = data.get("lanes") if isinstance(data, dict) and data.get("version") == 1 else None
+        if not isinstance(lanes, list) or not lanes or any(
+                not isinstance(lane, str) or (lane != "*" and not re.match(r"^[A-Za-z0-9._-]+$", lane))
+                for lane in lanes):
+            return None
+        return sorted(set(lanes))
+    except Exception:
+        return None
+
+
+def _remove_pending(path):
+    if path:
+        try:
+            os.unlink(path)
+        except OSError:
+            pass
+
+
+def stage_resume_lane_change(proj_dir, sid):
+    try:
+        path, identity = _process_lane_path(proj_dir, sid)
+        if not path or not identity:
+            return None
+        old = read_last_lanes(proj_dir, sid)
+        new = sorted(set(_hook_lanes(identity[0])))
+        if old is None or old == new:
+            _remove_pending(path)
+            return None
+        value = {"version": 1, "old_lanes": old, "new_lanes": new,
+                 "pid": identity[0], "start": identity[1]}
+        return True if _atomic_json(path, value) else None
+    except Exception:
+        return None
+
+
+def take_resume_lane_change(proj_dir, sid):
+    try:
+        path, identity = _process_lane_path(proj_dir, sid)
+        if not path or not identity:
+            return None
+        import tempfile
+        directory = os.path.dirname(path)
+        fd, claimed = tempfile.mkstemp(prefix=".consumed-", dir=directory)
+        os.close(fd)
+        os.unlink(claimed)
+        try:
+            os.replace(path, claimed)
+        except OSError:
+            return None
+        try:
+            with open(claimed, encoding="utf-8") as stream:
+                value = json.load(stream)
+        finally:
+            _remove_pending(claimed)
+        if (not isinstance(value, dict) or value.get("version") != 1
+                or value.get("pid") != identity[0] or value.get("start") != identity[1]
+                or not isinstance(value.get("old_lanes"), list)
+                or not isinstance(value.get("new_lanes"), list)):
+            return None
+        return value
+    except Exception:
+        return None
+
+
+def commit_resume_lane_change(proj_dir, sid, pending):
+    if not isinstance(pending, dict):
+        return False
+    return write_last_lanes(proj_dir, sid, pending.get("new_lanes", []))
+
+
+def _owner_context(proj_dir, sid, source):
+    try:
+        pid = _claude_pid()
+        lanes = _hook_lanes(pid)
+        state = os.path.join(os.environ.get("DRSG_MEM_DIR") or os.path.expanduser("~/.drsg-memory"),
+                             "poller", hashlib.sha1(os.path.realpath(proj_dir).encode()).hexdigest()[:12])
+        status = _lane_owner_line(state, sid, pid, lanes, proj_dir) if lanes != ["*"] else event_owner(proj_dir, sid)
+        shown_lanes = "默认车道" if lanes == ["*"] else "、".join(lanes)
+        status = re.sub(r"[\r\n]+", " ", status or "owner 状态暂不可用")
+        return ("当前声明车道 %s；pid %s；来源 %s；%s 以本条为准，更早的车道声明作废。"
+                % (shown_lanes, pid, source, status))
+    except Exception:
+        return ""
+
+
 def mark_events_shown(proj_dir, sid, keys):
     try:
         directory = os.path.join(proj_dir, ".drsg")

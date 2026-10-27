@@ -366,7 +366,7 @@ already defines `DRSG_EVENT_LANES` (including an empty value) suppresses the
 lane menu and passes that value through unchanged. Choosing Enter leaves
 `DRSG_EVENT_LANES` unset for the child; choosing names passes them only to that
 Claude process. To configure a lane without prompting, set it manually, for
-example `DRSG_EVENT_LANES=alpha,beta claude --resume`.
+example `DRSG_EVENT_LANES=alpha,beta claude --resume`. On resume, choosing a different lane shows the current lane and invalidates the previous declaration on the first visible prompt.
 
 Discovery resolves `ANTHROPIC_BASE_URL`, `ANTHROPIC_API_KEY`, and
 `ANTHROPIC_AUTH_TOKEN` from the process environment, then merges `env` values
