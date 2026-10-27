@@ -5,7 +5,8 @@ Denies tool calls that would print the whole content of a file that may hold
 credentials (.mcp.json, ~/.claude.json, .claude/settings*.json, env files,
 .netrc, private keys): the content would land in the transcript and be sent to
 the model. Structure-only reads stay allowed: `jq` filters that print only keys,
-counts, booleans, whitelisted fields or hook settings,
+counts, booleans, whitelisted fields, hook settings, or the permissions,
+autoMode and statusLine blocks of a settings file,
 `grep -c/-l/-L/-q`, `ls`, `stat`, sourcing an env file. A `jq` whose output is
 redirected to a sensitive file or its copy (an edit: `jq ... f > f.new && mv
 f.new f`) prints nothing; a copy (`f.new`, `f.bak-1022`) is as sensitive as `f`.
@@ -39,7 +40,11 @@ JQ_SAFE_FIELDS = {"type", "url", "command", "matcher"}
 # Below the top-level `hooks` of a settings file, after the event name, only
 # these fields exist; none of them holds a credential.
 JQ_HOOK_FIELDS = {"hooks", "matcher", "type", "command", "timeout", "async",
-                  "statusMessage"}
+                  "statusMessage", "asyncRewake"}
+# Top-level blocks of a Claude Code settings file that hold no credentials;
+# their values may be printed (user decision 2026-10-27, todo-44). Only for
+# claude-config files, and only at the top level.
+JQ_SETTINGS_SECTIONS = {"permissions", "autoMode", "statusLine"}
 # Output is a key name, a count or a type, whatever the input was.
 JQ_STRUCTURE = {"keys", "keys_unsorted", "length", "type"}
 # Output is a boolean; arguments only have to be understood.
@@ -66,6 +71,8 @@ REASON = (
     "grep -c KEY_NAME <file>.\n"
     "Settings: jq '.hooks | keys' <file> / jq -r '.hooks[][] | .hooks[].command' <file>; "
     "compare without printing: jq -e '.env.NAME == \"value\"' <file>.\n"
+    "Run a config read as a command of its own: when it is denied, nothing in the "
+    "command runs. To count a key, use grep -c KEY <file>, not cat <file> | grep -c.\n"
     "Editing one: jq '<filter>' <file> > <file>.new && mv <file>.new <file> "
     "(the output goes to the file), or write a script and ask the user to run it with !.\n"
     "If you really need the content, ask the user to run it with ! in their own shell.\n"
@@ -73,6 +80,8 @@ REASON = (
     "`summary` 以 `请求协助：` 开头；不要附上敏感文件内容。\n"
     "该文件可能带凭据，不要整段读取：用 jq 只取键名或不含密钥的字段，用 grep -c 判断键在不在；"
     "确实要看内容，请用户自己用 ! 运行；"
+    "读配置单独发一条，不要和别的检查串在一条命令里（被拒时整条都不运行）；"
+    "要数某个键出现几次，用 grep -c KEY <file>，不要 cat <file> | grep -c；"
     "要改这类文件，用 jq 输出到新文件再 mv，或写成脚本请用户用 ! 运行。不要换个命令绕过去。"
 )
 
@@ -370,11 +379,14 @@ class _JqFilter:
     literals and safe fields. Each parse step returns (safe, path): `path` is
     the field path from the file's root when the output is a pure path."""
 
-    def __init__(self, text, variables=()):
+    def __init__(self, text, variables=(), sections=()):
         self.toks = _jq_tokens(text)
         self.i = 0
         # Names bound by --arg/--argjson: values from the command line, not the file.
         self.vars = set(variables)
+        # Top-level blocks whose values may be printed (JQ_SETTINGS_SECTIONS for
+        # a settings file, nothing otherwise).
+        self.sections = frozenset(sections)
 
     def peek(self, value=None):
         tok = self.toks[self.i] if self.i < len(self.toks) else (None, None)
@@ -451,10 +463,13 @@ class _JqFilter:
                     if self.peek()[0] == "str" and self.toks[self.i + 1:self.i + 2] == [("op", "]")]:
                         name = self.take()[1][1:-1]
                     else:
-                        self.pipe(ctx)
+                        # A slice may leave out either end: [7:], [:3].
+                        if not self.peek(":"):
+                            self.pipe(ctx)
                         if self.peek(":"):
                             self.take()
-                            self.pipe(ctx)
+                            if not self.peek("]"):
+                                self.pipe(ctx)
                         name = 0
                 self.take("]")
                 safe, path = self.step(safe, path, name)
@@ -475,6 +490,8 @@ class _JqFilter:
         # of keys, map, a comma) a safe input stays safe.
         known = path is not None and path[:1] != (None,)
         path = (path if path is not None else (None,)) + (name,)
+        if known and path[0] in self.sections:
+            return True, path
         if known:
             return _jq_path_safe(path), path
         return safe or _jq_path_safe(path), path
@@ -492,7 +509,7 @@ class _JqFilter:
         if kind == "interp":
             safe = True
             for body in _jq_interp_bodies(value):
-                sub = _JqFilter(body, self.vars)
+                sub = _JqFilter(body, self.vars, self.sections)
                 s, _ = sub.pipe(ctx)
                 if sub.i != len(sub.toks):
                     raise _JqUnsafe()
@@ -546,7 +563,8 @@ class _JqFilter:
         return safe, None
 
     def call(self, ctx, name):
-        if name in ("true", "false", "null"):
+        # empty prints nothing, whatever its input.
+        if name in ("true", "false", "null", "empty"):
             return True, None
         args = []
         if self.peek("("):
@@ -572,9 +590,9 @@ class _JqFilter:
         raise _JqUnsafe()
 
 
-def _jq_structural(flt, variables=()):
+def _jq_structural(flt, variables=(), sections=()):
     try:
-        return _JqFilter(flt, variables).safe()
+        return _JqFilter(flt, variables, sections).safe()
     except (_JqUnsafe, IndexError, TypeError):
         return False
 
@@ -643,7 +661,9 @@ def _jq_category(args, to_file):
         flt = positional[0]
         files += positional[1:]
     hits = [category(a) for a in files if category(a)]
-    if hits and not to_file and (flt is None or not _jq_structural(flt, variables)):
+    sections = (JQ_SETTINGS_SECTIONS if hits and all(c == "claude-config" for c in hits)
+                else ())
+    if hits and not to_file and (flt is None or not _jq_structural(flt, variables, sections)):
         return hits[0]
     return None
 

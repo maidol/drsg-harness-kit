@@ -12,7 +12,7 @@ trap 'rm -rf "$T"' EXIT
 KILLED=0
 SURVIVED=0
 NOT_RUN=0
-EXPECTED=29
+EXPECTED=38
 
 run_mutation() {
   local name="$1" only="$2" variant="$3" copy="$T/$1.py"
@@ -58,6 +58,15 @@ pairs = {
     "jq-redirect-file-ignored": ("            if stdout_target and category(a):\n                to_file = True\n", "            if stdout_target and category(a):\n                pass\n"),
     "jq-redirect-any-target": ("            if stdout_target and category(a):\n", "            if stdout_target:\n"),
     "copy-suffix-ignored": ('COPY_SUFFIX = re.compile(r"\\.(?:new|tmp|bak|orig|old|save)(?:[-.][\\w.-]*)?$")', 'COPY_SUFFIX = re.compile(r"(?!)")'),
+    "jq-empty-unsafe": ('        if name in ("true", "false", "null", "empty"):\n', '        if name in ("true", "false", "null"):\n'),
+    "jq-slice-end-required": ('                            if not self.peek("]"):\n                                self.pipe(ctx)\n', '                            self.pipe(ctx)\n'),
+    "jq-slice-start-required": ('                        if not self.peek(":"):\n                            self.pipe(ctx)\n', '                        self.pipe(ctx)\n'),
+    "jq-hook-asyncrewake-missing": ('"statusMessage", "asyncRewake"}', '"statusMessage"}'),
+    "jq-section-permissions-off": ('JQ_SETTINGS_SECTIONS = {"permissions", "autoMode", "statusLine"}', 'JQ_SETTINGS_SECTIONS = {"autoMode", "statusLine"}'),
+    "jq-section-automode-off": ('JQ_SETTINGS_SECTIONS = {"permissions", "autoMode", "statusLine"}', 'JQ_SETTINGS_SECTIONS = {"permissions", "statusLine"}'),
+    "jq-section-statusline-off": ('JQ_SETTINGS_SECTIONS = {"permissions", "autoMode", "statusLine"}', 'JQ_SETTINGS_SECTIONS = {"permissions", "autoMode"}'),
+    "jq-section-any-depth": ('        if known and path[0] in self.sections:\n', '        if known and any(p in self.sections for p in path):\n'),
+    "jq-section-any-file": ('all(c == "claude-config" for c in hits)', 'True'),
     "no-op": ("def category(path):\n", "def category(path):  # no-op\n"),
 }
 old, new = pairs[variant]
@@ -109,6 +118,15 @@ run_mutation jq-entries-any-field "jq to_entries value" jq-entries-any-field
 run_mutation jq-redirect-file-ignored "jq edit written to a new file (10-22 08:01)" jq-redirect-file-ignored
 run_mutation jq-redirect-any-target "jq output copied to a plain file" jq-redirect-any-target
 run_mutation copy-suffix-ignored "cat a dated backup" copy-suffix-ignored
+run_mutation jq-empty-unsafe "jq // empty after a safe path (10-27 08:39)" jq-empty-unsafe
+run_mutation jq-slice-end-required "jq open slice then length (10-27 07:42)" jq-slice-end-required
+run_mutation jq-slice-start-required "jq slice without a start then length" jq-slice-start-required
+run_mutation jq-hook-asyncrewake-missing "jq hook asyncRewake (10-24 05:35)" jq-hook-asyncrewake-missing
+run_mutation jq-section-permissions-off "jq permissions allow list (10-24 12:23)" jq-section-permissions-off
+run_mutation jq-section-automode-off "jq autoMode allow list (10-20 17:30)" jq-section-automode-off
+run_mutation jq-section-statusline-off "jq statusLine object (10-27 08:38)" jq-section-statusline-off
+run_mutation jq-section-any-depth "jq permissions below the top level" jq-section-any-depth
+run_mutation jq-section-any-file "jq permissions in .mcp.json" jq-section-any-file
 if [ "${MUTATION_SELF_TEST:-0}" = 1 ]; then
   EXPECTED=$((EXPECTED + 1))
   run_mutation self-test-noop "incident 10-19: cat .mcp.json || true" no-op

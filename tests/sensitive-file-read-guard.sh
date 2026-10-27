@@ -102,6 +102,9 @@ actual_reason() {
     assist) printf '%s' "$output" | grep -c '请求协助：' ;;
     no-assist-content) printf '%s' "$output" | grep -c '不要附上敏感文件内容' ;;
     no-command) printf '%s' "$output" | grep -c 'secret-dir-name' ;;
+    separate) printf '%s' "$output" | grep -c 'Run a config read as a command of its own' ;;
+    count) printf '%s' "$output" | grep -c 'not cat <file> | grep -c' ;;
+    separate-zh) printf '%s' "$output" | grep -c '读配置单独发一条' ;;
   esac
 }
 
@@ -166,6 +169,34 @@ check "jq output to stderr by fd" deny actual_first_bash 'jq . .mcp.json >&2'
 check "jq output copied to a plain file" deny actual_first_bash 'jq . .mcp.json > /tmp/x && cat /tmp/x'
 check "cat a .new copy" deny actual_first_bash 'cat settings.local.json.new'
 check "cat a dated backup" deny actual_first_bash 'cat .claude/settings.local.json.bak-20261022-snapshot'
+# 10-27 todo-44: three false denials, and the settings blocks the user allowed
+# (permissions, autoMode, statusLine; top level of a claude-config file only).
+check "jq // empty after a safe path (10-27 08:39)" allow actual_bash "jq -r '.statusLine.command // empty' ~/.claude/settings.json"
+check "jq open slice then length (10-27 07:42)" allow actual_bash "jq -r '.mcpServers[\"x\"].headers.Authorization[7:] | length' .mcp.json"
+check "jq slice without a start then length" allow actual_bash "jq -r '.mcpServers.x.headers.Authorization[:3] | length' .mcp.json"
+check "jq hook asyncRewake (10-24 05:35)" allow actual_bash "jq -r '.hooks.Stop[].hooks[] | \"\\(.command) timeout=\\(.timeout) async=\\(.asyncRewake // false)\"' ~/.claude/settings.json"
+check "jq permissions block" allow actual_bash "jq '.permissions' ~/.claude/settings.json"
+check "jq permissions allow list (10-24 12:23)" allow actual_bash "jq -r '.permissions.allow[]?' ~/.claude/settings.json"
+check "jq permissions ask list (10-24 14:33)" allow actual_bash "jq -r '.permissions.ask[]?' .claude/settings.local.json"
+check "jq permissions additionalDirectories" allow actual_bash "jq '.permissions.additionalDirectories' .claude/settings.local.json"
+check "jq permissions defaultMode" allow actual_bash "jq -r '.permissions.defaultMode' ~/.claude/settings.json"
+check "jq permissions summary object (10-24 12:23)" allow actual_bash "jq '.permissions // empty | {allow: (.allow|length), additionalDirectories, defaultMode}' ~/.claude/settings.json"
+check "jq autoMode block" allow actual_bash "jq '.autoMode' ~/.claude/settings.json"
+check "jq autoMode allow list (10-20 17:30)" allow actual_bash "jq -r '.autoMode.allow[]?' ~/.claude/settings.json"
+check "jq autoMode environment list" allow actual_bash "jq -r '.autoMode.environment[]?' ~/.claude/settings.json"
+check "jq statusLine object (10-27 08:38)" allow actual_bash "jq -r '.statusLine' ~/.claude/settings.json"
+check "jq statusLine command" allow actual_bash "jq -r '.statusLine.command' ~/.claude/settings.json"
+check "jq permissions in ~/.claude.json" allow actual_bash "jq '.permissions' ~/.claude.json"
+check "jq env value after // empty" deny actual_first_bash "jq -r '.env.X // empty' ~/.claude/settings.json"
+check "jq open slice prints the value" deny actual_first_bash "jq -r '.mcpServers.x.headers.Authorization[7:]' .mcp.json"
+check "jq permissions below the top level" deny actual_first_bash "jq '.projects[\"/p\"].permissions' ~/.claude.json"
+check "jq permissions with env" deny actual_first_bash "jq '.permissions, .env' ~/.claude/settings.json"
+check "jq object of permissions and env" deny actual_first_bash "jq '{p: .permissions, e: .env}' ~/.claude/settings.json"
+check "jq permissions in .mcp.json" deny actual_first_bash "jq '.permissions' .mcp.json"
+check "jq mcpServers args in ~/.claude.json" deny actual_first_bash "jq '.mcpServers[].args' ~/.claude.json"
+check "jq projects mcpServers env" deny actual_first_bash "jq '.projects[].mcpServers[].env' ~/.claude.json"
+check "jq whole settings file" deny actual_first_bash "jq . ~/.claude/settings.json"
+check "Read settings file" deny actual_first_decision Read '{"file_path": "/x/.claude/settings.json"}'
 check "grep -c" allow actual_bash 'grep -c WDZT_AK config.env'
 check "grep -l" allow actual_bash 'grep -l Bearer .mcp.json'
 check "grep -q in combined flags" allow actual_bash 'grep -iq token .env && echo yes'
@@ -199,6 +230,9 @@ check "reason gives the edit alternative" 1 actual_reason edit
 check "reason offers reviewer assistance route" 1 actual_reason assist
 check "assistance route excludes sensitive file contents" 1 actual_reason no-assist-content
 check "reason does not echo the command" 0 actual_reason no-command
+check "reason says to run a config read alone" 1 actual_reason separate
+check "reason gives the grep -c count alternative" 1 actual_reason count
+check "reason says to run a config read alone (zh)" 1 actual_reason separate-zh
 
 actual_setup() {
   local mode="$1" result
