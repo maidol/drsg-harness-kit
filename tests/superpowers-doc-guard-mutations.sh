@@ -143,6 +143,12 @@ def sort_pipe_input(reviewer, project):
 def cut_reader_input(reviewer, project):
     return "Bash", {"command": "ls %s | cut -c1-3" % reviewer}
 
+def test_reader_input(reviewer, project):
+    return "Bash", {"command": "test ! -e %s/reviews/other/x.md && printf ok" % reviewer}
+
+def test_redirect_input(reviewer, project):
+    return "Bash", {"command": "test -e %s/a > %s/reviews/other/x.md" % (project, reviewer)}
+
 mutants = [
     ("read-only sha256sum allow",
      '    "cat", "head", "tail", "sed", "grep", "rg", "ls", "wc", "sha256sum",\n',
@@ -217,6 +223,17 @@ mutants = [
      '    "cmp", "diff", "stat", "cut", "tr", "nl",\n',
      '    "cmp", "diff", "stat",\n',
      cut_reader_input, False, True, "consumer"),
+    ("test and [ are readers",
+     '    "test", "[",\n',
+     '',
+     test_reader_input, False, True, "consumer"),
+    ("reader redirection targets are checked",
+     '    elif executable in READERS:\n'
+     '        return any(not _check_target(target, cwd, reviewer, allowed)\n'
+     '                   for target in redirection_targets)\n',
+     '    elif executable in READERS:\n'
+     '        return False\n',
+     test_redirect_input, True, False, "consumer"),
 ]
 
 

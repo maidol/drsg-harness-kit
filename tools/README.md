@@ -173,7 +173,8 @@ reviewer itself).
 
 The fixed `PreToolUse` registration matches `Bash|Write|Edit|NotebookEdit`.
 The guard allows known readers (`cat`, `head`, `tail`, `sed` without in-place
-mode, `grep`, `rg`, `ls`, `wc`, `sha256sum`, `cmp`, `diff`, `stat`) and read-only
+mode, `grep`, `rg`, `ls`, `wc`, `sha256sum`, `cmp`, `diff`, `stat`, `cut`, `tr`,
+`nl`, and `test`/`[` for checks such as `test ! -e <archive>/x.md`) and read-only
 Git commands (`diff`, `log`, `show`, `status`) even when they mention the
 reviewer. It checks visible static writes such as shell redirections, `tee`,
 `cp`, `mv`, `touch`, `mkdir`, `rm`, `truncate`, `install`, `ln` and `sed -i`;

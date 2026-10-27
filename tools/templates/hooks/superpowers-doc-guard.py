@@ -8,6 +8,7 @@ DENIAL_PREFIX = "Writing to the reviewer repository is restricted"
 READERS = {
     "cat", "head", "tail", "sed", "grep", "rg", "ls", "wc", "sha256sum",
     "cmp", "diff", "stat", "cut", "tr", "nl",
+    "test", "[",
 }
 GIT_READERS = {"diff", "log", "show", "status"}
 GIT_WRITERS = {

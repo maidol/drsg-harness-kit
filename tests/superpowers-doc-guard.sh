@@ -304,6 +304,19 @@ with tempfile.TemporaryDirectory(prefix="superpowers-guard-") as td:
         "ls %s | tr a-z A-Z" % reviewer,
         "nl %s/README.md" % reviewer,
         "find %s -maxdepth 0 -fprint %s/out.txt" % (reviewer, project),
+        # 10-24..10-26: existence checks before writing a receipt (todo-45).
+        "test -e %s/reviews/consumer/docs/superpowers/plans/x.md" % reviewer,
+        "test ! -e %s/reviews/other/x.md" % reviewer,
+        "test -d %s/reviews/consumer/docs/superpowers" % reviewer,
+        "test -f %s/README.md" % reviewer,
+        "[ -e %s/reviews/other/x.md ]" % reviewer,
+        "[ ! -e %s/reviews/other/x.md ]" % reviewer,
+        "[ -d %s/reviews/consumer/docs/superpowers ]" % reviewer,
+        "test ! -e %s/reviews/other/x.md && printf 'path available\\n'" % reviewer,
+        "test -e %s/reviews/other/x.md; printf '%%s\\n' \"$?\"" % reviewer,
+        "ls -1 %s/reviews/consumer/docs/superpowers && test ! -e %s/reviews/consumer/docs/superpowers/x.md" % (reviewer, reviewer),
+        "test -d %s/reviews/other && test ! -e %s/reviews/other/x.md" % (reviewer, reviewer),
+        'test -e "$HOME/x" && test -e %s/README.md' % reviewer,
     ]
     for command in readers:
         check("read-only command allowed: " + command,
@@ -351,10 +364,20 @@ with tempfile.TemporaryDirectory(prefix="superpowers-guard-") as td:
         "sort --compress-program=%s/reviews/other/x.sh %s/a" % (reviewer, project),
         "uniq %s/a %s/reviews/other/x.md" % (project, reviewer),
         "ls %s | uniq -c - %s/reviews/other/x.md" % (project, reviewer),
+        "test -e %s/a && cp %s/a %s/CLAUDE.md" % (project, project, reviewer),
+        "test ! -e %s/reviews/other/x.md || rm %s/reviews/other/y.md" % (reviewer, reviewer),
+        "test -e %s/a > %s/CLAUDE.md" % (project, reviewer),
+        "[ -e %s/a ] 2> %s/reviews/other/x.md" % (project, reviewer),
+        'test -e "$HOME/a" && cp %s/a %s/reviews/other/x.md' % (project, reviewer),
     ]
     for command in writers:
         check("out-of-scope write denied: " + command,
               denied(call("Bash", {"command": command})), True)
+    check("test with cwd inside the reviewer is allowed",
+          call("Bash", {"command": "test -e reviews/other/x.md"}, cwd=reviewer), "allow")
+    check("test then a write with cwd inside the reviewer is denied",
+          denied(call("Bash", {"command": "test -e reviews/other/x.md && touch reviews/other/x.md"},
+                      cwd=reviewer)), True)
 
     safe_writers = [
         "echo x > %s/plans/x.md" % allowed,
@@ -367,6 +390,7 @@ with tempfile.TemporaryDirectory(prefix="superpowers-guard-") as td:
         "find %s -maxdepth 0 -fprint %s/plans/x.md" % (project, allowed),
         "ls %s | sort -o %s/plans/x.md" % (project, allowed),
         "uniq %s/a %s/plans/x.md" % (project, allowed),
+        "test ! -e %s/plans/x.md && cp %s/a %s/plans/x.md" % (allowed, project, allowed),
     ]
     for command in safe_writers:
         check("in-scope write allowed: " + command,
