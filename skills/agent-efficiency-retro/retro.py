@@ -23,6 +23,9 @@ from datetime import datetime, timezone
 PASS_RE = re.compile(r'^验收通过(?:并授权提交)?：')
 FAIL_RE = re.compile(r'^验收不通过(（转主模型出计划）)?：\s*(?:\[([^\]]*)\])?')
 REVIEW_RE = re.compile(r'^设计(通过|有条件通过|需修订|待决策)(?:，计划(?:通过|有条件通过|需修订|待决策))?：')
+ESCAPE_RE = re.compile(r'^验收逃逸：')
+ORIGIN_EVENT_RE = re.compile(r'evt-[A-Za-z0-9._-]+-(\d{10})-[0-9a-f]{6}')
+ORIGIN_SHA_RE = re.compile(r'\b(?=[0-9]*[a-f])[0-9a-f]{7,40}\b')
 LAYER = {'判据缺失': '判据', '理解偏差': '判据', '方案不成立': '设计',
          '漏测边界': '计划/验收测试', '范围偏移': '计划/验收测试',
          '钻判据空子': '判据+验收测试', '约定不符': '计划'}
@@ -200,19 +203,42 @@ def main():
     for c in nsf[:6]:
         print('  ', c.replace('\n', ' '))
 
-    verdicts(posts)
+    verdicts(posts, since)
 
 
-def verdicts(posts):
-    """第 7 节：审核方发出的验收判定。按收件项目分单：同一项目同时只做一单，
+def escape_origin(ref, since):
+    match = ORIGIN_EVENT_RE.search(ref or '')
+    if match:
+        key = match.group()
+        return key, key, since is not None and int(match.group(1)) < since
+    match = ORIGIN_SHA_RE.search(ref or '')
+    if match:
+        sha = match.group()
+        return sha, sha + '（时间未知）', False
+    return None, '未写原单', False
+
+
+def verdicts(posts, since):
+    """第 7 节：验收判定与标注的验收逃逸。按收件项目分单：同一项目同时只做一单，
     一次「通过」结束一单，之前的「不通过」都算这一单的轮次。"""
     print('\n## 7. 验收判定（本范围内发出的 event_post / commit_auth_post）')
     seq = collections.defaultdict(list)       # 收件项目 -> [是否通过]
     reasons, layers = collections.Counter(), collections.Counter()
     npass = nfail = nesc = nreview = ndesign = 0
+    escapes, origin_ids, unknown_count = [], set(), 0
+    outside_window = False
     for _t, _id, name, inp in sorted(posts, key=lambda p: p[0]):
         who = inp.get('recipient', '?')
         summary = (inp.get('summary') or '').strip()
+        if name.endswith('__event_post') and ESCAPE_RE.match(summary):
+            origin_id, origin_label, outside = escape_origin(inp.get('ref'), since)
+            escapes.append((_t, who, summary[:60], origin_label))
+            if origin_id is None:
+                unknown_count += 1
+            else:
+                origin_ids.add(origin_id)
+            outside_window |= outside
+            continue
         if name.endswith('__commit_auth_post') or PASS_RE.match(summary):
             npass += 1
             seq[who].append(True)
@@ -249,6 +275,19 @@ def verdicts(posts):
     print('原因类别:', ', '.join(f'{k} {v}' for k, v in reasons.most_common()) or '无')
     print('按层:', ', '.join(f'{k} {v}' for k, v in layers.most_common()) or '无')
     print(f'设计/计划评审 {nreview} 次，设计层退回 {ndesign} 次')
+    if not escapes:
+        print('验收逃逸：0（只认「验收逃逸：」前缀；窗口内没有标注）')
+        return
+    m = len(origin_ids) + unknown_count
+    suffix = '（含窗口外原单）' if outside_window else ''
+    if npass == 0:
+        print(f'验收逃逸：{len(escapes)} 次，涉及 {m} 张原单；逃逸率 n/a{suffix}')
+    else:
+        print(f'验收逃逸：{len(escapes)} 次，涉及 {m} 张原单；逃逸率 '
+              f'{m}/{npass} = {m / npass:.0%}{suffix}')
+    for t, who, summary, origin in escapes:
+        time = datetime.fromtimestamp(t, timezone.utc).strftime('%m-%d %H:%M')
+        print(f'  {time} {who} {summary} {origin}')
 
 
 if __name__ == '__main__':

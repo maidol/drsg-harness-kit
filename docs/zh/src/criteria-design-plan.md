@@ -68,4 +68,8 @@ Event 的 summary 写成 `设计通过，计划需修订：…`；设计没过�
 验收不通过：[漏测边界] 2 不通过：超限返回了 500 而不是 429
 ```
 
-类别只用七种：判据缺失、理解偏差、方案不成立、漏测边界、范围偏移、钻判据空子、约定不符。复盘时运行 `agent-efficiency-retro`，它的第 7 节按这些类别统计首次验收通过率和原因分布。
+类别只用七种：判据缺失、理解偏差、方案不成立、漏测边界、范围偏移、钻判据空子、约定不符。复盘时运行 `agent-efficiency-retro`，它的第 7 节按这些类别统计首次验收通过率和原因分布。验收逃逸率是标注覆盖率指标；窗口内没有标注只表示没有标注，不能读作实际逃逸为零：
+
+```bash
+python3 ~/.claude/skills/agent-efficiency-retro/retro.py --project='-data-projects-my-agent-workspace' --since=2026-10-01T00:00:00Z
+```

@@ -68,4 +68,8 @@ The verdict cites item numbers and the summary carries reason categories:
 验收不通过：[漏测边界] 2 不通过：超限返回了 500 而不是 429
 ```
 
-There are seven categories: 判据缺失 (missing criteria), 理解偏差 (misread requirement), 方案不成立 (unsound design), 漏测边界 (untested edge case), 范围偏移 (scope drift), 钻判据空子 (gaming the criteria), 约定不符 (convention mismatch). Section 7 of `agent-efficiency-retro` counts them into a first-pass rate and a reason breakdown.
+There are seven categories: 判据缺失 (missing criteria), 理解偏差 (misread requirement), 方案不成立 (unsound design), 漏测边界 (untested edge case), 范围偏移 (scope drift), 钻判据空子 (gaming the criteria), 约定不符 (convention mismatch). Section 7 of `agent-efficiency-retro` counts them into a first-pass rate and a reason breakdown. The escape rate is an annotation-coverage metric: no annotation in the window means “not annotated,” not that no escapes occurred.
+
+```bash
+python3 ~/.claude/skills/agent-efficiency-retro/retro.py --project='-data-projects-my-agent-workspace' --since=2026-10-01T00:00:00Z
+```
