@@ -4,15 +4,23 @@ import ipaddress
 import json
 import os
 import re
+import selectors
 import signal
+import subprocess
 import sys
 import time
 import urllib.parse
 import urllib.request
 
 _DEADLINE_SECONDS = 2.0
+_HELPER_SECONDS = 1.0
+_HELPER_BYTES = 4096
 _MODEL_ID = re.compile(r"^[A-Za-z0-9._:/@\[\]-]{1,256}$")
-_MODEL_LABEL = re.compile(r"^[ -~]{1,80}$")
+_CONSENT = (
+    "Model discovery: apiKeyHelper ({source}) runs a shell command with your user permissions.\n"
+    "Review that settings file first; its command and output are hidden here.\n"
+    "Run it once for this model query? [y/N]\n"
+)
 
 
 def _claude_config_dir():
@@ -20,34 +28,48 @@ def _claude_config_dir():
     return os.environ.get("CLAUDE_CONFIG_DIR") or os.path.expanduser("~/.claude")
 
 
-def _merged_env():
+def _configuration():
     values = dict(os.environ)
+    helper, source = None, None
     cwd = os.getcwd()
     paths = (
-        os.path.join(_claude_config_dir(), "settings.json"),
-        os.path.join(cwd, ".claude", "settings.json"),
-        os.path.join(cwd, ".claude", "settings.local.json"),
+        (os.path.join(_claude_config_dir(), "settings.json"), "user"),
+        (os.path.join(cwd, ".claude", "settings.json"), "project"),
+        (os.path.join(cwd, ".claude", "settings.local.json"), "project-local"),
     )
-    for path in paths:
+    for path, scope in paths:
         try:
             with open(path, encoding="utf-8") as settings_file:
                 settings = json.load(settings_file)
         except (OSError, ValueError, UnicodeError):
             continue
-        env = settings.get("env") if isinstance(settings, dict) else None
+        if not isinstance(settings, dict):
+            continue
+        if "apiKeyHelper" in settings:
+            helper, source = settings["apiKeyHelper"], scope
+        env = settings.get("env")
         if isinstance(env, dict):
             values.update(
                 (key, value)
                 for key, value in env.items()
                 if isinstance(key, str) and isinstance(value, str)
             )
-    return values
+    return values, helper, source
+
+
+def _merged_env():
+    return _configuration()[0]
 
 
 def _models_url(base_url):
     base_url = base_url.rstrip("/")
     parsed = urllib.parse.urlsplit(base_url)
-    if parsed.scheme not in ("http", "https") or not parsed.hostname:
+    if (
+        parsed.scheme not in ("http", "https")
+        or not parsed.hostname
+        or parsed.username is not None
+        or parsed.password is not None
+    ):
         return None
     suffix = "/models" if parsed.path.endswith("/v1") else "/v1/models"
     return urllib.parse.urlunsplit(
@@ -55,59 +77,79 @@ def _models_url(base_url):
     ), parsed.hostname
 
 
+class _NoRedirect(urllib.request.HTTPRedirectHandler):
+    def redirect_request(self, req, fp, code, msg, headers, newurl):
+        return None
+
+
 def _opener_for(hostname):
-    if hostname.lower() == "localhost":
-        return urllib.request.build_opener(urllib.request.ProxyHandler({}))
+    handlers = [_NoRedirect()]
+    loopback = hostname.lower() == "localhost"
     try:
-        if ipaddress.ip_address(hostname).is_loopback:
-            return urllib.request.build_opener(urllib.request.ProxyHandler({}))
+        loopback = loopback or ipaddress.ip_address(hostname).is_loopback
     except ValueError:
         pass
-    return urllib.request.build_opener()
+    if loopback:
+        handlers.append(urllib.request.ProxyHandler({}))
+    return urllib.request.build_opener(*handlers)
 
 
-def _cache_models(env, base_url):
-    if env.get("CLAUDE_CODE_ENABLE_GATEWAY_MODEL_DISCOVERY") != "1":
-        return None
+def _confirm_helper(source):
+    if not sys.stdin.isatty() and os.environ.get("CLAUDE_PICK_FORCE_TTY") != "1":
+        return False
+    sys.stderr.write(_CONSENT.format(source=source))
+    sys.stderr.flush()
+    answer = bytearray()
+    while True:
+        char = os.read(0, 1)
+        if char == b"":
+            return False
+        if char == b"\n":
+            return bytes(answer).lower() == b"y"
+        if len(answer) <= 16:
+            answer.extend(char)
+
+
+def _helper_key(command, env):
+    deadline = time.monotonic() + _HELPER_SECONDS
+    process = subprocess.Popen(
+        command, shell=True, executable="/bin/sh", env=env,
+        stdin=subprocess.DEVNULL, stdout=subprocess.PIPE,
+        stderr=subprocess.DEVNULL, start_new_session=True,
+    )
     try:
-        with open(
-            os.path.join(_claude_config_dir(), "cache", "gateway-models.json"),
-            encoding="utf-8",
-        ) as cache_file:
-            cache = json.load(cache_file)
-    except (OSError, ValueError, UnicodeError):
-        return None
-    if not isinstance(cache, dict):
-        return None
-    cached_url = cache.get("baseUrl")
-    rows = cache.get("models")
-    if (
-        not isinstance(cached_url, str)
-        or cached_url.rstrip("/") != base_url.rstrip("/")
-        or not isinstance(rows, list)
-        or not rows
-    ):
-        return None
-    result = []
-    seen = set()
-    for row in rows:
-        model_id = row.get("id") if isinstance(row, dict) else None
-        if not isinstance(model_id, str) or not _MODEL_ID.fullmatch(model_id):
-            continue
-        if model_id in seen:
-            continue
-        seen.add(model_id)
-        display_name = row.get("display_name")
-        label = (
-            display_name
-            if isinstance(display_name, str) and _MODEL_LABEL.fullmatch(display_name)
-            else model_id
-        )
-        result.append((model_id, label))
-    return result or None
+        output = bytearray()
+        with selectors.DefaultSelector() as selector:
+            selector.register(process.stdout, selectors.EVENT_READ)
+            while True:
+                remaining = deadline - time.monotonic()
+                if remaining <= 0 or not selector.select(remaining):
+                    return None
+                chunk = os.read(process.stdout.fileno(), 1024)
+                if not chunk:
+                    break
+                output.extend(chunk)
+                if len(output) > _HELPER_BYTES:
+                    return None
+        remaining = deadline - time.monotonic()
+        if remaining <= 0 or process.wait(timeout=remaining) != 0:
+            return None
+        key = bytes(output)
+        if key.endswith(b"\n"):
+            key = key[:-1].removesuffix(b"\r")
+        if not key or any(byte < 33 or byte > 126 for byte in key):
+            return None
+        return key.decode("ascii")
+    finally:
+        try:
+            os.killpg(process.pid, signal.SIGKILL)
+        except ProcessLookupError:
+            pass
+        process.stdout.close()
+        process.wait(timeout=0.2)
 
 
-def _read_models(env, base_url):
+def _read_models(env, base_url, helper_key=None):
     endpoint = _models_url(base_url)
     if endpoint is None:
         return None
@@ -119,8 +161,13 @@ def _read_models(env, base_url):
         headers["x-api-key"] = api_key
     elif auth_token:
         headers["Authorization"] = "Bearer " + auth_token
+    elif helper_key:
+        headers["x-api-key"] = helper_key
+        headers["Authorization"] = "Bearer " + helper_key
     request = urllib.request.Request(url, headers=headers)
-    remaining = max(0.1, _DEADLINE_SECONDS - (time.monotonic() - _started_at))
+    remaining = _DEADLINE_SECONDS - (time.monotonic() - _started_at)
+    if remaining <= 0:
+        return None
     with _opener_for(hostname).open(request, timeout=remaining) as response:
         if not 200 <= response.status < 300:
             return None
@@ -148,25 +195,40 @@ def _read_models(env, base_url):
     return result or None
 
 
+def _timeout(signum, frame):
+    raise TimeoutError("model discovery deadline")
+
+
 def main():
     global _started_at
-    signal.signal(signal.SIGALRM, signal.SIG_DFL)
-    signal.setitimer(signal.ITIMER_REAL, _DEADLINE_SECONDS)
-    _started_at = time.monotonic()
+    models = None
     try:
-        env = _merged_env()
+        env, helper, source = _configuration()
         base_url = env.get("ANTHROPIC_BASE_URL", "")
-        models = _cache_models(env, base_url) if base_url else None
-        if not models and base_url:
-            models = _read_models(env, base_url)
+        if not base_url or _models_url(base_url) is None:
+            return 1
+        need_helper = not env.get("ANTHROPIC_API_KEY") and not env.get("ANTHROPIC_AUTH_TOKEN")
+        if need_helper and source is not None:
+            if not isinstance(helper, str) or not helper.strip() or "\x00" in helper:
+                return 1
+            if not _confirm_helper(source):
+                return 1
+        _started_at = time.monotonic()
+        signal.signal(signal.SIGALRM, _timeout)
+        signal.setitimer(signal.ITIMER_REAL, _DEADLINE_SECONDS)
+        key = _helper_key(helper, env) if need_helper and source is not None else None
+        if need_helper and source is not None and key is None:
+            return 1
+        models = _read_models(env, base_url, key)
+    except KeyboardInterrupt:
+        return 130
     except Exception:
-        models = None
-    if not models:
-        signal.setitimer(signal.ITIMER_REAL, 0)
         return 1
-    output = "".join(f"{model_id}\t{label}\n" for model_id, label in models)
-    signal.setitimer(signal.ITIMER_REAL, 0)
-    sys.stdout.write(output)
+    finally:
+        signal.setitimer(signal.ITIMER_REAL, 0)
+    if not models:
+        return 1
+    sys.stdout.write("".join(f"{model_id}\t{label}\n" for model_id, label in models))
     return 0
 
 

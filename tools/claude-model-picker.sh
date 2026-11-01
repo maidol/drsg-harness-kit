@@ -53,7 +53,15 @@ claude() {
       labels=("${models[@]}")
     fi
     if [ "${#models[@]}" -eq 0 ]; then
-      mapfile -t rows < <(python3 "$picker_dir/claude-model-discovery.py" 2>/dev/null)
+      local discovered discovery_rc
+      if discovered="$(python3 "$picker_dir/claude-model-discovery.py")"; then
+        mapfile -t rows <<< "$discovered"
+      else
+        discovery_rc=$?
+        if [ "$discovery_rc" -eq 130 ]; then
+          return 130
+        fi
+      fi
       local row model label
       for row in "${rows[@]}"; do
         if [[ "$row" == *$'\t'* ]]; then

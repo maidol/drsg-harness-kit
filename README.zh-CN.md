@@ -198,9 +198,20 @@ auto 模式的命令权限配置也不是安全边界。守卫只对可见的工
 
 ## 启动前选模型（可选）
 
-picker 程序文件会随 runtime tools 一起部署，但全新安装默认不启用。安装或更新时明确传 `--model-picker`，才会在 `~/.bashrc` 添加一行，source `~/.drsg-memory/tools/claude-model-picker.sh`。开新 shell 之后，交互式的 `claude` 会在会话开始前先问用哪个模型，再把 `--model <所选>` 放在你自己的参数（`--resume`、`-c`、提示词……）前面，启动真正的 `claude`。除非设置了非空的 `CLAUDE_PICK_MODELS`，选单辅助程序 `tools/claude-model-discovery.py` 会在启用 gateway discovery 且缓存 `baseUrl` 匹配时读取 Claude Code 的模型缓存；它只读，不写入或刷新缓存。缓存不可用时，辅助程序用 2 秒墙钟超时实时查询网关；仅当 `max_input_tokens` 至少为 1,000,000 时才为模型 ID 加 `[1m]`，不按模型名称或默认设置猜上下文长度。缓存里的安全显示名称用于选单标签，模型 ID（含 `[1m]`）用于启动参数。查询失败或没有可用模型时，退回静态选项 `opus sonnet haiku fable`。输入菜单里的数字，或者直接输入任意模型名或完整 ID；直接回车用 settings.json 里的 `model`；Ctrl+C 什么都不启动。
+picker 程序文件会随 runtime tools 一起部署，但全新安装默认不启用。安装或更新时明确传 `--model-picker`，才会在 `~/.bashrc` 添加一行，source `~/.drsg-memory/tools/claude-model-picker.sh`。开新 shell 之后，交互式的 `claude` 会在会话开始前先问用哪个模型，再把 `--model <所选>` 放在你自己的参数（`--resume`、`-c`、提示词……）前面，启动真正的 `claude`。除非设置了非空的 `CLAUDE_PICK_MODELS`，选单辅助程序 `tools/claude-model-discovery.py` 每次都会实时查询配置的网关模型列表，机器执行预算为 2 秒（不含等待确认）；不读取或写入 Claude Code 的 gateway model cache。仅当 `max_input_tokens` 至少为 1,000,000 时才为模型 ID 加 `[1m]`，不按模型名称或默认设置猜上下文长度。选中的模型 ID（含 `[1m]`）会原样传给 Claude Code。查询失败或没有可用模型时，退回静态选项 `opus sonnet haiku fable`。输入菜单里的数字，或者直接输入任意模型名或完整 ID；直接回车用 settings.json 里的 `model`；Ctrl+C 什么都不启动。
 
-辅助程序按顺序读取进程环境、`~/.claude/settings.json`、当前工作目录下的 `.claude/settings.json`、当前工作目录下的 `.claude/settings.local.json` 中的 `env` 值，后者覆盖前者。项目设置只从当前工作目录读取，不向父目录查找；要使用项目设置，请从项目目录启动 `claude`。选单不支持 `apiKeyHelper` 或 Claude Code OAuth 认证，遇到时使用静态选项。`ANTHROPIC_API_KEY` 会作为 `x-api-key` 发送；若没有非空 API key，则使用 `ANTHROPIC_AUTH_TOKEN` Bearer token。
+辅助程序按顺序读取进程环境、`$CLAUDE_CONFIG_DIR/settings.json`（默认 `~/.claude/settings.json`）、当前工作目录的 `.claude/settings.json`、`.claude/settings.local.json` 中的 `env` 值，后者覆盖前者；不向父目录查找，请从项目目录启动。非空 `ANTHROPIC_API_KEY` 只作为 `x-api-key` 发送；否则非空 `ANTHROPIC_AUTH_TOKEN` 只作为 Bearer 发送。这两种显式凭据优先于 `apiKeyHelper`，够用时不询问也不执行 helper。
+
+没有显式凭据时，可使用同一组配置文件中的 `apiKeyHelper`，项目 local 覆盖项目、项目覆盖用户配置。每次执行前，选单只显示来源类别，并询问 `Run it once for this model query? [y/N]`；只有单个 `y` 或 `Y` 同意本次查询，不保存许可或凭据。请先检查配置：这会以你的权限、当前目录和合并环境运行 `/bin/sh` 命令，不是沙箱，也不代表 Claude Code 的工作区已信任；命令原文和输出不展示。helper 无标准输入，在查询共用的 2 秒机器预算中最多用 1 秒，等待确认不计时。输出上限 4096 字节，只接受非空、无空格和内嵌换行的可打印 ASCII token（允许一个末尾 LF/CRLF），同一个值发 `x-api-key` 和 Bearer。会清理 helper 进程组内普通背景进程；不能约束主动脱离进程组的程序。
+
+拒绝、配置或输出非法、helper 失败/超时均退回静态菜单，不用匿名请求重试；仍可手填模型 ID。非交互发现不执行 helper；不跟随 HTTP 重定向，不使用 Claude Code OAuth 凭据，Ctrl+C 取消启动。这里不模拟 Claude Code 的所有配置、策略与刷新规则。
+
+```bash
+claude  # 从项目根目录启动；询问 helper 许可时输入 y 或 n
+CLAUDE_PICK_MODELS='opus sonnet' claude  # 跳过实时查询与 helper
+```
+
+例如输入 `y`，再输入模型编号，即执行一次查询；输入 `n`，再在静态菜单手填完整模型 ID，则不运行 helper。需要交互登录或超过 1 秒的 helper 会降级。
 
 同一个函数也可以在模型菜单后显示项目专属的 Event 车道菜单，运行时辅助程序为 `claude-lane-picker.py`。默认关闭；从项目根目录启动时，在当前工作目录创建 `.drsg/lanes` 即启用（不会向父目录查找），每行一个车道名，名称必须符合 `[A-Za-z0-9._-]+`。现有的 `lease.<车道>.json` 车道也会列出。空文件也会启用菜单，此时直接回车仍选择默认车道。菜单显示仍存活的 owner；选择被占用的车道前会询问是否继续。该信息只是提示，菜单显示后租约仍可能变化。它只读本地租约文件，不接管租约，也不查询 daemon。
 

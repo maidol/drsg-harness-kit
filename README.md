@@ -333,15 +333,15 @@ new shell, an interactive
 `claude` then asks which model to use before the session starts, and runs the
 real binary with `--model <choice>` in front of your own arguments (`--resume`,
 `-c`, a prompt, …). Unless `CLAUDE_PICK_MODELS` supplies a non-empty list, the
-picker helper `tools/claude-model-discovery.py` reads Claude Code's gateway
-model cache when gateway discovery is enabled and its `baseUrl` matches the
-configured gateway. It never writes or refreshes that cache. On a cache miss it
-fetches live models with a 2-second hard deadline. A cached model's safe display
-name is shown, and its `[1m]` ID is passed unchanged; live models receive `[1m]`
-only when `max_input_tokens` is at least 1,000,000. The picker does not guess
-context sizes from names or defaults. If discovery fails, it uses the static
-menu `opus sonnet haiku fable`. Answer with a number, or type any model name or
-full id; Enter alone keeps the `model` from settings.json; Ctrl+C starts nothing.
+picker helper `tools/claude-model-discovery.py` fetches the configured gateway's
+live model list on every run, with a 2-second active execution budget,
+excluding the confirmation wait. It does not read or write Claude Code's gateway
+model cache. Models receive `[1m]` only when
+`max_input_tokens` is at least 1,000,000. The picker does not guess context sizes
+from names or defaults. The selected model ID (including `[1m]`) is passed
+unchanged to Claude Code. If discovery fails, it uses the static menu `opus
+sonnet haiku fable`. Answer with a number, or type any model name or full id;
+Enter alone keeps the `model` from settings.json; Ctrl+C starts nothing.
 
 The same function can also offer a project-specific Event-lane menu after the
 model menu. Its local runtime helper is `claude-lane-picker.py`. The menu
@@ -370,13 +370,41 @@ example `DRSG_EVENT_LANES=alpha,beta claude --resume`. On resume, choosing a dif
 
 Discovery resolves `ANTHROPIC_BASE_URL`, `ANTHROPIC_API_KEY`, and
 `ANTHROPIC_AUTH_TOKEN` from the process environment, then merges `env` values
-from `~/.claude/settings.json`, the current directory's `.claude/settings.json`,
-and the current directory's `.claude/settings.local.json` in that order (later
-values win). Start `claude` from the project directory for project settings to
-be found; the picker does not search parent directories. `apiKeyHelper` and
-Claude Code OAuth credentials are not supported for discovery; the static menu
-is used instead. `ANTHROPIC_API_KEY` is sent as `x-api-key`; otherwise a
-non-empty `ANTHROPIC_AUTH_TOKEN` is sent as a Bearer token.
+from `$CLAUDE_CONFIG_DIR/settings.json` (default `~/.claude/settings.json`),
+the current directory's `.claude/settings.json`, and its
+`.claude/settings.local.json` in that order (later values win). Start from the
+project directory; parent directories are not searched. A non-empty API key
+is sent only as `x-api-key`; otherwise a non-empty auth token is sent only as
+Bearer. These explicit credentials take precedence over `apiKeyHelper`.
+
+When neither is available, the picker can use `apiKeyHelper` from those settings
+files, with project-local overriding project and user. Before each execution,
+it names the source scope and asks `Run it once for this model query? [y/N]`.
+Only a single `y` or `Y` permits this one query; no approval or credential is
+saved. Review the settings first: this executes a `/bin/sh` command with your
+permissions, current directory and merged environment, not a sandbox and not
+Claude Code's workspace-trust gate. The command and its output are hidden.
+The helper has no stdin and gets at most 1 second within the query's shared
+2-second machine budget; waiting for your confirmation is excluded. Output is
+limited to 4096 bytes, must be a non-empty printable ASCII token without spaces
+or embedded newlines (one trailing LF/CRLF is allowed), and is sent as both
+`x-api-key` and Bearer. Ordinary background processes in the helper's process
+group are cleaned up; deliberately detached processes are not sandboxed.
+
+Declining, invalid helper configuration/output, helper failure or timeout uses
+the static menu without an anonymous retry. You can still type a model ID.
+Noninteractive discovery never runs a helper. Discovery does not follow HTTP
+redirects and does not use Claude Code OAuth credentials. Ctrl+C cancels startup.
+The picker does not implement every Claude Code settings/policy/refresh rule.
+
+```bash
+claude  # from the project root; answer y or n when helper permission is requested
+CLAUDE_PICK_MODELS='opus sonnet' claude  # skip live discovery and the helper
+```
+
+For example, answer `y`, then the model number, to query once; answer `n`, then
+type a full model ID at the static menu, to avoid running the helper. A helper
+that requires interactive login or takes longer than 1 second will fall back.
 
 ```bash
 /tmp/drsg-harness-kit-*/setup.sh --model-picker  # explicitly enable during install/update

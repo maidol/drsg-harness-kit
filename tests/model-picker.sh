@@ -141,46 +141,19 @@ printf '{"env":{"ANTHROPIC_BASE_URL":"%s","ANTHROPIC_API_KEY":"fixture-key"}}\n'
 check "API key is sent as x-api-key" "$(PICK_BASE_URL= PICK_API_KEY= PICK_AUTH_TOKEN= pick '1\n')" "ARGS:--model gateway/model-a[1m] rc=0"
 check "API key header value" "$(grep -c $'\tfixture-key$' "$T/gateway.requests")" "1"
 
-# A matching CLI cache is preferred, but each cache test gets a private HOME.
+# A matching CLI cache must not hide newer models from the live gateway.
 printf '{"env":{"ANTHROPIC_BASE_URL":"%s","CLAUDE_CODE_ENABLE_GATEWAY_MODEL_DISCOVERY":"1"}}\n' "$ORIGIN" > "$T/proj/.claude/settings.local.json"
 mkdir -p "$T/home-cache-match/.claude/cache"
-cat > "$T/home-cache-match/.claude/cache/gateway-models.json" <<'JSON'
-{"baseUrl":"ORIGIN_PLACEHOLDER/","fetchedAt":1,"models":[{"id":"anthropic/claude-ccr-h737562326170692d6f70656e61692f6770742d362d6c756e61[1m]","display_name":"gpt-6-luna (1M context)"},{"id":"anthropic/claude-ccr-h65736361706564","display_name":"\u001b[31mred"}]}
-JSON
-python3 - "$T/home-cache-match/.claude/cache/gateway-models.json" "$ORIGIN" <<'PY'
-import json, sys
-path, origin = sys.argv[1:]
-with open(path, encoding="utf-8") as f: cache = json.load(f)
-cache["baseUrl"] = origin + "/"
-with open(path, "w", encoding="utf-8") as f: json.dump(cache, f)
-PY
+printf '{"baseUrl":"%s","fetchedAt":1,"models":[{"id":"stale/model","display_name":"stale model"}]}\n' "$ORIGIN" > "$T/home-cache-match/.claude/cache/gateway-models.json"
 before="$(wc -l < "$T/gateway.requests")"
-check "matching CLI cache passes the encoded model ID" "$(PICK_HOME="$T/home-cache-match" pick '1\n')" "ARGS:--model anthropic/claude-ccr-h737562326170692d6f70656e61692f6770742d362d6c756e61[1m] rc=0"
-check "matching cache renders friendly display name" "$(grep -c 'gpt-6-luna (1M context)' "$T/stderr")" "1"
-check "unsafe cached display name falls back to ID" "$(PICK_HOME="$T/home-cache-match" pick '2\n')" "ARGS:--model anthropic/claude-ccr-h65736361706564 rc=0"
-check "ESC and unsafe display text are absent" "$(if grep -Eq $'\\033|red' "$T/stderr"; then echo unsafe; else echo safe; fi)" safe
-check "matching cache avoids live request" "$(wc -l < "$T/gateway.requests")" "$before"
-# Cache use is gated by the same discovery flag Claude Code uses.
-mkdir -p "$T/home-cache-disabled/.claude/cache"
-cp "$T/home-cache-match/.claude/cache/gateway-models.json" "$T/home-cache-disabled/.claude/cache/"
+check "matching CLI cache is ignored for live models" "$(PICK_HOME="$T/home-cache-match" pick '1\n')" "ARGS:--model gateway/model-a[1m] rc=0"
+check "stale cached model is absent" "$(if grep -q 'stale model' "$T/stderr"; then echo present; else echo absent; fi)" absent
+check "matching cache still issues one live request" "$(( $(wc -l < "$T/gateway.requests") - before ))" "1"
+# Live discovery does not depend on Claude Code's cache-enable flag.
 printf '{"env":{"ANTHROPIC_BASE_URL":"%s","CLAUDE_CODE_ENABLE_GATEWAY_MODEL_DISCOVERY":"0"}}\n' "$ORIGIN" > "$T/proj/.claude/settings.local.json"
 before="$(wc -l < "$T/gateway.requests")"
-check "discovery disabled skips matching CLI cache" "$(PICK_HOME="$T/home-cache-disabled" pick '1\n')" "ARGS:--model gateway/model-a[1m] rc=0"
-check "disabled cache falls back online" "$(( $(wc -l < "$T/gateway.requests") - before ))" "1"
-# Cache mismatch, malformed JSON, and empty cache each fall back to live discovery.
-for case in mismatch malformed empty missing; do
-  home="$T/home-cache-$case"
-  mkdir -p "$home/.claude/cache"
-  case "$case" in
-    mismatch) printf '{"baseUrl":"http://other.invalid","fetchedAt":1,"models":[{"id":"cached/model"}]}\n' > "$home/.claude/cache/gateway-models.json" ;;
-    malformed) printf '{broken' > "$home/.claude/cache/gateway-models.json" ;;
-    empty) printf '{"baseUrl":"%s","fetchedAt":1,"models":[]}\n' "$ORIGIN" > "$home/.claude/cache/gateway-models.json" ;;
-  esac
-  printf '{"env":{"ANTHROPIC_BASE_URL":"%s","CLAUDE_CODE_ENABLE_GATEWAY_MODEL_DISCOVERY":"1"}}\n' "$ORIGIN" > "$T/proj/.claude/settings.local.json"
-  before="$(wc -l < "$T/gateway.requests")"
-  check "$case cache falls back to online IDs" "$(PICK_HOME="$home" pick '1\n')" "ARGS:--model gateway/model-a[1m] rc=0"
-  check "$case cache issues one online request" "$(( $(wc -l < "$T/gateway.requests") - before ))" "1"
-done
+check "disabled gateway cache flag still uses live models" "$(pick '1\n')" "ARGS:--model gateway/model-a[1m] rc=0"
+check "disabled gateway cache flag issues one live request" "$(( $(wc -l < "$T/gateway.requests") - before ))" "1"
 # The live response annotates only rows with numeric one-million input capacity.
 check "live gpt6 row gets 1M model suffix" "$(pick '3\n')" "ARGS:--model gateway/gpt6[1m] rc=0"
 check "already-suffixed ID is not duplicated" "$(pick '4\n')" "ARGS:--model gateway/gpt6-already[1m] rc=0"
@@ -300,6 +273,8 @@ ln -s "$T/bashrc-link-target" "$T/bashrc-link-home/.bashrc"
 run_toggle "$T/bashrc-link-home" "$T/link-tools/claude-model-picker-config.sh" disable
 check "disable preserves bashrc symlink" "$([ -L "$T/bashrc-link-home/.bashrc" ] && echo symlink || echo replaced)" symlink
 check "disable edits bashrc symlink target" "$(<"$T/bashrc-link-target")" unrelated
+
+bash "$HERE/model-picker-auth.sh" || exit 1
 
 echo "PASS $OK/$RAN"
 [ "$RAN" -eq "$OK" ]
