@@ -126,7 +126,7 @@ check "parent-directory settings do not trigger discovery" "$(wc -l < "$T/gatewa
 mkdir -p "$T/proj/.claude"
 printf '{"env":{"ANTHROPIC_BASE_URL":"%s"}}\n' "$ORIGIN" > "$T/proj/.claude/settings.local.json"
 check "settings.local.json supplies gateway URL" "$(pick '1\n')" "ARGS:--model gateway/model-a[1m] rc=0"
-check "1M live metadata adds suffix" "$(grep -cE '^[[:space:]]+[0-9]+\) gateway/gpt6\[1m\]$' "$T/stderr")" "1"
+check "1M live metadata shows input label" "$(grep -Fxc '  3) gateway/gpt6 [输入上限 1,000,000]' "$T/stderr")" "1"
 check "unsafe IDs and ESC labels are absent" "$(if grep -Eq $'\\033|a b' "$T/stderr"; then echo found; else echo absent; fi)" absent
 check "settings override shell URL" "$(PICK_BASE_URL="$ORIGIN/count" pick '1\n')" "ARGS:--model gateway/model-a[1m] rc=0"
 check "anthropic version header sent" "$(grep -c $'\t2023-06-01\t' "$T/gateway.requests")" "2"
@@ -159,7 +159,7 @@ check "live gpt6 row gets 1M model suffix" "$(pick '3\n')" "ARGS:--model gateway
 check "already-suffixed ID is not duplicated" "$(pick '4\n')" "ARGS:--model gateway/gpt6-already[1m] rc=0"
 check "zero-capacity metadata stays unsuffixed" "$(pick '5\n')" "ARGS:--model gateway/codex-auto-review rc=0"
 check "small-capacity metadata stays unsuffixed" "$(pick '6\n')" "ARGS:--model gateway/qwen256k rc=0"
-check "missing and string metadata stay unsuffixed" "$(grep -cE 'gateway/(no-window|string-window|model-1m-no-window)$' "$T/stderr")" "3"
+check "missing and string metadata show unknown" "$(grep -cE 'gateway/(no-window|string-window|model-1m-no-window) \[输入上限未知\]$' "$T/stderr")" "3"
 long129="gateway/$(printf 'x%.0s' {1..121})"
 check "129-character model ID remains selectable" "$(pick '10\n')" "ARGS:--model $long129 rc=0"
 check "257-character model ID is filtered" "$(grep -c "gateway/$(printf 'y%.0s' {1..249})" "$T/stderr" || true)" "0"

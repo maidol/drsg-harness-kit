@@ -198,7 +198,11 @@ auto 模式的命令权限配置也不是安全边界。守卫只对可见的工
 
 ## 启动前选模型（可选）
 
-picker 程序文件会随 runtime tools 一起部署，但全新安装默认不启用。安装或更新时明确传 `--model-picker`，才会在 `~/.bashrc` 添加一行，source `~/.drsg-memory/tools/claude-model-picker.sh`。开新 shell 之后，交互式的 `claude` 会在会话开始前先问用哪个模型，再把 `--model <所选>` 放在你自己的参数（`--resume`、`-c`、提示词……）前面，启动真正的 `claude`。除非设置了非空的 `CLAUDE_PICK_MODELS`，选单辅助程序 `tools/claude-model-discovery.py` 每次都会实时查询配置的网关模型列表，机器执行预算为 2 秒（不含等待确认）；不读取或写入 Claude Code 的 gateway model cache。仅当 `max_input_tokens` 至少为 1,000,000 时才为模型 ID 加 `[1m]`，不按模型名称或默认设置猜上下文长度。选中的模型 ID（含 `[1m]`）会原样传给 Claude Code。查询失败或没有可用模型时，退回静态选项 `opus sonnet haiku fable`。输入菜单里的数字，或者直接输入任意模型名或完整 ID；直接回车用 settings.json 里的 `model`；Ctrl+C 什么都不启动。
+picker 程序文件会随 runtime tools 一起部署，但全新安装默认不启用。安装或更新时明确传 `--model-picker`，才会在 `~/.bashrc` 添加一行，source `~/.drsg-memory/tools/claude-model-picker.sh`。开新 shell 后运行 `claude`，即可在会话开始前选择模型。除非设置了非空的 `CLAUDE_PICK_MODELS`，`tools/claude-model-discovery.py` 每次会实时查询配置的网关模型列表，机器执行预算为 2 秒（不含等待确认）；不读取或写入 Claude Code 的 gateway model cache。标签显示网关声明的 `max_input_tokens` 输入上限；它不等同于独立的最大总上下文窗口。容量缺失或非法时显示“输入上限未知”，不是零，模型仍可选择。只有合法输入上限至少为 1,000,000 时，裸模型 ID 才加 `[1m]`；传给 `--model` 的是最终路由 ID，不是展示标签。查询失败时退回静态选项 `opus sonnet haiku fable`。输入菜单数字，或直接输入任意模型名或完整 ID；直接回车使用 settings.json 里的 `model`；Ctrl+C 什么都不启动。
+
+```bash
+claude  # 会话开始前选择模型
+```
 
 辅助程序按顺序读取进程环境、`$CLAUDE_CONFIG_DIR/settings.json`（默认 `~/.claude/settings.json`）、当前工作目录的 `.claude/settings.json`、`.claude/settings.local.json` 中的 `env` 值，后者覆盖前者；不向父目录查找，请从项目目录启动。非空 `ANTHROPIC_API_KEY` 只作为 `x-api-key` 发送；否则非空 `ANTHROPIC_AUTH_TOKEN` 只作为 Bearer 发送。这两种显式凭据优先于 `apiKeyHelper`，够用时不询问也不执行 helper。
 

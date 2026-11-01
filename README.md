@@ -329,19 +329,22 @@ running daemon. Details: [tools/README.md](tools/README.md#permission-guard-perm
 The picker runtime is deployed with the tools, but a fresh install leaves it
 disabled. Pass `--model-picker` to `setup.sh` to enable it by adding one line to
 `~/.bashrc`, which sources `~/.drsg-memory/tools/claude-model-picker.sh`. In a
-new shell, an interactive
-`claude` then asks which model to use before the session starts, and runs the
-real binary with `--model <choice>` in front of your own arguments (`--resume`,
-`-c`, a prompt, …). Unless `CLAUDE_PICK_MODELS` supplies a non-empty list, the
-picker helper `tools/claude-model-discovery.py` fetches the configured gateway's
-live model list on every run, with a 2-second active execution budget,
-excluding the confirmation wait. It does not read or write Claude Code's gateway
-model cache. Models receive `[1m]` only when
-`max_input_tokens` is at least 1,000,000. The picker does not guess context sizes
-from names or defaults. The selected model ID (including `[1m]`) is passed
-unchanged to Claude Code. If discovery fails, it uses the static menu `opus
+new shell, run `claude` to choose a model before the session starts. Unless
+`CLAUDE_PICK_MODELS` supplies a non-empty list, `tools/claude-model-discovery.py`
+fetches the configured gateway's live model list once per run, with a 2-second
+active execution budget excluding the confirmation wait. It does not read or
+write Claude Code's gateway model cache. Labels show the gateway-declared input
+limit from `max_input_tokens`; this is not an independent maximum total-context
+window. Missing or invalid capacity is shown as unknown, not zero, and the model
+remains selectable. A bare ID receives `[1m]` only when the valid input limit is
+at least 1,000,000; that route ID, not the display label, is passed as
+`--model <choice>`. If discovery fails, the picker uses the static menu `opus
 sonnet haiku fable`. Answer with a number, or type any model name or full id;
 Enter alone keeps the `model` from settings.json; Ctrl+C starts nothing.
+
+```bash
+claude  # choose a model before starting the session
+```
 
 The same function can also offer a project-specific Event-lane menu after the
 model menu. Its local runtime helper is `claude-lane-picker.py`. The menu

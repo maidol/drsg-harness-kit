@@ -9,6 +9,7 @@ import signal
 import subprocess
 import sys
 import time
+import unicodedata
 import urllib.parse
 import urllib.request
 
@@ -149,12 +150,105 @@ def _helper_key(command, env):
         process.wait(timeout=0.2)
 
 
+def _valid_input_capacity(value):
+    if type(value) is int and 1 <= value <= 2_147_483_647:
+        return value
+    return None
+
+
+def _safe_display_name(value, response_id):
+    if not isinstance(value, str):
+        return response_id
+    try:
+        value.encode("utf-8")
+    except UnicodeEncodeError:
+        return response_id
+    if any(unicodedata.category(char) in ("Cc", "Cf") for char in value):
+        return response_id
+    value = unicodedata.normalize("NFC", value).strip()
+    return value or response_id
+
+
+def _truncate_utf8(value, byte_limit):
+    result = []
+    used = 0
+    for char in value:
+        size = len(char.encode("utf-8"))
+        if used + size > byte_limit:
+            break
+        result.append(char)
+        used += size
+    return "".join(result)
+
+
+def _normalize_models(rows):
+    by_response_id = {}
+    for row in rows:
+        response_id = row.get("id") if isinstance(row, dict) else None
+        if not isinstance(response_id, str) or not _MODEL_ID.fullmatch(response_id):
+            continue
+        capacity = _valid_input_capacity(row.get("max_input_tokens"))
+        name = _safe_display_name(row.get("display_name"), response_id)
+        by_response_id.setdefault(response_id, []).append((capacity, name))
+
+    by_route_id = {}
+    for response_id, sources in by_response_id.items():
+        capacities = {capacity for capacity, _ in sources if capacity is not None}
+        capacity = next(iter(capacities)) if len(capacities) == 1 else None
+        name = min(name for _, name in sources)
+        route_id = response_id
+        if (
+            capacity is not None
+            and capacity >= 1_000_000
+            and not response_id.endswith("[1m]")
+        ):
+            route_id += "[1m]"
+        if not _MODEL_ID.fullmatch(route_id):
+            continue
+        by_route_id.setdefault(route_id, []).append((capacity, name))
+
+    rows_by_route = []
+    for route_id, sources in by_route_id.items():
+        capacities = [capacity for capacity, _ in sources]
+        known = capacities[0] if capacities and capacities[0] is not None else None
+        if any(capacity != known for capacity in capacities):
+            known = None
+        name = min(name for _, name in sources)
+        capacity_suffix = (
+            f" [输入上限 {known:,}]"
+            if known is not None
+            else " [输入上限未知]"
+        )
+        rows_by_route.append((route_id, _truncate_utf8(name, 111), capacity_suffix))
+
+    base_labels = {}
+    for route_id, name, capacity_suffix in rows_by_route:
+        label = name + capacity_suffix
+        base_labels.setdefault(label, []).append((route_id, name, capacity_suffix))
+
+    labels = {}
+    for group in base_labels.values():
+        ordered = sorted(group, key=lambda row: row[0])
+        if len(ordered) == 1:
+            route_id, name, capacity_suffix = ordered[0]
+            labels[route_id] = name + capacity_suffix
+            continue
+        for index, (route_id, name, capacity_suffix) in enumerate(ordered, 1):
+            disambiguator = f" (#{index})"
+            name_budget = min(
+                111,
+                160 - len(capacity_suffix.encode("utf-8")) - len(disambiguator.encode("utf-8")),
+            )
+            labels[route_id] = _truncate_utf8(name, name_budget) + capacity_suffix + disambiguator
+    return [(route_id, labels[route_id]) for route_id, _, _ in rows_by_route]
+
+
 def _read_models(env, base_url, helper_key=None):
     endpoint = _models_url(base_url)
     if endpoint is None:
         return None
     url, hostname = endpoint
-    headers = {"anthropic-version": "2023-06-01"}
+    headers = {"anthropic-version": "2023-06-01", "User-Agent": "claude-model-discovery/1"}
     api_key = env.get("ANTHROPIC_API_KEY")
     auth_token = env.get("ANTHROPIC_AUTH_TOKEN")
     if api_key:
@@ -175,23 +269,7 @@ def _read_models(env, base_url, helper_key=None):
     data = payload.get("data") if isinstance(payload, dict) else None
     if not isinstance(data, list):
         return None
-    result = []
-    seen = set()
-    for row in data:
-        model_id = row.get("id") if isinstance(row, dict) else None
-        if not isinstance(model_id, str) or not _MODEL_ID.fullmatch(model_id):
-            continue
-        max_input_tokens = row.get("max_input_tokens")
-        if (
-            type(max_input_tokens) is int
-            and max_input_tokens >= 1_000_000
-            and not model_id.endswith("[1m]")
-        ):
-            model_id += "[1m]"
-        if not _MODEL_ID.fullmatch(model_id) or model_id in seen:
-            continue
-        seen.add(model_id)
-        result.append((model_id, model_id))
+    result = _normalize_models(data)
     return result or None
 
 

@@ -26,8 +26,8 @@ PROMPT = [
 ]
 MENU = [
     "Model for this session (Enter = default from settings, Ctrl+C = cancel):",
-    "  1) gateway/current[1m]",
-    "  2) gateway/small",
+    "  1) gateway/current [输入上限 1,000,000]",
+    "  2) gateway/small [输入上限未知]",
 ]
 STATIC = [MENU[0], "  1) opus", "  2) sonnet", "  3) haiku", "  4) fable"]
 
