@@ -1064,6 +1064,15 @@ A generic anti-omission and delivery completeness guard for all projects.
 It inspects git diffs for newly introduced user-facing names (CLI flags, environment
 variables, HTTP routes, config keys) and verifies they exist in documentation.
 
+An existing directory outside a Git repository is skipped with exit 0 and one
+`WARN` line, before reading configuration or checking diffs. With `--json`, the
+warning is in `advisories` in the usual JSON object; stdout stays valid JSON.
+Other repository-probe errors (including a missing Git executable or inaccessible
+path) retain diagnostics on stderr and exit 1; they are not successful skips.
+A repository subdirectory and a `.git` file are supported. For example, run
+`python3 completeness-guard.py --repo /tmp --json` from the tools directory;
+when `/tmp` is outside a repository this reports the skip without Git error spam.
+
 ```bash
 python3 completeness-guard.py                         # check working tree
 python3 completeness-guard.py --staged                 # check staged changes (used in pre-commit)

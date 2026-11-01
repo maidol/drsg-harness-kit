@@ -361,5 +361,7 @@ git -C "$P23" add docker-compose.yml
 out23=$(python3 "$GUARD" --repo "$P23" --staged 2>&1)
 check "scene23_compose_env_still_seen" "$(echo "$out23" | grep -q 'NEW env_var MY_COMPOSE_VAR ' && echo yes || echo no)" "yes"
 
+python3 -I "$HERE/completeness-nonrepo.py" "$GUARD" || exit "$?"
+
 printf '\nPASS %d/%d\n' "$OK" "$RAN"
 [ "$OK" -eq "$RAN" ]

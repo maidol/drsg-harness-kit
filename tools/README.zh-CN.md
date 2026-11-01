@@ -649,6 +649,13 @@ grep WARN ~/.drsg-memory/logs/drsg.log.$(date -u +%F) \
 检查 git diff 中新增的对外可见名字（CLI 选项、环境变量、HTTP 路由、配置键），
 并确保它们在项目文档中已有记录。
 
+已有目录不在 Git 仓库内时，在读取配置、检查 diff 之前跳过，退出 0，只打印一行
+`WARN`。加 `--json` 时，警告放在原有 JSON 对象的 `advisories` 中，stdout 仍是合法 JSON。
+其他仓库探测错误（包括 Git 不存在、路径不可访问）保留 stderr 诊断并退出 1，不能当成成功跳过。
+仓库内子目录和 `.git` 文件形式照常支持。例如在 tools 目录运行
+`python3 completeness-guard.py --repo /tmp --json`；当 `/tmp` 不在仓库内时，
+应看到跳过结果，不再喷出多条 Git 报错。
+
 ```bash
 python3 completeness-guard.py                         # 检查当前工作区
 python3 completeness-guard.py --staged                 # 检查暂存区（用于 pre-commit）

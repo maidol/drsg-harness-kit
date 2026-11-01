@@ -9,7 +9,7 @@ Usage:
 
 Exit codes:
   0: Clean (no undocumented new names, no blockers)
-  1: Blocker (undocumented new names when project declares completeness configuration)
+  1: Blocker or repository-probe error (diagnostics are retained)
   2: Advisory (undocumented new names without declaration, or secondary A'/C notices)
 """
 
@@ -264,6 +264,29 @@ def main():
     args = parser.parse_args()
 
     repo_dir = os.path.abspath(args.repo)
+    try:
+        probe = subprocess.run(
+            ["git", "-C", repo_dir, "rev-parse", "--git-dir"],
+            capture_output=True, text=True,
+            env=dict(os.environ, LC_ALL="C", LANGUAGE="C"),
+        )
+    except OSError as exc:
+        print(f"ERROR: completeness-guard: {exc}", file=sys.stderr)
+        sys.exit(1)
+    if probe.returncode != 0:
+        if probe.stderr.startswith("fatal: not a git repository (or any"):
+            warning = "WARN: completeness-guard skipped: --repo is not inside a Git repository."
+            if args.json:
+                print(json.dumps({
+                    "exit_code": 0, "blockers": [], "advisories": [warning],
+                    "new_names_count": 0, "declared": False,
+                }, indent=2, ensure_ascii=False))
+            else:
+                print(warning)
+            sys.exit(0)
+        message = probe.stderr or f"ERROR: completeness-guard: repository check failed (exit {probe.returncode}).\n"
+        sys.stderr.write(message if message.endswith("\n") else message + "\n")
+        sys.exit(1)
     config = load_config(repo_dir) or {}
     base_rev = args.base or get_default_base(repo_dir)
 
