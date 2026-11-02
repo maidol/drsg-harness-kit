@@ -746,3 +746,29 @@ python3 forbidden-literals-guard.py --repo /path/to/project --list /path/to/list
 
 - 项目级关闭：`git config --local drsg.forbiddenLiterals false`。
 
+
+## Event 正文接力原生通道验收（todo-52 A1）
+
+这是需显式开启的开发验收夹具：用本地假 API 测试已安装的 CLI，不调用模型。
+要求 Linux、Python 3，以及调查时 SHA-256 为
+`b73676430af12f97316a798b8371f81d640f90a58bdcb8f3ce56a835bb47df56`
+的 CLI。二进制不同时记 NOT_RUN，不算已修复，也不要为跑测试而升级或替换它。
+
+```bash
+RUN_EVENT_WAKE_RELAY_NATIVE=1 bash tests/event-wake-relay-native.sh
+python3 -I tests/event-wake-relay-native-mutations.py
+```
+
+检查实际请求正文中的三种情况：异步空唤醒基线、`stop_hook_active=true`
+的同步 Stop 接力、PostToolUse additionalContext 接力。这里的 helper 是合成桩；
+通过不代表正式接力的 owner 校验、持久化、去重和故障恢复已实现或验收。
+不设置开关时 shell 入口明确输出 SKIP，没有取得原生证据。测试使用临时
+HOME/config/cwd 和不转发的本地 API，不继承真实凭据，不改 CLI 或真实配置；
+这不等于操作系统级网络沙箱。合成夹具目录留在临时目录供核查。
+
+自检控制：下面两条分别预期退出 1 和 2，不能当成变异全部杀死。
+
+```bash
+python3 -I tests/event-wake-relay-native-mutations.py --control survivor
+python3 -I tests/event-wake-relay-native-mutations.py --control broken
+```

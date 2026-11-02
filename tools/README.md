@@ -1214,3 +1214,31 @@ python3 forbidden-literals-guard.py --repo /path/to/project --list /path/to/list
   ```
 - Project opt-out: `git config --local drsg.forbiddenLiterals false`.
 
+
+## Native Event relay transport gate (todo-52 A1)
+
+This opt-in developer fixture tests the installed CLI against a local fake API,
+not an LLM. It requires Linux, Python 3, and the investigated CLI binary with
+SHA-256 `b73676430af12f97316a798b8371f81d640f90a58bdcb8f3ce56a835bb47df56`.
+A different binary is NOT_RUN, not evidence of a fix; do not upgrade to match.
+
+```bash
+RUN_EVENT_WAKE_RELAY_NATIVE=1 bash tests/event-wake-relay-native.sh
+python3 -I tests/event-wake-relay-native-mutations.py
+```
+
+The gate checks an empty async wake baseline, a synchronous Stop reply with
+`stop_hook_active=true`, and a PostToolUse additionalContext reply in actual API
+request bodies. The helper is synthetic: passing this gate does not accept the
+future product relay, its owner checks, persistence, deduplication, or recovery.
+Without the opt-in variable the shell entry prints SKIP and collects no native
+evidence. Temporary HOME/config/cwd and a non-forwarding local API avoid using
+real credentials or models; this is not an OS-level network sandbox. No CLI or
+real settings are modified. Fixtures remain in temporary directories for audit.
+
+Self-check controls (expected exits 1 and 2; neither is a successful mutation run):
+
+```bash
+python3 -I tests/event-wake-relay-native-mutations.py --control survivor
+python3 -I tests/event-wake-relay-native-mutations.py --control broken
+```
