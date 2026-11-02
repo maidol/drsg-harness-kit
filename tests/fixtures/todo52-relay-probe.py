@@ -2,6 +2,7 @@
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 import argparse
 import hashlib
+import importlib.util
 import json
 import os
 from pathlib import Path
@@ -16,7 +17,9 @@ import time
 
 parser = argparse.ArgumentParser()
 parser.add_argument('mode', choices=('baseline', 'tool', 'stop'))
-parser.add_argument('--hook', default=str(Path(__file__).with_name('todo52-relay-probe-hook.py')))
+parser.add_argument('--hook')
+parser.add_argument('--production', action='store_true')
+parser.add_argument('--normal-async', action='store_true')
 options = parser.parse_args()
 mode = options.mode
 cli = Path(shutil.which('claude')).resolve()
@@ -26,7 +29,16 @@ root = Path(tempfile.mkdtemp(prefix='todo52-relay-' + mode + '-'))
 for name in ('home', 'config', 'project'):
     (root / name).mkdir()
 (root / 'project' / 'synthetic.txt').write_text('Synthetic tool result.\n')
+production = None
+if options.production:
+    spec = importlib.util.spec_from_file_location('relay_production_fixture',
+        Path(__file__).with_name('todo52-relay-production-hook.py'))
+    production = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(production)
+    (root / 'project' / '.drsg').mkdir()
+    (root / 'project' / '.drsg' / 'env').write_text('DRSG_PLANE=synthetic\n')
 requests = []
+rpc_calls = []
 stream = []
 finished = threading.Event()
 
@@ -46,6 +58,24 @@ class Todo52RelayHTTPHandler(BaseHTTPRequestHandler):
             self.send_error(413)
             return
         body = json.loads(self.rfile.read(size))
+        if self.path.split('?')[0] == '/rpc' and production:
+            params = body.get('params', {}).get('params', {})
+            if (params.get('path') != str(root / 'project')
+                    or params.get('keys') != ['event-synthetic-52']
+                    or "e.status = 'open'" not in body.get('params', {}).get('query', '')):
+                self.send_error(400)
+                return
+            rpc_calls.append(True)
+            data = json.dumps({'jsonrpc': '2.0', 'id': 1, 'result': {'nodes': [{
+                'external_key': 'event-synthetic-52', 'properties': {
+                    'status': 'open', 'kind': 'handoff',
+                    'summary': 'SYNTHETIC_RELAY_BODY synthetic task',
+                    'ref': 'synthetic-plan', 'from_project': 'synthetic-sender'}}]}}).encode()
+            self.send_response(200)
+            self.send_header('Content-Length', str(len(data)))
+            self.end_headers()
+            self.wfile.write(data)
+            return
         if self.path.split('?')[0] == '/v1/messages/count_tokens':
             data = b'{"input_tokens":100}'
             self.send_response(200)
@@ -64,8 +94,14 @@ class Todo52RelayHTTPHandler(BaseHTTPRequestHandler):
                        'relay_body': 'SYNTHETIC_RELAY_BODY' in texts,
                        'key': 'event-synthetic-52' in texts,
                        'ref': 'synthetic-plan' in texts,
-                       'owner': 'synthetic-lane' in texts}
+                       'kind': '[handoff]' in texts,
+                       'rules': '判定只 event_done；commit/push/PR 等先等用户确认。' in texts,
+                       'sync_count': texts.count('【正文接力】若已在处理，继续，不要重做。'),
+                       'owner': ('本会话持有本次接力 Event 的 owner 租约' in texts)
+                                if production else 'synthetic-lane' in texts}
         requests.append(observation)
+        if production and not options.normal_async and len(requests) == 2:
+            production.stage_after_empty_request(root)
         if len(requests) == 1:
             (root / 'release').touch()
             deadline = time.monotonic() + 3
@@ -74,7 +110,9 @@ class Todo52RelayHTTPHandler(BaseHTTPRequestHandler):
         tool = (mode == 'tool' and observation['wake_wrapper']
                 and not any(r.get('tool_response') for r in requests[:-1]))
         observation['tool_response'] = tool
-        if observation['relay_body'] or mode == 'baseline' and len(requests) >= 2:
+        if ((observation['relay_body'] and (not production or observation['sync_count'])
+                and (not options.normal_async or any(r['wake_body'] for r in requests)))
+                or mode == 'baseline' and len(requests) >= 2):
             finished.set()
         model = body.get('model', 'claude-opus-5-5')
         message = {'id': 'msg_synthetic_' + str(len(requests)), 'type': 'message',
@@ -111,7 +149,8 @@ class Todo52RelayHTTPHandler(BaseHTTPRequestHandler):
 server = ThreadingHTTPServer(('127.0.0.1', 0), Todo52RelayHTTPHandler)
 threading.Thread(target=server.serve_forever, daemon=True).start()
 base = 'http://127.0.0.1:' + str(server.server_port)
-hook_script = str(Path(options.hook).resolve())
+hook_script = str(Path(options.hook or Path(__file__).with_name(
+    'todo52-relay-production-hook.py' if production else 'todo52-relay-probe-hook.py')).resolve())
 def command(phase):
     return shlex.join([sys.executable, '-I', hook_script, str(root), mode, phase])
 
@@ -133,6 +172,10 @@ env = {'PATH': '/usr/local/bin:/usr/bin:/bin', 'HOME': str(root / 'home'),
        'DISABLE_TELEMETRY': '1', 'DISABLE_ERROR_REPORTING': '1',
        'HTTP_PROXY': base, 'HTTPS_PROXY': base, 'NO_PROXY': '127.0.0.1,localhost',
        'SHELL': '/bin/bash', 'TERM': 'dumb'}
+if production:
+    env.update(DRSG_MEM_DIR=str(root / 'memory'), DRSG_API=base + '/rpc',
+               DRSG_PLANE='synthetic', DRSG_TOKEN='synthetic',
+               TODO52_NORMAL_ASYNC='1' if options.normal_async else '0')
 args = [str(cli), '--print', '--restricted', '--setting-sources', '',
         '--settings', json.dumps(settings), '--strict-mcp-config', '--mcp-config',
         '{"mcpServers":{}}', '--disable-slash-commands', '--tools', 'Read',
@@ -184,12 +227,24 @@ finally:
 trace = [json.loads(line) for line in (root / 'hooks.jsonl').read_text().splitlines()] \
     if (root / 'hooks.jsonl').exists() else []
 result = {'mode': mode, 'root': str(root), 'requests': requests, 'hooks': trace,
-          'finished': finished.is_set(), 'stream': stream, 'cli_sha256': hash_before}
+          'finished': finished.is_set(), 'stream': stream, 'cli_sha256': hash_before,
+          'production': bool(production), 'rpc_count': len(rpc_calls)}
 (root / 'evidence.json').write_text(json.dumps(result, indent=2) + '\n')
 print(json.dumps({k: result[k] for k in ('mode', 'root', 'requests', 'hooks', 'finished')}, ensure_ascii=False))
 assert len(requests) >= 2, 'native asynchronous wake was not exercised'
-assert any(r['wake_wrapper'] and not r['wake_body'] and not r['relay_body']
-           for r in requests[1:]), 'empty wake not reproduced'
+if options.normal_async:
+    assert any(r['wake_body'] for r in requests), 'normal async body not observed'
+else:
+    assert any(r['wake_wrapper'] and not r['wake_body'] and not r['relay_body']
+               for r in requests[1:]), 'empty wake not reproduced'
 assert any(r['relay_body'] and r['key'] and r['ref'] and r['owner'] for r in requests), 'relay body absent from native model request'
+if production:
+    assert any(r['sync_count'] and r['kind'] and r['rules'] for r in requests), 'complete synchronous body absent'
+    # The pinned CLI quotes a Stop reason twice inside its blocking-error wrapper.
+    assert max(r['sync_count'] for r in requests) == (2 if mode == 'stop' else 1), 'unexpected native context copies'
+    emissions = [h for h in trace if h.get('emitted')]
+    assert len(emissions) == 1, 'same-generation hook output repeated'
+    assert emissions[0]['phase'] == ('Stop' if mode == 'stop' else 'PostToolUse')
+    assert len(rpc_calls) == 1, 'production pending must be fetched exactly once in this fixture'
 if mode == 'stop':
     assert any(h['phase'] == 'Stop' and h['active'] is True for h in trace), 'active Stop not exercised'

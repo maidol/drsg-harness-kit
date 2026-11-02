@@ -384,6 +384,34 @@ Bash 的 `git commit` 仍保留 `ask` 规则，照样会问你：
 
 关闭：删掉 `~/.drsg-memory/commit-auth.json`，再从 `permissions.allow` 里去掉 `mcp__drsg-events__commit_auth_apply`。
 
+## Event 同步正文接力（`event-wake-relay.py`）
+
+poller 在更新本地 seen 之前持久暂存待接力 Event 的 key。全局同步 PostToolUse、UserPromptSubmit 通过 additionalContext 补正文；Stop 通过 block/reason 补正文，包括 stop_hook_active=true。因此异步空唤醒之后可以自动取得任务，不要求用户再说“继续”。原 asyncRewake 信号、kick、租约优先级、renudge 时间和其他 Stop 守卫保持不变。
+
+每个 pending 文件最多 64 KiB，只存身份/key，不缓存 Event 正文或凭据。输出前重新查询这些 key 的当前 open 状态，并复核项目、session、PID、启动时间、租约、车道和 claim。正文最多 8192 字符；放不下的条目保持 pending，提示使用 drsg-events 的 event_list 工具读取本项目待办。无 pending 不增加 RPC。注册 timeout=3 秒，内部总预算为 2 秒。
+
+同步 write/flush 成功只消费这一代接力资格，不是模型收件凭证，更不是 Event done。异步正常时仍可能多一次同步补充：已在处理就继续，不要重做。输出后崩溃允许重复。Stop 在输出前单独持久预留阻止结束的预算；输出或落账失败不会对同一代无限 block，后续工具/用户回合仍能恢复 pending。RPC、状态或格式出错时静默放行，不发无法复核的旧正文；API/模型不可用或永远没有后续 hook 时不保证自动恢复。SessionEnd 只清理匹配实例，已死实例的旧状态 14 天后清理。
+
+在 kit 仓库根目录运行以下验证，不部署：
+
+```bash
+bash tests/event-wake-relay.sh
+bash tests/event-wake-relay-mutations.sh
+RUN_EVENT_WAKE_RELAY_NATIVE=1 bash tests/event-wake-relay.sh
+python3 -I tests/event-wake-relay-mutations.py --control survivor
+python3 -I tests/event-wake-relay-mutations.py --control broken
+```
+
+最后两条预期分别退出 1、2，不算自检成功。未显式启用 native 时明确 SKIP；原生探针要求下方 A1 绑定的 CLI 哈希，不调用真实模型、不修改 CLI 或真实设置。原生探针的 --production 选择真实接力实现，不使用 A1 合成格式化器。RELAY_MUTATION_TRACE 仅供测试确认已进入用例，不是运行时配置。
+
+安装更新是另一件事，会写持久用户配置。必须得到用户明确批准后，才在 kit 根目录执行：
+
+```bash
+bash setup.sh --no-skills
+```
+
+之后重启 Claude Code 会话。全新安装的 --no-event-poller 同时跳过接力注册；该参数不会删除已存在的 hook。回滚时通过 /hooks 只移除命令含 event-wake-relay.py 的三个同步注册，保留 event-poller.py 和其他全部守卫，再重启会话。没有注册的旧 pending 文件不会自行执行。不要覆盖整份 settings，也不要回滚 seen/done/schema 数据。普通 setup 会重新启用这些注册；L2 audit 会报告缺失或配置错误。程序不自动回滚。
+
 ## 待办轮询（`event-poller.py`）
 
 `setup.sh` 会把它注册成 `~/.claude/settings.json` 里的四个**全局** hook（`--no-event-poller` 可跳过）。之后每个会话每 15 分钟查一次本项目的待办 Event，**轮询本身不调用模型**；只有出现本会话还没通知过的待办时，才唤醒模型。

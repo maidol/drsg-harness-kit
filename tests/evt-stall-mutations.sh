@@ -14,6 +14,7 @@ run_mutation() {
   local copy="$T/$name.py"
   cp "$REPO/tools/event.py" "$T/event.py"
   cp "$REPO/tools/drsg_rpc.py" "$T/drsg_rpc.py"
+  cp "$REPO/tools/event-wake-relay.py" "$T/event-wake-relay.py"
   cp "$source" "$copy"
   local control="$T/$name.control.out" control_rc=0
   if [ "$only" = fresh-wake ]; then

@@ -87,13 +87,17 @@ cat > "$CLAUDE_DIR/settings.json" <<'JSON'
 }
 JSON
 python3 - "$CLAUDE_DIR/settings.json" "$DEPLOYED_TOOLS/reviewer-assist-stop-guard.py" <<'PY'
-import json, sys
+import json, os, shlex, sys
 path, script = sys.argv[1:]
 data = json.load(open(path))
 data["hooks"]["Stop"].append({
     "matcher": "*",
     "hooks": [{"type": "command", "command": "python3 " + script, "timeout": 3}],
 })
+relay = "python3 " + shlex.quote(os.path.join(os.path.dirname(script), "event-wake-relay.py"))
+for event in ("PostToolUse", "Stop", "UserPromptSubmit"):
+    data["hooks"].setdefault(event, []).append({"matcher": "*", "hooks": [
+        {"type": "command", "command": relay, "timeout": 3}]})
 json.dump(data, open(path, "w"))
 PY
 chmod 600 "$CLAUDE_DIR/settings.json"

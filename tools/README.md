@@ -629,6 +629,34 @@ instead.
 Turn them off by deleting `~/.drsg-memory/commit-auth.json` and removing
 `mcp__drsg-events__commit_auth_apply` from `permissions.allow`.
 
+## Synchronous Event body relay (`event-wake-relay.py`)
+
+The poller persists pending Event keys before consuming local seen eligibility. The synchronous global PostToolUse and UserPromptSubmit hooks return additionalContext; Stop returns block/reason, including when stop_hook_active=true. Empty async wakes can therefore recover without another user prompt. The original asyncRewake signal, kick, lease priorities, renudge schedule and other Stop guards remain unchanged.
+
+A pending file is at most 64 KiB and contains identities/keys, not cached Event bodies or credentials. Delivery re-fetches the currently open keys and rechecks project/session/PID/start/lease/lane/claim before output. Text is bounded to 8192 characters; oversized entries stay pending and the message points to the drsg-events event_list tool for this project. There is no RPC when nothing is pending. A hook has a 2-second internal deadline under its 3-second registration timeout.
+
+A successful synchronous write/flush consumes that generation only; it is not a model receipt or Event completion. Normal async delivery may be followed by one synchronous supplement: continue existing work, do not restart it. Crashes after output may repeat a supplement. Before a Stop block, a separate durable budget is reserved; failed output/accounting cannot cause endless Stop blocks for that generation. Later successful tools/prompts can retry pending work. RPC/state failures fail open, without replaying unverified cached text. API/model failure or no future hook is not guaranteed to recover automatically. SessionEnd cleans only the matching instance; old dead-instance state expires after 14 days.
+
+From the kit repository root, validate without deployment:
+
+```bash
+bash tests/event-wake-relay.sh
+bash tests/event-wake-relay-mutations.sh
+RUN_EVENT_WAKE_RELAY_NATIVE=1 bash tests/event-wake-relay.sh
+python3 -I tests/event-wake-relay-mutations.py --control survivor
+python3 -I tests/event-wake-relay-mutations.py --control broken
+```
+
+The last two commands must exit 1 and 2 respectively; they are not successful self-checks. Without the opt-in, native probes explicitly SKIP. Native probes require the A1 pinned CLI hash below; they invoke no real model and modify neither the CLI nor real settings. `--production` on the native probe selects this actual relay, rather than the A1 synthetic formatter. `RELAY_MUTATION_TRACE` is an internal test-only readiness marker, not a runtime setting.
+
+Installation/update is separate and writes persistent user configuration. Only after explicit user approval, run from the kit root:
+
+```bash
+bash setup.sh --no-skills
+```
+
+Restart Claude Code sessions afterwards. A fresh `--no-event-poller` setup skips relay registration too; that flag does not remove existing hooks. For rollback, use `/hooks` to remove only the three synchronous registrations whose command names event-wake-relay.py, retaining event-poller.py and every unrelated guard; restart sessions. Old pending files are inert without these registrations. Do not replace the whole settings file or roll back seen/done/schema data. A normal setup enables these registrations again; L2 audit reports their absence or misconfiguration. No rollback is performed automatically.
+
 ## To-do poller (`event-poller.py`)
 
 `setup.sh` registers it as four **global** hooks in `~/.claude/settings.json`

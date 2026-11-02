@@ -207,7 +207,7 @@ if [ "$REVIEWER_ASSIST_GUARD" -eq 1 ] || [ "$POLLER" -eq 1 ] || [ "$STREAK_HINT"
   CLAUDE_DIR="${CLAUDE_CONFIG_DIR:-$HOME/.claude}"
   mkdir -p "$CLAUDE_DIR"
   python3 - "$CLAUDE_DIR/settings.json" "$TOOLS/event-poller.py" "$TOOLS/single-tool-streak.py" "$POLLER" "$STREAK_HINT" "$TOOLS/stop-failure-notify.py" "$TOOLS/textual-tool-call-guard.py" "$TEXTUAL_TOOL_GUARD" "$TOOLS/sensitive-file-read-guard.py" "$SENSITIVE_READ_GUARD" "$TOOLS/reviewer-assist-stop-guard.py" <<'PY'
-import json, os, sys
+import json, os, shlex, sys
 path, script, streak_script = sys.argv[1], sys.argv[2], sys.argv[3]
 poller_enabled, streak_hint = sys.argv[4] == "1", sys.argv[5] == "1"
 notify_script, textual_guard_script = sys.argv[6], sys.argv[7]
@@ -233,6 +233,11 @@ if streak_hint:
         "type": "command", "command": "python3 " + streak_script, "timeout": 5
     }, "single-tool-streak.py")
 if poller_enabled:
+    relay_command = "python3 " + shlex.quote(os.path.join(
+        os.path.dirname(script), "event-wake-relay.py"))
+    for event in ("PostToolUse", "Stop", "UserPromptSubmit"):
+        add(event, {"type": "command", "command": relay_command, "timeout": 3},
+            "event-wake-relay.py")
     add("SessionStart", dict(bg), "event-poller.py")
     add("Stop", dict(bg), "event-poller.py")
     # A turn that ends in an API error fires StopFailure instead of Stop; without

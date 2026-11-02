@@ -322,6 +322,10 @@ def release(state, sid, pid, start):
             if holds(read_json(path, {}), sid, pid, start):
                 os.remove(path)
                 log(state, "lease released by %s%s" % (tag(sid, pid), lane_tag(lane)))
+        try:
+            relay_module().cleanup(_relay_context(), state, sid, pid, start)
+        except Exception:
+            pass
         for ext in (".pid", ".seen.json"):
             try:
                 os.remove(os.path.join(state, tag(sid, pid) + ext))
@@ -345,6 +349,11 @@ def sweep_seen(state, own):
         except OSError:
             pass
 
+    try:
+        relay_module().sweep(_relay_context(), state, own)
+    except Exception:
+        pass
+
 
 _EVENT = []
 
@@ -358,6 +367,24 @@ def event_module():
         spec.loader.exec_module(ev)
         _EVENT.append(ev)
     return _EVENT[0]
+
+
+_RELAY = []
+
+
+def relay_module():
+    if not _RELAY:
+        spec = importlib.util.spec_from_file_location("event_wake_relay",
+            os.path.join(HERE, "event-wake-relay.py"))
+        module = importlib.util.module_from_spec(spec)
+        spec.loader.exec_module(module)
+        _RELAY.append(module)
+    return _RELAY[0]
+
+
+def _relay_context():
+    import types
+    return types.SimpleNamespace(**globals())
 
 
 def lane_tag(lane):
@@ -482,11 +509,14 @@ def poll(project, state, sid):
         if k != kicked:                                  # a sender just posted here
             kicked, next_check = k, 0
         held, fresh = set(), False
+        fresh_lanes = set()
         for lane in lanes:
             got, taken = take_lease(state, sid, pid, start, bg, lane)
             if got:
                 held.add(lane)
             fresh = fresh or taken
+            if taken:
+                fresh_lanes.add(lane)
         if fresh:
             # A new owner is told about every open Event again, including the
             # ones a previous owner (or this process, before it lost the lease)
@@ -547,6 +577,15 @@ def poll(project, state, sid):
                     if new or renudged:
                         if new:
                             claim(state, new)
+                        try:
+                            new, renudged = relay_module().stage(_relay_context(),
+                                project, state, sid, pid, start, new, renudged, fresh_lanes)
+                        except Exception as exc:
+                            log(state, "relay staging failed: " + type(exc).__name__)
+                            continue
+                        if not new and not renudged:
+                            log(state, "relay capacity deferred wake")
+                            continue
                         woke_at = time.time()
                         for e in new:
                             seen["events"][e["key"]] = {

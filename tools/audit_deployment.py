@@ -20,6 +20,7 @@ import hashlib
 import json
 import os
 import re
+import shlex
 import subprocess
 import sys
 import urllib.request
@@ -336,6 +337,19 @@ def check_layer2(repo_dir, claude_dir, deployed_tools_dir=None):
             )
             if not reviewer_assist_valid:
                 issues.append("Global reviewer-assist Stop hook missing or misconfigured in settings.json")
+            relay_command = "python3 " + shlex.quote(os.path.join(tools_dir, "event-wake-relay.py"))
+            for event in ("PostToolUse", "Stop", "UserPromptSubmit"):
+                matches = [(group, hook) for group in hooks.get(event, [])
+                           for hook in group.get("hooks", [])
+                           if "event-wake-relay.py" in hook.get("command", "")]
+                valid = (len(matches) == 1 and matches[0][0].get("matcher") == "*"
+                         and matches[0][1].get("command") == relay_command
+                         and matches[0][1].get("type") == "command"
+                         and matches[0][1].get("timeout") == 3
+                         and "asyncRewake" not in matches[0][1]
+                         and "async" not in matches[0][1])
+                if not valid:
+                    issues.append("Global Event relay %s hook missing or misconfigured in settings.json" % event)
         except Exception as e:
             issues.append(f"Error reading {settings_file}: {e}")
     else:
