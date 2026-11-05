@@ -825,3 +825,41 @@ HOME/config/cwd 和不转发的本地 API，不继承真实凭据，不改 CLI �
 python3 -I tests/event-wake-relay-native-mutations.py --control survivor
 python3 -I tests/event-wake-relay-native-mutations.py --control broken
 ```
+
+### 可靠回执与重复错误停止
+
+回执、送审和普通判定优先使用 MCP `event_reply`，只传本项目收到的原单 key
+和回复内容；收件方从原单推导。它不关闭原单，也不取代其他单，处理完后按流程
+单独 `event_done`。结构化提交授权仍须 `commit_auth_post`，不能用普通回复替代。
+
+```json
+{"event_key":"evt-incoming","summary":"请求验收：合成改动","kind":"handoff","ref":"reviews/change.md"}
+```
+
+独立新工作仍用 `event_post`：
+
+```json
+{"recipient":"/path/to/other-repo","summary":"实施已确认的改动","kind":"handoff"}
+```
+
+显式替代使用 MCP `event_post`：
+
+```json
+{"recipient":"/path/to/other-repo","summary":"替代我此前的开放请求","kind":"handoff","supersedes":"evt-my-open-request"}
+```
+
+只有明确替换自己的旧单才在 `event_post` 传 `supersedes`；目标须是自己发给同一
+收件方、仍开放的单，不能填正在回复的入站单。未提交代码的回复引用 diff/tree
+文档，不编造尚未入图的符号，也不为建图提前提交。
+
+参数拒绝返回 `EVENT_POST_ERROR` JSON：`posted=false`、错误字段与安全修正提示。
+`EVENT_POST_STATUS` 区分新单已投递但旧单未关（`posted=true`）和结果不确定
+（`posted="unknown"`）；两者都不能盲目重发，同一提示内同一路由链的再次发送
+也会停止，即使删掉supersedes也不重投。只读event_list不受影响，核实后由新用户提示恢复。
+
+部署后，`event_retry_guard.py` 从 `PostToolUseFailure` 只记错误字段的指纹；
+同一会话、同一提示中再次提交相同错误时，`PreToolUse` 同时拒绝执行并停止模型
+循环。应改正该字段或请求协助；仅改摘要不能消除同一个错引用。新用户提示和
+新会话隔离。状态最多128个会话、每会话32条指纹和8 KiB，24小时过期；缺身份、
+状态不可写或锁不可用时明确提示保护不可用，不冒充已生效。不保存原始摘要、ref、
+凭据或会话ID。需要新版MCP及钩子注册，代码落库不等于已部署；部署、重启另行授权。

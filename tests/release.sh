@@ -51,9 +51,11 @@ fi
 if [ -f "$REPO/tools/affected-tests.py" ]; then
   cp "$REPO/tools/affected-tests.py" "$BASE/tools/affected-tests.py"
 fi
-if [ -f "$REPO/claude/CROSS-PROJECT-REVIEW.md" ]; then
-  cp "$REPO/claude/CROSS-PROJECT-REVIEW.md" "$BASE/claude/CROSS-PROJECT-REVIEW.md"
-fi
+for rule in CROSS-PROJECT-REVIEW.md CROSS-PROJECT-EXECUTION.md CROSS-PROJECT-COMMIT.md; do
+  if [ -f "$REPO/claude/$rule" ]; then
+    cp "$REPO/claude/$rule" "$BASE/claude/$rule"
+  fi
+done
 cp "$REPO/README.md" "$BASE/README.md"
 cp "$REPO/README.zh-CN.md" "$BASE/README.zh-CN.md"
 cp "$REPO/tools/README.md" "$BASE/tools/README.md"

@@ -68,20 +68,20 @@ PY
 }
 
 run_mutation no-missing-check test_refuse_missing \
-  '            raise ValueError("supersedes 目标 Event 不存在或不是 Event；请核对 key，或去掉 supersedes 重发。")' \
+  '            raise FieldRejected("supersedes", "supersedes 目标 Event 不存在或不是 Event；请核对 key，或去掉 supersedes 重发。")' \
   '            pass'
 run_mutation no-recipient-check test_refuse_other_recipient \
-  '        raise ValueError("supersedes 目标 Event 不是发给 recipient 的；只能取代发给同一收件方的单。")' \
+  '        raise FieldRejected("supersedes", "supersedes 目标 Event 不是发给 recipient 的；只能取代发给同一收件方的单。")' \
   '        pass'
 run_mutation no-legacy-check test_refuse_legacy \
-  '        raise ValueError("supersedes 指向的 Event 是旧格式（没有 from_path），无法核对是不是本项目发的；请去掉 supersedes 重发，旧单请收件方手动关。")' \
+  '        raise FieldRejected("supersedes", "supersedes 指向的 Event 是旧格式（没有 from_path），无法核对是不是本项目发的；请去掉 supersedes 重发，旧单请收件方手动关。")' \
   '        pass'
 run_mutation no-sender-check test_refuse_not_sender \
-  '        raise ValueError("supersedes 目标 Event 不是本项目发出的；只能取代自己发出的单。")' \
+  '        raise FieldRejected("supersedes", "supersedes 目标 Event 不是本项目发出的；只能取代自己发出的单。")' \
   '        pass'
 run_mutation no-status-check test_refuse_done \
-  $'    if props.get("status") != "open":\n        raise ValueError("supersedes 目标 Event 已经是' \
-  $'    if False:\n        raise ValueError("supersedes 目标 Event 已经是'
+  $'    if props.get("status") != "open":\n        raise FieldRejected("supersedes", "supersedes 目标 Event 已经是' \
+  $'    if False:\n        raise FieldRejected("supersedes", "supersedes 目标 Event 已经是'
 run_mutation no-close test_valid_supersede \
   '        _close_superseded(supersedes, key, token)' \
   '        pass'
@@ -89,7 +89,7 @@ run_mutation no-readback test_readback_mismatch_reports \
   '    if "Event" not in (node.get("labels") or []) or status != "done":' \
   '    if False:'
 run_mutation close-error-swallowed test_close_failure_keeps_new_event \
-  '        raise RuntimeError(f"新单 {new} 已发出；旧单 {old} 没关上（{e}），请收件方手动关。") from e' \
+  '        raise DeliveryIncomplete(new, old, f"新单 {new} 已发出；旧单 {old} 没关上（{e}），请收件方手动关。") from e' \
   '        return'
 run_mutation close-through-owner-check test_owner_lease_not_consulted \
   '        _close_superseded(supersedes, key, token)' \

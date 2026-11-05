@@ -781,11 +781,18 @@ with tempfile.TemporaryDirectory(prefix="audit-superpowers-") as td:
     superpowers_docs.install_project(str(project), [str(project)], hooks_template=template)
     original_settings = settings_path.read_bytes()
 
+    def doc_guard_group(data):
+        matches = [group for group in data["hooks"]["PreToolUse"]
+                   if any("superpowers-doc-guard.py" in hook.get("command", "")
+                          for hook in group.get("hooks", []))]
+        assert len(matches) == 1, "expected exactly one doc-guard group"
+        return matches[0]
+
     for name, change, fragment in (
-        ("missing guard registration", lambda d: d["hooks"]["PreToolUse"].pop(), "registration"),
+        ("missing guard registration", lambda d: d["hooks"]["PreToolUse"].remove(doc_guard_group(d)), "registration"),
         ("duplicate guard registration", lambda d: d["hooks"]["PreToolUse"].append(
-            dict(d["hooks"]["PreToolUse"][-1])), "duplicate"),
-        ("wrong guard matcher", lambda d: d["hooks"]["PreToolUse"][-1].update(
+            dict(doc_guard_group(d))), "duplicate"),
+        ("wrong guard matcher", lambda d: doc_guard_group(d).update(
             {"matcher": "Bash|Write"}), "matcher"),
     ):
         data = json.loads(original_settings)

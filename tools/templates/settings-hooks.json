@@ -19,6 +19,16 @@
           "timeout": 5
         }
       ]
+    },
+    {
+      "matcher": "mcp__drsg-events__event_post|mcp__drsg-events__event_reply",
+      "hooks": [
+        {
+          "type": "command",
+          "command": "${CLAUDE_PROJECT_DIR}/.claude/hooks/event_retry_guard.py",
+          "timeout": 3
+        }
+      ]
     }
   ],
   "SessionStart": [
@@ -74,6 +84,18 @@
           "type": "command",
           "command": "${CLAUDE_PROJECT_DIR}/.claude/hooks/session_end.py",
           "timeout": 15
+        }
+      ]
+    }
+  ],
+  "PostToolUseFailure": [
+    {
+      "matcher": "mcp__drsg-events__event_post|mcp__drsg-events__event_reply",
+      "hooks": [
+        {
+          "type": "command",
+          "command": "${CLAUDE_PROJECT_DIR}/.claude/hooks/event_retry_guard.py",
+          "timeout": 3
         }
       ]
     }

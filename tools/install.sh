@@ -608,6 +608,7 @@ block = f"""{BEGIN}
 
 - Record work for another project as an `Event`, not a `Fact`.
 - Use `drsg-events` MCP tools; do not write Cypher by hand.
+- Reply to incoming Events with `event_reply`; use `event_post` for independent work or explicit replacement.
 - For code, pass `symbols` and `verb` as fields, never in `summary`.
 - Receiving: open Events appear at session start; no call is needed.
 - In agent sessions, never run `event.py` via Bash.

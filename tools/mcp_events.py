@@ -89,6 +89,7 @@ TOOLS = [
     {
         "name": "event_post",
         "description": (
+            "For replies and receipts prefer event_reply(event_key, summary). "
             "Leave a to-do for an agent working in ANOTHER project. Use this "
             "instead of writing a Fact: Facts reach a session by winning a "
             "relevance ranking, so one that loses is never delivered, while an "
@@ -154,6 +155,20 @@ TOOLS = [
             },
             "required": ["recipient", "summary"],
         },
+    },
+    {
+        "name": "event_reply",
+        "description": "Reply to an incoming Event. Prefer this for review requests, verdicts and receipts. The recipient is derived from the Event; this never supersedes or closes any Event and needs no graph symbol for uncommitted code.",
+        "inputSchema": {
+            "type": "object", "additionalProperties": False,
+            "properties": {
+                "event_key": {"type": "string", "description": "Key of the incoming Event being answered, not your own outgoing dispatch."},
+                "summary": {"type": "string", "description": "One-line reply; first 80 characters reach the recipient."},
+                "kind": {"type": "string", "enum": ["handoff", "notice"], "default": "notice"},
+                "ref": {"type": "string", "description": "Optional document, commit or issue pointer."}
+            },
+            "required": ["event_key", "summary"]
+        }
     },
     {
         "name": "commit_auth_post",
@@ -742,7 +757,32 @@ def call_tool(name, args, token):
     if name == "commit_auth_apply":
         return _commit_auth_apply(args, proj, token)
 
+    if name == "event_reply":
+        allowed = {"event_key", "summary", "kind", "ref"}
+        extra = sorted(set(args) - allowed)
+        if extra:
+            raise ev.FieldRejected("arguments", "event_reply accepts only event_key, summary, kind and ref", "unexpected_field")
+        for field in ("event_key", "summary"):
+            if not isinstance(args.get(field), str) or not args[field]:
+                raise ev.FieldRejected(field, "event_reply requires a non-empty string", "invalid_argument")
+        if args.get("kind") not in (None, "", "handoff", "notice"):
+            raise ev.FieldRejected("kind", "invalid Event kind", "invalid_argument")
+        if args.get("ref") is not None and not isinstance(args["ref"], str):
+            raise ev.FieldRejected("ref", "ref must be a string", "invalid_argument")
+        return ev.reply(args["event_key"], args["summary"], args.get("kind") or "notice",
+                        args.get("ref") or "", proj, token)
+
     if name == "event_post":
+        for field in ("recipient", "summary"):
+            if not isinstance(args.get(field), str) or not args[field]:
+                raise ev.FieldRejected(field, "event_post requires a non-empty string", "invalid_argument")
+        for field in ("ref", "reply_to", "supersedes", "plane"):
+            if args.get(field) is not None and not isinstance(args[field], str):
+                raise ev.FieldRejected(field, "optional Event fields must be strings", "invalid_argument")
+        if args.get("kind") not in (None, "", "handoff", "notice"):
+            raise ev.FieldRejected("kind", "invalid Event kind", "invalid_argument")
+        if args.get("verb") not in (None, "", "context", "impact", "trace"):
+            raise ev.FieldRejected("verb", "invalid graph verb", "invalid_argument")
         target = ev.canon_path(args["recipient"])
         # Both of these are refusals, so they travel as tool errors: a message
         # saying nothing was posted is worthless if the call still reads as a
@@ -750,12 +790,12 @@ def call_tool(name, args, token):
         if target == proj:
             # A to-do addressed to the sender is the one case the block cannot
             # help with: it arrives where the work already is.
-            raise ValueError("%s is this project — an Event is for another "
+            raise ev.FieldRejected("recipient", "%s is this project — an Event is for another "
                              "agent; write a Fact to remember something here."
                              % target)
         pid = ev.project_id(target, token)
         if pid is None:
-            raise ValueError("no Project node with path %s — the memory layer "
+            raise ev.FieldRejected("recipient", "no Project node with path %s — the memory layer "
                              "has never run a session there, so nothing can be "
                              "addressed to it yet." % target)
         # The reply echoes the rendered hint and whether the graph confirmed
@@ -892,7 +932,8 @@ def main():
             except Exception as e:
                 # Surfaced as tool output, not as a JSON-RPC error: the model
                 # can read this one and fix its call.
-                text, err = "%s: %s" % (type(e).__name__, e), True
+                text = ev.failure_report(e) if p.get("name") in ("event_post", "event_reply") else "%s: %s" % (type(e).__name__, e)
+                err = True
             respond(rid, {"content": [{"type": "text", "text": text}],
                           "isError": err})
         else:

@@ -288,7 +288,89 @@ def check_symbols(symbols, verb):
     return syms, verb
 
 
-class AddressRejected(ValueError):
+class FieldRejected(ValueError):
+    def __init__(self, field, message, code="invalid_reference"):
+        super().__init__(message)
+        self.errors = [{"code": code, "field": field,
+                        "action": "Correct this field or omit it if not intended; do not repeat unchanged."}]
+
+
+class DeliveryIncomplete(RuntimeError):
+    def __init__(self, new, old, message):
+        super().__init__(message)
+        self.new_key, self.old_key = new, old
+
+
+def failure_report(error):
+    if isinstance(error, FieldRejected):
+        result = {"version": 1, "posted": False, "retryable": False, "errors": error.errors}
+        return "EVENT_POST_ERROR " + json.dumps(result, ensure_ascii=False, sort_keys=True)
+    result = {"version": 1, "posted": True if isinstance(error, DeliveryIncomplete) else "unknown",
+              "retryable": False, "error_type": type(error).__name__}
+    if isinstance(error, DeliveryIncomplete):
+        result.update(key=error.new_key, unclosed=error.old_key)
+    return "EVENT_POST_STATUS " + json.dumps(result, sort_keys=True)
+
+
+def _post_preflight(target, sender_path, token, summary, ref, symbols, verb, plane, from_project, reply_to, supersedes):
+    check_secrets(summary, ref)
+    failures = []
+    for field, value, check in (("reply_to", reply_to, _reply_to_source),
+                                ("supersedes", supersedes, _supersedes_target)):
+        if value is not None:
+            try:
+                check(value, target, sender_path, token)
+            except FieldRejected as error:
+                failures.append(error)
+    try:
+        symbols, verb = check_symbols(symbols, verb)
+    except ValueError as error:
+        failures.append(FieldRejected("symbols", str(error), "invalid_symbols"))
+        symbols = []
+    unverified = None
+    if symbols:
+        plane = plane or resolve_plane(target, sender_path)
+        try:
+            symbols, unverified = verify_symbols(symbols, plane)
+        except AddressRejected as error:
+            telemetry(sender_path, {"event": "refused", "to": target, "from": from_project,
+                      "plane": plane, "verb": verb, "symbols": symbols, "problems": error.problems})
+            failures.append(error)
+    if failures:
+        first = failures[0]
+        first.errors = [row for error in failures for row in error.errors]
+        raise first
+    return symbols, verb, plane, unverified
+
+
+def reply(event_key, summary, kind, ref, from_path, token):
+    sender = canon_path(from_path)
+    if not isinstance(event_key, str) or not event_key:
+        raise FieldRejected("event_key", "event_key must name an incoming Event")
+    check_secrets(event_key, "")
+    result = rpc("plane.cypher", {"plane": PLANE, "query": (
+        "MATCH (p:Project)<-[:NOTIFY]-(e:Event) "
+        "WHERE p.path = $sender_path AND key(e) = $key RETURN e"),
+        "params": {"sender_path": sender, "key": event_key}}, token)
+    nodes = result.get("nodes", [])
+    if len(nodes) != 1 or "Event" not in (nodes[0].get("labels") or []):
+        raise FieldRejected("event_key", "event_key must uniquely identify an Event received by this project")
+    properties = nodes[0].get("properties") or {}
+    target = properties.get("from_path")
+    if not isinstance(target, str) or not target or canon_path(target) == sender:
+        raise FieldRejected("event_key", "incoming Event has no valid external sender")
+    target = canon_path(target)
+    if properties.get("from_project") != os.path.basename(target):
+        raise FieldRejected("event_key", "incoming Event sender metadata is inconsistent")
+    pid = project_id(target, token)
+    if pid is None:
+        raise FieldRejected("event_key", "incoming Event sender Project is missing")
+    result = post(target, pid, summary, kind, ref, os.path.basename(sender), token,
+                  from_path=sender, reply_to=event_key)
+    return report(result, target)
+
+
+class AddressRejected(FieldRejected):
     """The graph had an opinion about a symbol and it was no.
 
     A ValueError so every existing caller keeps handling it as the operator
@@ -296,7 +378,7 @@ class AddressRejected(ValueError):
     structure rather than the sentence assembled for a human."""
 
     def __init__(self, message, problems):
-        super().__init__(message)
+        super().__init__("symbols", message, "invalid_symbols")
         self.problems = problems
 
 
@@ -496,7 +578,7 @@ def verb_advice(kind, summary, symbols, verb):
 def _reply_to_source(reply_to, target, sender_path, token):
     """Validate that `reply_to` was sent by `target` to this project."""
     if not isinstance(reply_to, str) or not reply_to:
-        raise ValueError("reply_to must be a non-empty Event key")
+        raise FieldRejected("reply_to", "reply_to must be a non-empty Event key")
     check_secrets(reply_to, "")
     params = {"key": reply_to, "sender_path": sender_path}
     res = rpc("plane.cypher", {"plane": PLANE,
@@ -510,7 +592,7 @@ def _reply_to_source(reply_to, target, sender_path, token):
             "params": {"key": reply_to}}, token)
         events = res.get("nodes", [])
         if not events or any("Event" not in (e.get("labels") or []) for e in events):
-            raise ValueError("reply_to 目标 Event 不存在或不是 Event；请核对 key，或去掉 reply_to 重发。")
+            raise FieldRejected("reply_to", "reply_to 目标 Event 不存在或不是 Event；请核对 key，或去掉 reply_to 重发。")
         own_path = (events[0].get("properties") or {}).get("from_path")
         if (len(events) == 1 and isinstance(own_path, str)
                 and canon_path(own_path) == canon_path(sender_path)):
@@ -519,24 +601,24 @@ def _reply_to_source(reply_to, target, sender_path, token):
             replies = [n.get("external_key") for n in fetch(sender_path, token)
                        if (n.get("properties") or {}).get("reply_to") == reply_to]
             if replies:
-                raise ValueError(
+                raise FieldRejected("reply_to",
                     "reply_to 指向的是你自己发给对方的 Event %s；reply_to 要填对方发给你、"
                     "你正在回复的那一条。对方回复它的 Event：%s。"
                     % (reply_to, ", ".join(replies[:3])))
-            raise ValueError(
+            raise FieldRejected("reply_to",
                 "reply_to 指向的是你自己发给对方的 Event %s；对方还没有发来回复它的 Event。"
                 "不是在回复对方发来的单，就去掉 reply_to 重发。" % reply_to)
-        raise ValueError("reply_to 目标 Event 未发给当前项目；请核对 key，或去掉 reply_to 重发。")
+        raise FieldRejected("reply_to", "reply_to 目标 Event 未发给当前项目；请核对 key，或去掉 reply_to 重发。")
     if len(matches) != 1 or "Event" not in (matches[0].get("labels") or []):
-        raise ValueError("reply_to 目标 Event 不唯一或不是 Event；请核对 key，或去掉 reply_to 重发。")
+        raise FieldRejected("reply_to", "reply_to 目标 Event 不唯一或不是 Event；请核对 key，或去掉 reply_to 重发。")
     props = matches[0].get("properties") or {}
     if "from_path" not in props:
-        raise ValueError("reply_to 指向的 Event 是旧格式（没有 from_path），无法核对来源；请去掉 reply_to 重发，正文里写明在回复哪一条。")
+        raise FieldRejected("reply_to", "reply_to 指向的 Event 是旧格式（没有 from_path），无法核对来源；请去掉 reply_to 重发，正文里写明在回复哪一条。")
     source_path = props.get("from_path")
     if (props.get("from_project") != os.path.basename(canon_path(target))
             or not isinstance(source_path, str)
             or canon_path(source_path) != canon_path(target)):
-        raise ValueError("reply_to 发件方与 recipient 不匹配；请核对 key，或去掉 reply_to 重发。")
+        raise FieldRejected("reply_to", "reply_to 发件方与 recipient 不匹配；请核对 key，或去掉 reply_to 重发。")
 
 
 def _supersedes_target(supersedes, target, sender_path, token):
@@ -546,7 +628,7 @@ def _supersedes_target(supersedes, target, sender_path, token):
     leave no node behind. Only the sender's own open Event to the same
     recipient qualifies, so a follow-up can never close someone else's work."""
     if not isinstance(supersedes, str) or not supersedes:
-        raise ValueError("supersedes must be a non-empty Event key")
+        raise FieldRejected("supersedes", "supersedes must be a non-empty Event key")
     check_secrets(supersedes, "")
     res = rpc("plane.cypher", {"plane": PLANE,
         "query": ("MATCH (p:Project)<-[:NOTIFY]-(e:Event) "
@@ -559,18 +641,18 @@ def _supersedes_target(supersedes, target, sender_path, token):
             "params": {"key": supersedes}}, token)
         events = res.get("nodes", [])
         if not events or any("Event" not in (e.get("labels") or []) for e in events):
-            raise ValueError("supersedes 目标 Event 不存在或不是 Event；请核对 key，或去掉 supersedes 重发。")
-        raise ValueError("supersedes 目标 Event 不是发给 recipient 的；只能取代发给同一收件方的单。")
+            raise FieldRejected("supersedes", "supersedes 目标 Event 不存在或不是 Event；请核对 key，或去掉 supersedes 重发。")
+        raise FieldRejected("supersedes", "supersedes 目标 Event 不是发给 recipient 的；只能取代发给同一收件方的单。")
     if len(matches) != 1 or "Event" not in (matches[0].get("labels") or []):
-        raise ValueError("supersedes 目标 Event 不唯一或不是 Event；请核对 key，或去掉 supersedes 重发。")
+        raise FieldRejected("supersedes", "supersedes 目标 Event 不唯一或不是 Event；请核对 key，或去掉 supersedes 重发。")
     props = matches[0].get("properties") or {}
     source_path = props.get("from_path")
     if not isinstance(source_path, str) or not source_path:
-        raise ValueError("supersedes 指向的 Event 是旧格式（没有 from_path），无法核对是不是本项目发的；请去掉 supersedes 重发，旧单请收件方手动关。")
+        raise FieldRejected("supersedes", "supersedes 指向的 Event 是旧格式（没有 from_path），无法核对是不是本项目发的；请去掉 supersedes 重发，旧单请收件方手动关。")
     if canon_path(source_path) != sender_path:
-        raise ValueError("supersedes 目标 Event 不是本项目发出的；只能取代自己发出的单。")
+        raise FieldRejected("supersedes", "supersedes 目标 Event 不是本项目发出的；只能取代自己发出的单。")
     if props.get("status") != "open":
-        raise ValueError("supersedes 目标 Event 已经是 %r，不需要取代；请去掉 supersedes 重发。"
+        raise FieldRejected("supersedes", "supersedes 目标 Event 已经是 %r，不需要取代；请去掉 supersedes 重发。"
                          % props.get("status"))
 
 
@@ -585,10 +667,10 @@ def _close_superseded(old, new, token):
                                    "set": {"status": "done", "done_at": int(time.time()),
                                            "superseded_by": new}}, token) or {}
     except Exception as e:
-        raise RuntimeError(f"新单 {new} 已发出；旧单 {old} 没关上（{e}），请收件方手动关。") from e
+        raise DeliveryIncomplete(new, old, f"新单 {new} 已发出；旧单 {old} 没关上（{e}），请收件方手动关。") from e
     status = (node.get("properties") or {}).get("status")
     if "Event" not in (node.get("labels") or []) or status != "done":
-        raise RuntimeError(f"新单 {new} 已发出；旧单 {old} 没关上（读回 status={status!r}），请收件方手动关。")
+        raise DeliveryIncomplete(new, old, f"新单 {new} 已发出；旧单 {old} 没关上（读回 status={status!r}），请收件方手动关。")
 
 
 def canon_path(path):
@@ -609,29 +691,9 @@ def post(target, pid, summary, kind, ref, from_project, token,
     on what a well-formed to-do is."""
     target = canon_path(target)
     sender_path = canon_path(from_path or os.getcwd())
-    check_secrets(summary, ref)
-    symbols, verb = check_symbols(symbols, verb)
-    unverified = None
-    if symbols:
-        # Before anything is written: a rejected address must leave no node
-        # behind, or the sender fixes the message while a broken to-do sits in
-        # the recipient's queue.
-        plane = plane or resolve_plane(target, sender_path)
-        try:
-            symbols, unverified = verify_symbols(symbols, plane)
-        except AddressRejected as e:
-            # Logged here rather than inside verify_symbols: this is where the
-            # sender and recipient are known, and the verifier stays a pure
-            # question about symbols.
-            telemetry(sender_path,
-                      {"event": "refused", "to": target, "from": from_project,
-                       "plane": plane, "verb": verb, "symbols": symbols,
-                       "problems": e.problems})
-            raise
-    if reply_to is not None:
-        _reply_to_source(reply_to, target, sender_path, token)
-    if supersedes is not None:
-        _supersedes_target(supersedes, target, sender_path, token)
+    symbols, verb, plane, unverified = _post_preflight(
+        target, sender_path, token, summary, ref, symbols, verb, plane,
+        from_project, reply_to, supersedes)
     ts = int(time.time())
     h = hashlib.sha1(summary.encode("utf-8")).hexdigest()[:6]
     key = f"evt-{os.path.basename(target)}-{ts}-{h}"

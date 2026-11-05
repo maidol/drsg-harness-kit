@@ -83,7 +83,7 @@
 | 范围偏移 | 计划 / 验收测试 | 判据写清「不做的事」和允许改动的范围 |
 | 钻判据空子 | 判据 + 验收测试 | 判据写「不做的事」；验收测试执行方不得改 |
 | 约定不符 | 计划 | 派单附上相关的项目约定 |
-- 回复某一条 handoff 的计划评审结论、验收通过/不通过、授权提交判定或执行方提交回执时，发布 Event 必须设置 `reply_to` 指向原 Event key。`reply_to` 只用于关联提示，不认证发件方、不授权操作，也不会自动关闭原 Event；原 Event 仍由其 Event owner 按流程调用 `event_done` 关闭。
+- 回复收到的 handoff，优先用 `event_reply(event_key, summary, kind, ref)`；工具自动设置 `reply_to`。旧 `event_post` 和结构化 `commit_auth_post` 仍须设置 `reply_to` 指向原 Event key。关联不认证、不授权、不自动关单；原单由 Event owner 按流程 `event_done`。
 - 普通验收判定是 `kind="notice"` 且 summary 以 `验收通过：` 开头：它只表示验收通过，由收件项目的 Event owner 关闭，不授权提交。收到后只调用 `event_done`，不回 notice。
 - 挂起 handoff 时先发 notice，写明等待什么及满足条件后会做什么。
 

@@ -1295,3 +1295,53 @@ Self-check controls (expected exits 1 and 2; neither is a successful mutation ru
 python3 -I tests/event-wake-relay-native-mutations.py --control survivor
 python3 -I tests/event-wake-relay-native-mutations.py --control broken
 ```
+
+### Reliable Event replies and retry protection
+
+For a receipt, review request or verdict, use MCP `event_reply` with the key of
+an Event received by this project. The recipient is derived from that Event.
+It does not close the original Event or supersede any other Event; call
+`event_done` separately when appropriate. Structured commit authorizations still
+require `commit_auth_post`, not this reply tool.
+
+```json
+{"event_key":"evt-incoming","summary":"Request review: synthetic change","kind":"handoff","ref":"reviews/change.md"}
+```
+
+Independent work still uses `event_post`:
+
+```json
+{"recipient":"/path/to/other-repo","summary":"Implement the agreed change","kind":"handoff"}
+```
+
+An explicit replacement uses MCP `event_post`:
+
+```json
+{"recipient":"/path/to/other-repo","summary":"Replace my earlier open request","kind":"handoff","supersedes":"evt-my-open-request"}
+```
+
+Only an explicit replacement uses `event_post` with `supersedes`: the replaced
+key must be your own open Event to that same recipient, never the incoming
+Event you are replying to. For replies about uncommitted code, reference the
+diff/tree document; do not invent code-graph symbols or commit early for indexing.
+
+Parameter refusals carry an `EVENT_POST_ERROR` JSON envelope with `posted=false`,
+field errors and safe correction guidance. `EVENT_POST_STATUS` distinguishes a
+known delivered message whose old Event could not be closed (`posted=true`)
+from an uncertain outcome (`posted="unknown"`). Neither permits blind resend.
+The guard stops another send on that routing chain within the same prompt even
+if `supersedes` is removed; read-only `event_list` is not blocked. Reconcile the
+outcome before a new user prompt resumes sending.
+
+Once installed, `event_retry_guard.py` records only validation-field fingerprints
+from `PostToolUseFailure`. The next identical mistake within the same
+session/prompt is denied in `PreToolUse`, which also stops the model loop.
+Correct the offending field or ask for assistance; changing only the summary
+will not erase a bad reference. A new user prompt or session is isolated.
+State is bounded to 128 sessions, 32 fingerprints/session and 8 KiB/session,
+with a 24-hour expiry. Missing identity or unavailable/locked state emits an
+explicit protection-unavailable warning; it never claims that protection worked.
+No raw summary, ref, credential or session ID is stored.
+
+This requires the updated MCP server and hook registrations; code changes alone
+are not a live deployment. Deployment and restart require separate authorization.
