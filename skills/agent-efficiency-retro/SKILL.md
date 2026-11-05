@@ -20,6 +20,22 @@ python3 ~/.claude/skills/agent-efficiency-retro/retro.py \
 - 目录名是项目路径把 `/` 和 `.` 换成 `-`；worktree 会多出 `--claude-worktrees-<名>`。先 `ls ~/.claude/projects | grep <项目>` 确认。
 - `--since` 用派活的时间：Event 的 `created_at` 是 Unix 秒，可以直接传。
 
+## 单任务段成本统计（独立 CLI）
+
+需要按任务段观察已报告 token usage 时，使用 kit 的独立 `tools/ticket-cost.py`，不要给 `retro.py` 增加参数或把它的七节结果当成本明细。从 kit 仓库根目录运行，并显式选择审核方/执行项目、每个 transcript 文件和 UTC `[since, until)` 时间窗：
+
+```bash
+python3 tools/ticket-cost.py \
+  --project reviewer=/path/to/reviewer-project \
+  --project executor=/path/to/executor-project \
+  --transcript reviewer=/path/to/selected-reviewer.jsonl \
+  --transcript executor=/path/to/selected-executor.jsonl \
+  --since 2026-10-25T00:00:00Z --until 2026-11-01T00:00:00Z \
+  --json-out ./ticket-cost.json
+```
+
+它只扫描明确列出的本地文件；不会自动发现会话目录，也不访问 daemon、模型或认证配置。同一标签可重复指定多个文件，且每个 transcript 标签必须在 `--project` 中声明。报告只反映所选 transcript 中已报告 usage，不是完整账单；按 `(项目标签, assistant message.id)` 去重，冲突只影响冲突字段，缺失值不补零。公式为 `total_input = input_tokens + cache_creation_input_tokens + cache_read_input_tokens`，`uncached_input = input_tokens + cache_creation_input_tokens`；API integrity 独立报告，不过滤 usage。Event 的 tool-use/result 按 `(项目标签, tool_use.id)` 跨所选文件配对。任务切分和审核方分摊是启发式/时间窗估计，活动秒数是相邻调用间隔不超过 300 秒的代理量；未关联或存在歧义的终止 Event 不结单，并在 `totals.business.unmatched_terminal_count` 中计数；重叠、截尾、unknown 和无可比基线必须按质量字段一起解读。周/项目业务时间汇总保留无调用的完整段，按模型分组仅计 usage；可选 JSON 导出拒绝覆盖既有文件；`0` 为完整或无样本，`1` 为 partial，`2` 为输入/资源错误。默认输入和规模上限见 kit `tools/README.md` 的“Offline task-cost report”。
+
 ## 七项输出怎么读
 
 | 节 | 看什么 | 参考线 / 判断 |

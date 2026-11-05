@@ -53,6 +53,31 @@ configuration is opt-in. Use `codegraph-router-setup.sh` for router MCP access,
 native local graph calls and routed `codegraph` calls; it is not installed by
 `install.sh` or by default `setup.sh`.
 
+## Offline task-cost report
+
+`ticket-cost.py` is a separate, read-only CLI; it does not change the seven-section `retro.py` report. The example below runs from `tools/` so commands in this file stay relative to that directory. Explicitly select each project, transcript file and half-open UTC window. Repeating a transcript label selects multiple files for that project. `--json-out` is optional and refuses to overwrite an existing file.
+
+```bash
+cd tools
+python3 ticket-cost.py \
+  --project reviewer=/path/to/reviewer-project \
+  --project executor=/path/to/executor-project \
+  --transcript reviewer=/path/to/selected-reviewer.jsonl \
+  --transcript executor=/path/to/selected-executor.jsonl \
+  --since 2026-10-25T00:00:00Z --until 2026-11-01T00:00:00Z \
+  --json-out ./ticket-cost.json
+```
+
+The JSON contains per-segment detail, three unattributed buckets, selected-window totals and UTC Monday-week/project/actual-model groups. Token values are transcript-reported usage, not a bill; missing/conflicting fields remain unknown rather than zero. Wall-clock seconds include waiting. Active seconds are a proxy from adjacent calls no more than 300 seconds apart, not CPU or staff time. Reviewer usage is shared across in-flight segments as a time-window estimate; overlap and outside-window usage stay in buckets. Task segments are heuristic Event-linked observations, not exact ticket reconstruction; unmatched or ambiguous terminal Events are counted in `totals.business.unmatched_terminal_count` and do not close a segment. `no_comparable_baseline` does not imply a model comparison.
+
+The tool reads only the named files and never queries a daemon, model service, Event API or authentication config. Output omits transcript contents, Event keys, message/session IDs and local file paths. Exit `0` means complete or no samples, `1` means a partial report, and `2` means invalid input or a hard resource-limit failure; fatal errors do not write JSON. Defaults cap lines at 4 MiB, selected files at 200 / 1 GiB total, executors at 16, calls at 100,000, Events and segments at 20,000 each, concurrency at 128, models at 500, segment-model checks and output rows at 1,000,000 and 100,000 respectively.
+
+Usage rows are deduplicated by `(project label, assistant message.id)`. Equal reported values across copies count once; distinct reported values for a field make only that field unknown, while missing/invalid copies do not erase a single legal value. Derived metrics use `total_input = input_tokens + cache_creation_input_tokens + cache_read_input_tokens` and `uncached_input = input_tokens + cache_creation_input_tokens`; all terms must be known. API integrity is reported separately and does not filter usage. Event `tool_use` / `tool_result` pairing is by `(project label, tool_use.id)` across all explicitly selected files, independent of file order; a terminal call is attributed once only when its Event is uniquely linked to one segment. A transcript label must also be declared by `--project`.
+
+Business rollups include every complete segment, including segments with no attributed calls. Weekly and project time summaries count each segment once rather than once per model; model groups remain usage-only, so their wall-clock field is explicitly unknown/not model-attributed. Unknown timestamp attribution propagates through segment-model and model-group values and sample counts, while keeping business, integrity and known-value accounting independent. The terminal summary shows business, time and dimension/usage denominators and explicitly reports the no-baseline state.
+
+Safe model labels retain normal routing characters (including `+` and `[1m]`). Other legal names use a deterministic `~model-<SHA256>` display label, consistently in details and groups, without merging their usage or revealing raw unsafe text. Weekly/project time metrics include `sample_count`, `mean` and `median`, computed independently from known segment values.
+
 ## Architecture
 
 ```

@@ -18,6 +18,31 @@
 
 主工作区/当前分支规则由 `setup.sh` 默认安装，且独立于 `--no-skills`。可用 `~/.drsg-memory/tools/main-branch-workflow-config.sh enable|disable|status` 管理用户级导入和持久关闭状态；`setup.sh --no-main-branch-workflow` 也可关闭。标记文件位于 `$CLAUDE_CONFIG_DIR/.main-branch-workflow.disabled`（通常是 `~/.claude/.main-branch-workflow.disabled`）。这是指导规则，不是强制执行的沙箱，也不会切换分支。
 
+## 离线任务段成本统计
+
+`ticket-cost.py` 是独立的只读 CLI，不会改变 `retro.py` 的七节报告。从 kit 仓库根目录运行时先进入 `tools/`；下面的示例命令相对本文件所在目录。运行时显式指定项目身份、transcript 文件及左闭右开的 UTC 时间窗。同一项目标签可重复指定多个 transcript。`--json-out` 可选；目标文件已存在时拒绝覆盖。
+
+```bash
+cd tools
+python3 ticket-cost.py \
+  --project reviewer=/path/to/reviewer-project \
+  --project executor=/path/to/executor-project \
+  --transcript reviewer=/path/to/selected-reviewer.jsonl \
+  --transcript executor=/path/to/selected-executor.jsonl \
+  --since 2026-10-25T00:00:00Z --until 2026-11-01T00:00:00Z \
+  --json-out ./ticket-cost.json
+```
+
+JSON 包含逐段明细、三个未归属桶、所选观察窗总量，以及按 UTC 周一、项目和实际调用模型分组的汇总。Token 是 transcript 中已报告的 usage，不是账单；缺失或冲突字段保持 unknown，不补零。墙钟秒数包含等待；活跃秒数是相邻调用间隔不超过 300 秒的代理量，不是 CPU 时间或人员工时。审核方 usage 按时间窗估计分配到在途段；重叠和任务外 usage 保留在桶中。任务段是基于 Event 关联的启发式观察，不是精确还原的工单；未关联或存在歧义的终止 Event 计入 `totals.business.unmatched_terminal_count`，且不会结单。`no_comparable_baseline` 不代表模型优劣结论。
+
+工具只读取明确列出的文件，不查询 daemon、模型服务、真实 Event API 或认证配置。输出不含 transcript 正文、Event key、message/session ID 或本地文件路径。退出码：`0` 表示完整结果或无样本，`1` 表示 partial 报告，`2` 表示输入错误或超过硬资源限制；fatal 错误不写 JSON。默认限制：单行 4 MiB；最多 200 个文件、总计 1 GiB；16 个 executor；100,000 个调用；Event 与任务段各 20,000；并发 128；模型 500；segment-model 检查 1,000,000；输出行 100,000。
+
+Usage 行按 `(项目标签, assistant message.id)` 去重。副本中相同的已报告值只计一次；同一字段出现不同的已报告值时，仅该字段变为 unknown；缺失或非法副本不会抹掉唯一合法值。派生公式为 `total_input = input_tokens + cache_creation_input_tokens + cache_read_input_tokens`、`uncached_input = input_tokens + cache_creation_input_tokens`，各项必须全部已知。API integrity 独立报告，不会过滤 usage。Event 的 `tool_use` / `tool_result` 按 `(项目标签, tool_use.id)` 在全部显式选择的文件间配对，不受文件顺序影响；只有唯一关联到一个任务段的终止调用才会被归属一次。transcript 标签也必须在 `--project` 中声明。
+
+业务汇总包含每个完整任务段，即使它没有可归属调用也不会消失。周和项目级时间统计每段只计一次，不会按模型重复；按模型分组只汇总 usage，因此其 wall-clock 字段明确标记为 unknown/未按模型归属。时间戳归属未知会向段-模型和模型组的值及样本数传播，同时保留业务、integrity 与已知值的独立统计。终端摘要显示业务、时间、各维度/usage 的分母，并明确报告无可比基线。
+
+模型安全显示保留普通路由字符（含 `+` 和 `[1m]`）；其它合法名字统一显示为确定的 `~model-<SHA256>` 标签，段明细与分组一致，不合并丢量、不回显原始不安全文本。周/项目时间指标提供 `sample_count`、`mean`、`median`，只按该指标已知的任务段独立计算。
+
 ## 架构
 
 ```
