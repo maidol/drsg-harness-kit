@@ -15,26 +15,26 @@ BLOCK_REASON = (
     "如果只在等用户本人拍板，直接结束即可"
 )
 
-GROUPS = {
-    "G1": re.compile(
-        r"拦|拒绝|denied|[Bb]locked|代跑|权限检查|分类器|PreToolUse|hook error|不再重跑|不会.{0,6}重试"
-    ),
-    "G2": re.compile(
-        r"审核方仓库|my-agent-workspace/reviews|reviews/drsg|审核方.{0,8}(文件|计划|文档)|计划文件"
-    ),
-    "G3": re.compile(r"审核方|验收|放行|条件已满足|判定|评审|reviewer"),
-    "G4": re.compile(
-        r"起点|不认识|归属|不是(我|本会话)(改|做)|来源不明|tree 不(符|一致)|父提交不(符|一致)"
-    ),
-    "G5": re.compile(r"commit_auth_apply"),
-    "G6": re.compile(
-        r"push|发布|请你确认|请确认|是否授权|明确授权|由你决定|等你|请用户|你来定|要不要|是否提交"
-    ),
-}
+ASSIST_REQUEST = re.compile(
+    r"(?:需要|需|请|等待|等|交给|交由)\s*(?:由|让|请|用户(?:同时)?联系)?"
+    r"(?:(?:审核方|评审方|reviewer).{0,16}(?:代跑|协助|处理|修复|修改|放行|解除|更新|补充)|代跑)"
+    r"|\b(?:need|waiting for|ask)\b.{0,16}\breviewer\b.{0,16}\b(?:help|run|fix|update|unblock)\b",
+    re.IGNORECASE,
+)
+NON_CURRENT = re.compile(r"如果|假如|\bif\b", re.IGNORECASE)
+NOT_PENDING = re.compile(
+    r"之前|此前|曾经|示例|例如|(?:脚本|守卫).{0,12}(?:会|用于)|文档.{0,6}(?:写|说明)"
+    r"|不再|不会|不(?:需要|需|用|必|等)|无需|已(?:经)?(?:请|发|交|解决|完成|处理|解除|恢复)"
+    r"|\b(?:previously|formerly|already|no longer|do not|don't)\b"
+    r"|\b(?:hook|guard)\b.{0,32}\b(?:checks|matches|detects|reminds|triggers|blocks|will)\b",
+    re.IGNORECASE,
+)
 
 
 def _user_input_boundary(row):
     if not isinstance(row, dict) or row.get("type") != "user":
+        return False
+    if row.get("isMeta") is True:
         return False
     message = row.get("message")
     if not isinstance(message, dict):
@@ -116,6 +116,22 @@ def _last_assistant_text(rows):
     return "\n".join(blocks) if blocks else None
 
 
+def _is_event_post(block):
+    if not isinstance(block, dict) or block.get("type") != "tool_use":
+        return False
+    names = ("mcp__drsg-events__event_post", "functions.mcp__drsg-events__event_post")
+    if block.get("name") in names:
+        return True
+    if block.get("name") != "multi_tool_use.parallel":
+        return False
+    payload = block.get("input")
+    calls = payload.get("tool_uses") if isinstance(payload, dict) else None
+    return isinstance(calls, list) and any(
+        isinstance(call, dict) and call.get("recipient_name") in names
+        for call in calls
+    )
+
+
 def _has_event_post(rows):
     boundary = -1
     for i, row in enumerate(rows):
@@ -129,18 +145,22 @@ def _has_event_post(rows):
         content = message.get("content") if isinstance(message, dict) else None
         if not isinstance(content, list):
             continue
-        if any(isinstance(block, dict) and block.get("type") == "tool_use"
-               and block.get("name") == "mcp__drsg-events__event_post"
-               for block in content):
+        if any(_is_event_post(block) for block in content):
             return True
     return False
 
 
 def _should_block(text):
-    hits = {name: bool(pattern.search(text)) for name, pattern in GROUPS.items()}
-    user_only = hits["G6"] and not any(hits[name] for name in ("G1", "G2", "G3", "G4", "G5"))
-    c6 = hits["G1"] or hits["G5"] or (hits["G2"] and hits["G3"])
-    return c6 and not user_only
+    text = re.sub(r"```.*?(?:```|\Z)|~~~.*?(?:~~~|\Z)", " ", text, flags=re.DOTALL)
+    text = re.sub(r"(?m)^[ \t]*>[^\n]*", " ", text)
+    text = re.sub(r'`[^`\n]*`|“[^“”\n]*”|‘[^‘’\n]*’|"[^"\n]*"', " ", text)
+    for sentence in re.split(r"[\n。！？!?；;.]+|但是|但|不过|然而|\bbut\b", text, flags=re.IGNORECASE):
+        if NON_CURRENT.search(sentence):
+            continue
+        for clause in re.split(r"[，,]+", sentence):
+            if not NOT_PENDING.search(clause) and ASSIST_REQUEST.search(clause):
+                return True
+    return False
 
 
 def _current_project(hook):

@@ -526,6 +526,8 @@ DRSG_STOP_TEXTUAL_TOOL_CALL_GUARD_DISABLED=1 claude
 
 ## 审核协助 Stop 守卫（`reviewer-assist-stop-guard.py`）
 
+提醒要求明确的待处理动作，例如 `需要审核方代跑` 或 `I need reviewer help`，不会仅因出现拒绝提示、工具名或脚本解释而触发。代码示例、引用、假设或否定请求、历史或已解决事项，以及仅等待判定，均不触发；逐短句判断，避免旧事项或用户事项掩盖新的审核方请求。这是保守启发式，不是自然语言或权限的完整判定。调用识别只接受精确工具名 `mcp__drsg-events__event_post`、`functions.mcp__drsg-events__event_post`，以及一层 `multi_tool_use.parallel` 的 `tool_uses[].recipient_name`。最近一次真实用户输入后的已识别调用尝试会免除重复提醒，即使尝试失败也一样；这不证明交接成功，更不要求重试被拒调用。`isMeta: true` 元通知和工具结果不重置回合。不查询 Event 状态，关闭 Event 也不永久豁免未来的新请求。
+
 `setup.sh` 始终会将此脚本注册为 `~/.claude/settings.json` 中的同步全局 `Stop` hook；即使关闭已有的可选全局 hook，也仍会注册。只有审核方控制的工作阻塞会话时才会拦截；此 hook 不会自行发送 Event。它只检查当前 transcript 有界的尾部，命中时要求会话发送审核协助 `kind="handoff"` Event，写明阻塞步骤、要求审核方执行的准确动作、当前 tree，以及原始拒绝/错误文本。审核方用 `kind="handoff"` Event 回复，summary 以 `协助完成：` 开头；此请求不授权任何必须由用户决定的事项。没有关闭开关。升级时重新运行 `setup.sh` 安装此 hook，然后重启 Claude Code 会话。
 
 ## 敏感文件读取守卫（`sensitive-file-read-guard.py`）

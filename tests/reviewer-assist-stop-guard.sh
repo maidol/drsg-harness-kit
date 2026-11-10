@@ -25,6 +25,7 @@ if not os.path.isfile(hook):
 failures = []
 checks = 0
 mutation_results = []
+expected_mutants = 16
 only = os.environ.get("ONLY", "")
 
 
@@ -114,7 +115,10 @@ with tempfile.TemporaryDirectory(prefix="reviewer-assist-stop-") as tmp:
         got = "block" if output.get("decision") == "block" else "allow"
         ok = result.returncode == 0 and got == expected
         if hint:
-            ok = ok and "请求协助：" in output.get("reason", "")
+            ok = ok and output == {"decision": "block", "reason": (
+                "你在等审核方协助，先用 event_post 发『请求协助：』，再停；"
+                "如果只在等用户本人拍板，直接结束即可")}
+            ok = ok and len(result.stdout.splitlines()) == 1
         if expect_silent and expected == "allow":
             ok = ok and not result.stdout.strip()
         if expected == "allow":
@@ -128,12 +132,12 @@ with tempfile.TemporaryDirectory(prefix="reviewer-assist-stop-") as tmp:
         return result, elapsed
 
     g1 = "权限检查被拦，需要代跑"
-    mixed = "请用户同时联系审核方代跑"
+    mixed = "请用户确认发布；权限检查被拦，需要审核方代跑"
     c6_rows = [user(), assistant(text(g1))]
     run("g1-block", c6_rows, expected="block", hint=True, expect_silent=False)
-    run("g5-block", [user(), assistant(text("commit_auth_apply 返回错误"))],
+    run("g5-block", [user(), assistant(text("commit_auth_apply 返回错误，需要审核方修复"))],
         expected="block", hint=True, expect_silent=False)
-    run("g2-g3-block", [user(), assistant(text("需要修改审核方仓库的计划文件，等待验收判定"))],
+    run("g2-g3-block", [user(), assistant(text("审核方仓库的计划文件有误，需要审核方修改计划文件"))],
         expected="block", hint=True, expect_silent=False)
     run("g3-only-allow", [user(), assistant(text("等待审核方判定"))])
     run("g4-only-allow", [user(), assistant(text("起点归属待确认"))])
@@ -160,6 +164,83 @@ with tempfile.TemporaryDirectory(prefix="reviewer-assist-stop-") as tmp:
             {"type": "tool_result", "tool_use_id": "synthetic-post", "content": "ok"}]}},
         assistant(text(g1), "final-after-post"),
     ])
+
+    context_cases = (
+        ("explanation-g1", "这个脚本使用正则匹配拦截提示。", "allow"),
+        ("explanation-g5", "commit_auth_apply 返回错误", "allow"),
+        ("explanation-g2-g3", "审核方仓库保存计划文件。", "allow"),
+        ("old-g2-g3-description", "需要修改审核方仓库的计划文件，等待验收判定", "allow"),
+        ("cross-paragraph-keywords", "权限检查被拦。\n审核方仓库保存计划文件。", "allow"),
+        ("quoted-request", "“需要审核方代跑”。", "allow"),
+        ("inline-code-request", "示例：`需要审核方代跑`", "allow"),
+        ("fenced-request", "```text\n需要审核方代跑\n```", "allow"),
+        ("blockquote-request", "> 需要审核方代跑", "allow"),
+        ("conditional-request", "如果被拦，就需要审核方代跑。", "allow"),
+        ("hypothetical-request", "假如需要审核方代跑，应发送请求。", "allow"),
+        ("negated-request", "不需要审核方代跑。", "allow"),
+        ("no-longer-needed", "不再需要审核方修复。", "allow"),
+        ("already-requested", "已经请审核方处理。", "allow"),
+        ("resolved-request", "问题已解决，无需审核方代跑。", "allow"),
+        ("historical-request", "之前需要审核方代跑，现在已经解决。", "allow"),
+        ("hook-explanation", "守卫会在需要审核方代跑时提醒。", "allow"),
+        ("waiting-receipt", "已发协助请求，正在等待审核方回执。", "allow"),
+        ("current-reviewer-help", "本轮无法继续，需要审核方协助。", "block"),
+        ("current-reviewer-wait", "当前仍卡住，等待审核方处理。", "block"),
+        ("english-current-help", "The test was denied; I need reviewer help.", "block"),
+        ("english-negated-help", "I do not need reviewer help.", "allow"),
+        ("english-historical-help", "I previously needed reviewer help.", "allow"),
+        ("english-old-and-current", "I already sent the old request. I need reviewer help for a new failure.", "block"),
+        ("english-hook-explanation", "The hook checks whether I need reviewer help.", "allow"),
+        ("indirect-current-request", "请用户同时联系审核方代跑", "block"),
+        ("will-not-ask", "不会请审核方处理。", "allow"),
+        ("resolved-and-new", "旧问题已解决，但需要审核方代跑新测试。", "block"),
+        ("historical-and-current", "之前需要审核方代跑。\n当前需要审核方代跑新测试。", "block"),
+        ("quote-and-current", "“需要审核方代跑”是旧示例，当前需要审核方代跑新测试。", "block"),
+        ("negated-user-and-reviewer", "不需要用户处理，需要审核方代跑。", "block"),
+        ("mixed-user-and-reviewer", mixed, "block"),
+    )
+    for name, value, expected in context_cases:
+        for suffix, extra in (("", {}), ("-with-lane", {"DRSG_EVENT_LANES": "synthetic-lane"})):
+            run(name + suffix, [user(), assistant(text(value))], env_extra=extra,
+                expected=expected, hint=expected == "block", expect_silent=expected == "allow")
+
+    post_name = "mcp__drsg-events__event_post"
+    def call(name, payload=None):
+        return {"type": "tool_use", "id": "synthetic-call", "name": name,
+                "input": {} if payload is None else payload}
+
+    def parallel_call(recipient):
+        return call("multi_tool_use.parallel", {"tool_uses": [
+            {"recipient_name": recipient, "parameters": {}}]})
+
+    for name, block, expected in (
+        ("qualified-post", call("functions." + post_name), "allow"),
+        ("parallel-post", parallel_call(post_name), "allow"),
+        ("parallel-qualified-post", parallel_call("functions." + post_name), "allow"),
+        ("unknown-prefix-post", call("other." + post_name), "block"),
+        ("lookalike-post", call(post_name + "_fake"), "block"),
+        ("embedded-in-bash-not-call", call("Bash", {"command": post_name}), "block"),
+        ("invalid-parallel-shape", call("multi_tool_use.parallel", {"tool_uses": {}}), "block"),
+        ("invalid-parallel-item", call("multi_tool_use.parallel", {"tool_uses": [None]}), "block"),
+        ("arbitrary-nesting-not-call", call("Bash", {"nested": parallel_call(post_name)}), "block"),
+    ):
+        run(name, [user(), assistant([block], "synthetic-call-message"),
+            assistant(text(g1), "after-call")], expected=expected,
+            hint=expected == "block", expect_silent=expected == "allow")
+
+    posted = [user(), assistant([call(post_name)], "synthetic-post-message")]
+    for name, boundary, expected in (
+        ("meta-text-keeps-post", {**user(), "isMeta": True}, "allow"),
+        ("meta-block-keeps-post", {**user(text("synthetic notification")), "isMeta": True}, "allow"),
+        ("real-user-resets-post", user(), "block"),
+        ("real-user-block-resets-post", user(text("new request")), "block"),
+        ("false-meta-resets-post", {**user(), "isMeta": False}, "block"),
+    ):
+        run(name, posted + [boundary, assistant(text(g1), "after-boundary")],
+            expected=expected, hint=expected == "block", expect_silent=expected == "allow")
+    run("failed-post-not-retried", posted + [user([{
+        "type": "tool_result", "tool_use_id": "synthetic-call", "is_error": True,
+        "content": "synthetic denial"}]), assistant(text(g1), "after-failed-post")])
 
     run("active-stop-allow", c6_rows, hook_input={
         "hook_event_name": "Stop", "stop_hook_active": True,
@@ -336,11 +417,41 @@ if not only:
         "if not reviewer or _current_project(hook) == reviewer:",
         "if _current_project(hook) == reviewer:",
     )
+    for name, case_name, old, new in (
+        ("qualified-name", "qualified-post",
+         'names = ("mcp__drsg-events__event_post", "functions.mcp__drsg-events__event_post")',
+         'names = ("mcp__drsg-events__event_post",)'),
+        ("parallel-wrapper", "parallel-post",
+         'if block.get("name") != "multi_tool_use.parallel":', 'if True:'),
+        ("meta-boundary", "meta-text-keeps-post",
+         'if row.get("isMeta") is True:', 'if False:'),
+        ("real-boundary", "real-user-resets-post", 'boundary = i', 'boundary = -1'),
+        ("exact-name", "unknown-prefix-post", 'if block.get("name") in names:',
+         'if isinstance(block.get("name"), str) and block["name"].endswith(names[0]):'),
+        ("current-intent", "explanation-g1",
+         'if not NOT_PENDING.search(clause) and ASSIST_REQUEST.search(clause):',
+         'if not NOT_PENDING.search(clause):'),
+        ("negated-intent", "negated-request",
+         'if not NOT_PENDING.search(clause) and ASSIST_REQUEST.search(clause):',
+         'if ASSIST_REQUEST.search(clause):'),
+        ("hypothetical-intent", "conditional-request",
+         'if NON_CURRENT.search(sentence):', 'if False:'),
+        ("quoted-intent", "quoted-request",
+         '''text = re.sub(r'`[^`\\n]*`|“[^“”\\n]*”|‘[^‘’\\n]*’|"[^"\\n]*"', " ", text)''',
+         'text = text'),
+        ("clause-isolation", "negated-user-and-reviewer",
+         'for clause in re.split(r"[，,]+", sentence):', 'for clause in (sentence,):'),
+        ("fenced-intent", "fenced-request",
+         'text = re.sub(r"```.*?(?:```|\\Z)|~~~.*?(?:~~~|\\Z)", " ", text, flags=re.DOTALL)',
+         'text = text'),
+        ("blockquote-intent", "blockquote-request",
+         'text = re.sub(r"(?m)^[ \\t]*>[^\\n]*", " ", text)', 'text = text'),
+    ):
+        check_mutant("mutant " + name, case_name, old, new)
     if os.environ.get("MUTATION_SELF_TEST") == "1":
         check_mutant(
-            "deliberately live G6-classifier mutant", "g6-only-allow",
-            '"G6": re.compile(\n        r"push|发布|请你确认|请确认|是否授权|明确授权|由你决定|等你|请用户|你来定|要不要|是否提交"\n    ),',
-            '"G6": re.compile(r"never-matches"),', should_kill=False,
+            "deliberately live unused-constant mutant", "g6-only-allow",
+            'MAX_LINES = 3000', 'MAX_LINES = 3001', should_kill=False,
         )
 
 if only and checks == 0:
@@ -355,7 +466,7 @@ if failures:
                 print("MUTANT SURVIVED (self-check)")
             else:
                 print("MUTATION SELF-CHECK DID NOT CONFIRM SURVIVOR")
-        elif len(mutation_results) == 4 and all(result == "killed" for result in mutation_results):
+        elif len(mutation_results) == expected_mutants and all(result == "killed" for result in mutation_results):
             print("ALL TARGETED MUTANTS KILLED")
         elif "survived" in mutation_results:
             print("MUTANT SURVIVED")
@@ -364,7 +475,7 @@ if failures:
     raise SystemExit(1)
 print("PASS %d/%d" % (checks, checks))
 if not only:
-    if len(mutation_results) == 4 and all(result == "killed" for result in mutation_results):
+    if len(mutation_results) == expected_mutants and all(result == "killed" for result in mutation_results):
         print("ALL TARGETED MUTANTS KILLED")
     else:
         print("MUTATION CHECK DID NOT RUN")
