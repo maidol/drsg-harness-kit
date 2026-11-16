@@ -143,14 +143,17 @@ PY
 check "setup registers StopFailure as asyncRewake" "$(stopfailure_hook)" asyncRewake
 
 # 8. the compact wake guidance keeps the verdict and handoff rules.
+GUIDANCE='按 Event 流程处理：handoff 直接处理；收到审核方发来的、无需后续执行的普通通过判定 notice（如 summary 以「验收通过：」开头），只关闭该判定 Event，不回“已收到”回执；收到交付方回执或评审请求时，按 ref 审阅，对原发送方发出判定后关闭该交付 Event；要求返工/继续执行或带提交授权的 handoff 不适用普通通过 notice 的只关闭规则，仍按相应流程处理；commit/push/PR 等仍先等用户确认。'
 reset; fg_owner; A=$OWNER
-check "wake text says verdicts use event_done" "$(echo '{"session_id":"A","hook_event_name":"Stop"}' \
-  | EVENT_POLL_OWNER_PID=$A timeout 5 python3 "$POLLER" 2>&1 >/dev/null | grep -c '判定只 event_done')" 1
+out=$(printf '%s\n' '{"session_id":"A","hook_event_name":"Stop"}' \
+  | EVENT_POLL_OWNER_PID="$A" timeout 5 python3 "$POLLER" 2>&1 >/dev/null)
+check "wake text says verdicts use event_done" "$(printf '%s\n' "$out" | grep -Fxc "$GUIDANCE")" 1
 
 # 9. handoffs start directly, without a read receipt.
 reset; fg_owner; A=$OWNER
-check "wake text says handoffs start directly" "$(echo '{"session_id":"A","hook_event_name":"Stop"}' \
-  | EVENT_POLL_OWNER_PID=$A timeout 5 python3 "$POLLER" 2>&1 >/dev/null | grep -c 'handoff 直接开工')" 1
+out=$(printf '%s\n' '{"session_id":"A","hook_event_name":"Stop"}' \
+  | EVENT_POLL_OWNER_PID="$A" timeout 5 python3 "$POLLER" 2>&1 >/dev/null)
+check "wake text says handoffs start directly" "$(printf '%s\n' "$out" | grep -Fxc "$GUIDANCE")" 1
 
 # 10. two processes on one session id (two terminals resuming it): one owner, and the
 #     first to exit neither kills the other's poller nor hides an Event from it

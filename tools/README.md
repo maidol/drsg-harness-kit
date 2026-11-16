@@ -693,10 +693,20 @@ there is one this session has not been told about yet.
   that ended in an API error) run it as an
   `asyncRewake` hook: Claude Code keeps it in the background and wakes the model
   only on exit code 2. Idle rounds sleep, ask the daemon over RPC, and print
-  nothing. The fixed wake guidance is one line (under 80 characters):
-  `按 Event 流程处理：handoff 直接开工；判定只 event_done；commit/push/PR 等先等用户确认。`
-  It preserves the handoff, verdict, and user-confirmation rules; Event fields,
-  owner/lease notices, graph hints, and re-nudge content are rendered separately.
+  nothing. The fixed wake guidance is one exact, complete line; the former
+  80-character budget no longer applies:
+  `按 Event 流程处理：handoff 直接处理；收到审核方发来的、无需后续执行的普通通过判定 notice（如 summary 以「验收通过：」开头），只关闭该判定 Event，不回“已收到”回执；收到交付方回执或评审请求时，按 ref 审阅，对原发送方发出判定后关闭该交付 Event；要求返工/继续执行或带提交授权的 handoff 不适用普通通过 notice 的只关闭规则，仍按相应流程处理；commit/push/PR 等仍先等用户确认。`
+  In particular, an ordinary pass-verdict notice that requires no further work is
+  closed with `event_done` and gets no acknowledgement; as reviewer, handle a
+  delivery sender's receipt or review request (whether a `notice` or `handoff`)
+  by reviewing its `ref`, sending the verdict to that Event's original sender,
+  then closing the delivery Event.
+  Rework, follow-up conditions, and commit-authorization handoffs still require
+  their prescribed work and checks. These examples do not grant commit, deploy,
+  outbound-message, or other tool permissions. Event fields, owner/lease notices,
+  graph hints, and re-nudge content are rendered separately. Relay text remains
+  capped at 8192 characters; oversized Events stay pending and point to
+  `event_list`.
 - **One poller per project, held by a lease.** Two sessions in the same
   directory would both act on the same Event. The right to poll is a lease
   naming a session and its Claude Code process (pid + start time), not a lock

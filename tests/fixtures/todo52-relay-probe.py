@@ -15,6 +15,12 @@ import tempfile
 import threading
 import time
 
+_guidance_spec = importlib.util.spec_from_file_location(
+    'event_guidance_contracts', Path(__file__).resolve().parents[1] / 'event_guidance_contracts.py')
+_guidance_contracts = importlib.util.module_from_spec(_guidance_spec)
+_guidance_spec.loader.exec_module(_guidance_contracts)
+has_complete_guidance = _guidance_contracts.has_complete_guidance
+
 parser = argparse.ArgumentParser()
 parser.add_argument('mode', choices=('baseline', 'tool', 'stop'))
 parser.add_argument('--hook')
@@ -95,7 +101,7 @@ class Todo52RelayHTTPHandler(BaseHTTPRequestHandler):
                        'key': 'event-synthetic-52' in texts,
                        'ref': 'synthetic-plan' in texts,
                        'kind': '[handoff]' in texts,
-                       'rules': '判定只 event_done；commit/push/PR 等先等用户确认。' in texts,
+                       'rules': has_complete_guidance(body.get('messages', [])),
                        'sync_count': texts.count('【正文接力】若已在处理，继续，不要重做。'),
                        'owner': ('本会话持有本次接力 Event 的 owner 租约' in texts)
                                 if production else 'synthetic-lane' in texts}

@@ -284,7 +284,7 @@ with tempfile.TemporaryDirectory(prefix="poller-lease-contract-") as temp:
         fresh = poller.wake_text(sample, fresh=True)
     except TypeError:
         fresh = ""
-    expected_legacy = "\n".join(["【待办轮询】本项目有 1 条新的待办 Event（drsg-events）：", "- e1 [handoff] x", "按 Event 流程处理：handoff 直接开工；判定只 event_done；commit/push/PR 等先等用户确认。"])
+    expected_legacy = "\n".join(["【待办轮询】本项目有 1 条新的待办 Event（drsg-events）：", "- e1 [handoff] x", "按 Event 流程处理：handoff 直接处理；收到审核方发来的、无需后续执行的普通通过判定 notice（如 summary 以「验收通过：」开头），只关闭该判定 Event，不回“已收到”回执；收到交付方回执或评审请求时，按 ref 审阅，对原发送方发出判定后关闭该交付 Event；要求返工/继续执行或带提交授权的 handoff 不适用普通通过 notice 的只关闭规则，仍按相应流程处理；commit/push/PR 等仍先等用户确认。"])
     check("ordinary wake text uses compact guidance", legacy, expected_legacy)
     check("fresh wake states current owner permission", "本会话现在持有本项目的 Event owner 租约" in fresh, True)
     supersession = "启动时的“没有 Event owner / 本会话只读”快照已过时；以本次唤醒为准。"

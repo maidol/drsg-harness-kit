@@ -19,6 +19,11 @@ cases = importlib.util.module_from_spec(spec)
 spec.loader.exec_module(cases)
 
 
+EXPECTED_GUIDANCE = "按 Event 流程处理：handoff 直接处理；收到审核方发来的、无需后续执行的普通通过判定 notice（如 summary 以「验收通过：」开头），只关闭该判定 Event，不回“已收到”回执；收到交付方回执或评审请求时，按 ref 审阅，对原发送方发出判定后关闭该交付 Event；要求返工/继续执行或带提交授权的 handoff 不适用普通通过 notice 的只关闭规则，仍按相应流程处理；commit/push/PR 等仍先等用户确认。"
+MAX_TEXT = 8192
+RENDER_RESERVE = 512
+
+
 class Contracts(unittest.TestCase):
     def setUp(self):
         self.f = cases.RelayCases()
@@ -67,7 +72,73 @@ class Contracts(unittest.TestCase):
         self.assertIn('第二行', lines)
         self.assertIn('  ref: 合成计划', lines)
         self.assertIn('  ↳ 回复你发出的 synthetic-parent：父单', lines)
-        self.assertEqual(lines[-1], '按 Event 流程处理：handoff 直接开工；判定只 event_done；commit/push/PR 等先等用户确认。')
+        self.assertEqual(lines[-1], EXPECTED_GUIDANCE)
+
+    def test_delivery_keeps_exact_guidance_and_event_lines(self):
+        f = self.f
+        event = dict(f.event, kind='notice', summary='synthetic delivery',
+                     ref='synthetic-plan')
+        f.stage(new=[event])
+        f.deliver(events=[event])
+        text = json.loads(f.output.getvalue())['hookSpecificOutput']['additionalContext']
+        self.assertEqual(text.splitlines(), [
+            f.r.PREFIX,
+            f.r.OWNER,
+            '- event-synthetic-52 [notice] synthetic delivery',
+            '  ref: synthetic-plan',
+            EXPECTED_GUIDANCE,
+        ])
+        self.assertEqual(text.splitlines()[-1], EXPECTED_GUIDANCE)
+
+    def test_guidance_fitting_text_stays_within_fixed_budget(self):
+        f = self.f
+        self.assertEqual(f.r.MAX_TEXT, MAX_TEXT)
+        base_event = dict(f.event, summary='')
+        base_render = f.r.render(f.p, [({'renudge': False}, base_event)])
+        fitted_length = MAX_TEXT - 600
+        fitting_event = dict(base_event, summary='x' * (fitted_length - len(base_render)))
+        fitted_text = f.r.render(f.p, [({'renudge': False}, fitting_event)])
+        self.assertEqual(len(fitted_text), fitted_length)
+        self.assertLessEqual(len(fitted_text), MAX_TEXT - RENDER_RESERVE)
+        self.assertEqual(fitted_text.splitlines()[-1], EXPECTED_GUIDANCE)
+
+        f.stage(new=[fitting_event])
+        f.deliver(events=[fitting_event])
+        delivered = json.loads(f.output.getvalue())['hookSpecificOutput']['additionalContext']
+        self.assertEqual(delivered, fitted_text)
+        self.assertEqual(f.state_data()['items'], [])
+
+    def test_guidance_reserve_boundary_stays_pending(self):
+        f = self.f
+        base_event = dict(f.event, summary='')
+        base_render = f.r.render(f.p, [({'renudge': False}, base_event)])
+        selected_limit = MAX_TEXT - RENDER_RESERVE
+        boundary_event = dict(f.event, summary='x' * (selected_limit + 1 - len(base_render)))
+        rendered = f.r.render(f.p, [({'renudge': False}, boundary_event)])
+        self.assertEqual(len(rendered), selected_limit + 1)
+        self.assertGreater(len(rendered), MAX_TEXT - RENDER_RESERVE)
+        self.assertLessEqual(len(rendered), MAX_TEXT)
+
+        f.stage(new=[boundary_event])
+        f.deliver(events=[boundary_event])
+        overflow_text = json.loads(f.output.getvalue())['hookSpecificOutput']['additionalContext']
+        self.assertEqual(overflow_text, '\n'.join((f.r.PREFIX, f.r.OWNER, f.r.OVERFLOW)))
+        self.assertEqual([row['key'] for row in f.state_data()['items']], [f.event['key']])
+
+    def test_guidance_total_limit_is_fixed_at_8192(self):
+        f = self.f
+        self.assertEqual(f.r.MAX_TEXT, MAX_TEXT)
+        base_event = dict(f.event, summary='')
+        base_render = f.r.render(f.p, [({'renudge': False}, base_event)])
+        oversized = dict(f.event, summary='x' * (MAX_TEXT + 1 - len(base_render)))
+        oversized_render = f.r.render(f.p, [({'renudge': False}, oversized)])
+        self.assertEqual(len(oversized_render), MAX_TEXT + 1)
+
+        f.stage(new=[oversized])
+        f.deliver(events=[oversized])
+        overflow_text = json.loads(f.output.getvalue())['hookSpecificOutput']['additionalContext']
+        self.assertEqual(overflow_text, '\n'.join((f.r.PREFIX, f.r.OWNER, f.r.OVERFLOW)))
+        self.assertEqual([row['key'] for row in f.state_data()['items']], [f.event['key']])
 
     def fetch(self, result):
         f = self.f

@@ -471,7 +471,7 @@ def wake_text(new, fresh=False, renudged=None):
             lines.append("- %s [handoff] %s" % (e["key"], e["summary"]))
             lines.append("  ↻ 再提醒（已等待 %d 分钟）" % e["re_nudge_minutes"])
         lines.append("如果你已经在处理这条，继续做完就行，不要重做；如果你把它挂起了，现在继续，或者给发件方发一条 notice，写明在等什么。")
-    lines.append("按 Event 流程处理：handoff 直接开工；判定只 event_done；commit/push/PR 等先等用户确认。")
+    lines.append("按 Event 流程处理：handoff 直接处理；收到审核方发来的、无需后续执行的普通通过判定 notice（如 summary 以「验收通过：」开头），只关闭该判定 Event，不回“已收到”回执；收到交付方回执或评审请求时，按 ref 审阅，对原发送方发出判定后关闭该交付 Event；要求返工/继续执行或带提交授权的 handoff 不适用普通通过 notice 的只关闭规则，仍按相应流程处理；commit/push/PR 等仍先等用户确认。")
     return "\n".join(lines)
 
 
