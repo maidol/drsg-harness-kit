@@ -25,6 +25,8 @@ import subprocess
 import sys
 import urllib.request
 
+import workflow_permissions
+
 
 def digest(data_bytes):
     if data_bytes is None:
@@ -284,6 +286,8 @@ def check_layer2(repo_dir, claude_dir, deployed_tools_dir=None):
                     if not os.path.isfile(d_file) or digest_file(r_file) != digest_file(d_file):
                         issues.append(f"Skill file drift: {sk}/{fname}")
 
+    issues.extend(workflow_permissions.check(os.path.join(claude_dir, "settings.json"), user=True))
+
     # 4. Global settings hooks & permissions (N2)
     settings_file = os.path.join(claude_dir, "settings.json")
     if os.path.exists(settings_file):
@@ -533,6 +537,7 @@ def check_layer4(project_dir, claude_json=None, tools_dir=None, compact_template
 
     # 1. settings.local.json hooks
     settings_local = os.path.join(project_dir, ".claude", "settings.local.json")
+    issues.extend(workflow_permissions.check(settings_local))
     if not os.path.exists(settings_local):
         issues.append("Missing .claude/settings.local.json")
     else:

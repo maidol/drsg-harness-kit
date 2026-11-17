@@ -99,6 +99,7 @@ cat > "$P/.claude/settings.local.json" <<'JSON'
   "PreCompact": [{"hooks": [{"command": "python3 compact_handoff.py"}]}],
   "PostCompact": [{"matcher": "*", "hooks": [{"command": "python3 compact_handoff.py"}]}]}}
 JSON
+python3 "$REPO/tools/workflow_permissions.py" apply --project "$P" >/dev/null
 printf 'DRSG_TOKEN=t\nDRSG_API=a\n' > "$P/.drsg/env"
 printf '<!-- drsg-memory:events:begin -->\nx\n<!-- drsg-memory:events:end -->\n' > "$P/CLAUDE.md"
 mkdir -p "$T/tools/templates"

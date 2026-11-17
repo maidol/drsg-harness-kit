@@ -149,6 +149,24 @@ check() {
 }
 if run_setup "$T/setup.out"; then SETUP_RC=0; else SETUP_RC=$?; fi
 check "existing project's setup succeeds without --token" "$SETUP_RC" 0
+check "setup installs exact Event and temporary-workspace permissions without skills" \
+  "$(python3 - "$PROJECT" "$CLAUDE_DIR" <<'PY'
+import json, pathlib, sys
+project, user = map(pathlib.Path, sys.argv[1:])
+local = json.loads((project / '.claude/settings.local.json').read_text())
+global_settings = json.loads((user / 'settings.json').read_text())
+expected = {'mcp__drsg-events__' + name for name in (
+    'event_list', 'event_post', 'event_reply', 'event_done', 'event_take',
+    'commit_auth_post', 'commit_auth_apply')}
+actual = [x for x in local['permissions']['allow'] if x.startswith('mcp__drsg-events')]
+policies = [x for x in global_settings['autoMode']['allow']
+            if x.startswith('(drsg-harness-kit temporary-workspace) ')]
+valid = (set(actual) == expected and len(actual) == 7
+         and global_settings['permissions']['allow'].count('Edit(//tmp/**)') == 1
+         and len(policies) == 1)
+print('yes' if valid else 'no')
+PY
+)" yes
 check "existing project token authenticates silently" \
   "$( [ -f "$T/auth-ok" ] && [ ! -f "$T/auth-failed" ] && echo yes || echo no )" yes
 check "registered drsg is untouched while drsg-events is added" \
@@ -282,4 +300,4 @@ check "no daemon env and no --token still stops the join" \
   "$NOENV_RC/$(grep -c 'joining a running daemon requires --token' "$T/setup-noenv.out")" 1/1
 
 echo "PASS $OK/$RAN"
-[ "$RAN" -eq 25 ] && [ "$OK" -eq "$RAN" ]
+[ "$RAN" -eq 26 ] && [ "$OK" -eq "$RAN" ]

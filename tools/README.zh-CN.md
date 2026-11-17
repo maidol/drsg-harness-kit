@@ -92,6 +92,27 @@ Usage 行按 `(项目标签, assistant message.id)` 去重。副本中相同的�
 
 `--l3-chat` 也接受原始的、兼容 OpenAI 的 base URL——例如自托管 proxy——但只有接受该参数的 daemon 的 `digest.run` 才能使用；使用上面的 preset 名称时，任何 daemon 都可以。provider 契约由 memory daemon 实现，而不是由本仓库实现。
 
+### 默认工作流权限
+
+`workflow_permissions.py` 分两层管理权限。普通 `setup.sh`（包括 `--no-skills`）向用户级 `settings.json` 合并 `Edit(//tmp/**)` 和带标记的 `autoMode.allow` 文案；目录取 `CLAUDE_CONFIG_DIR`，默认 `~/.claude`。项目安装向 `.claude/settings.local.json` 合并七个精确的 `mcp__drsg-events__` allow：`event_list`、`event_post`、`event_reply`、`event_done`、`event_take`、`commit_auth_post`、`commit_auth_apply`，不用通配符放行未来工具。批量 setup 复用同一个项目安装器。
+
+在本目录执行；安装和 `apply` 会持久化修改配置，须先获部署授权：
+
+```bash
+bash ../setup.sh --project /path/to/project --bin /path/to/drsg --no-skills
+# 或只更新这两组权限，不改 daemon 或 MCP 注册：
+python3 workflow_permissions.py apply --user
+python3 workflow_permissions.py apply --project /path/to/project
+# 只读检查：
+python3 workflow_permissions.py check --user
+python3 workflow_permissions.py check --project /path/to/project
+bash install.sh --audit
+```
+
+临时文件文案只覆盖当前任务的脚本、结果，以及已授权来源的非敏感统计和定位元数据；不授权新增敏感读取、原始敏感内容复制、清理其他任务文件、网络操作、部署、发布或脚本的其他副作用。精确 Edit 规则是路径授权，不是内容过滤器；自然语言文案不会把它变成内容过滤器。现有 Hook 和安全规则仍生效。工具 allow 不代替 Event 的 owner/车道校验，也不代替提交的来源、tree、分支和一次性授权校验。不增加通用 shell/解释器 allow；静态测试不证明真实 auto 分类器一定放行某条命令。
+
+保留其他配置与 ask/deny，修复必需 allow 的重复项及带标记文案的漂移；拒绝损坏配置和符号链接文件。新文件为 0600，已有文件保留 mode。同文件中已知的 ask/deny 冲突保留，合并后仍以退出码 1 报告；配置非法或无法写入退出 2。`check` 不写文件。审计 L2/L4 检查这些文件里的规则缺失、重复、文案漂移和已知冲突，不冒充 managed/user/project 各层合并后的最终权限。冲突需人工处理，安装器不会删除限制。部署后重启会话；给真实项目安装是独立步骤，不属于隔离测试。
+
 ### 托管 Compact instructions
 
 bundle 的 `setup.sh` 会管理项目 `CLAUDE.md` 中的 `# Compact instructions` 区块。以下独立选项只调整这个项目的指令区块，不安装或刷新记忆 hooks：

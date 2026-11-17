@@ -91,6 +91,7 @@ cp "$SETUP_SOURCE" "$BUNDLE/setup.sh"
 REGISTRY_SOURCE="${REGISTRY_SOURCE:-$REPO/tools/project_registry.py}"
 if [ -f "$REGISTRY_SOURCE" ]; then cp "$REGISTRY_SOURCE" "$BUNDLE/tools/project_registry.py"; fi
 cp "$REPO/tools/drsg_rpc.py" "$BUNDLE/tools/drsg_rpc.py"
+cp "$REPO/tools/workflow_permissions.py" "$BUNDLE/tools/workflow_permissions.py"
 cp "$REPO/tools/reviewer-assist-stop-guard.py" "$BUNDLE/tools/reviewer-assist-stop-guard.py"
 cat > "$BUNDLE/tools/install.sh" <<'SH'
 #!/usr/bin/env bash

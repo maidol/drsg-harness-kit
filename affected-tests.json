@@ -10,6 +10,13 @@
       "tests/test-all.sh"
     ],
     "path_map": {
+      "tools/workflow_permissions.py": [
+        "tests/workflow-permissions.sh",
+        "tests/audit-deployment.sh",
+        "tests/setup-all-projects.sh",
+        "tests/setup-reuse-token.sh"
+      ],
+      "tests/workflow-permissions.py": ["tests/workflow-permissions.sh"],
       "tools/templates/settings-hooks.json": [
         "tests/setup-reuse-token.sh",
         "tests/superpowers-doc-guard.sh"

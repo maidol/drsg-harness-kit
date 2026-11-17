@@ -680,6 +680,9 @@ else:
         print("   WARN: Superpowers docs state requires review")
 PYEOF
 
+# Every installed project gets the exact current Event tool permissions.
+python3 "$SCRIPT_DIR/workflow_permissions.py" apply --project "$PROJECT_DIR"
+
 # ---- 5. register MCP ---------------------------------------------------------
 echo "== registering MCP server 'drsg' (project scope) at $MCP_URL"
 if [ "$PRESERVE_MCP" = "1" ]; then

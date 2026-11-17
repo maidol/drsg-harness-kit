@@ -206,7 +206,11 @@ def template_install_audit():
             text=True, capture_output=True, timeout=30,
         )
         assert check.returncode == 0, f"complete hook set drifted: {check.stdout}{check.stderr}"
-        audit = load("v116_deployment_audit", root / "tools/audit_deployment.py")
+        sys.path.insert(0, str(root / "tools"))
+        try:
+            audit = load("v116_deployment_audit", root / "tools/audit_deployment.py")
+        finally:
+            sys.path.pop(0)
         result = audit.check_layer3(str(hooks), str(project))
         assert result["ok"], result
         assert "All 10 hook templates" in result["details"][0], result

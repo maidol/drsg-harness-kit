@@ -160,6 +160,10 @@ except Exception:
 PY
 }
 
+# The healthy fixture includes the default workflow permissions.
+CLAUDE_CONFIG_DIR="$CLAUDE_DIR" python3 "$HERE/../tools/workflow_permissions.py" apply --user >/dev/null
+python3 "$HERE/../tools/workflow_permissions.py" apply --project "$PROJ" >/dev/null
+
 # 1. Hermetic audit: all in sync
 python3 "$AUDIT" --repo "$REPO" --tools-dir "$DEPLOYED_TOOLS" --claude-dir "$CLAUDE_DIR" --project "$PROJ" --json > "$T/out1.json" 2>&1 || true
 l1_status=$(find_layer_ok "$T/out1.json" "L1")
@@ -574,6 +578,7 @@ cat > "$R2_PROJ/.claude/settings.local.json" <<EOF
   }
 }
 EOF
+python3 "$HERE/../tools/workflow_permissions.py" apply --project "$R2_PROJ" >/dev/null
 python3 "$AUDIT" --repo "$REPO" --tools-dir "$DEPLOYED_TOOLS" --claude-dir "$CLAUDE_DIR" --project "$R2_PROJ" --json > "$T/out_r2_custom.json" 2>&1 || true
 l4_r2_custom=$(find_layer_ok "$T/out_r2_custom.json" "L4")
 check "r2_user_custom_event_rule_not_drift" "$l4_r2_custom" "ok"
@@ -666,6 +671,8 @@ def project_fixture(root, name):
     (project / "CLAUDE.md").write_text(
         "<!-- drsg-memory:events:begin -->\nevents\n"
         "<!-- drsg-memory:events:end -->\n", encoding="utf-8")
+    import workflow_permissions
+    workflow_permissions.apply(project / '.claude' / 'settings.local.json')
     return project
 
 with tempfile.TemporaryDirectory(prefix="audit-superpowers-") as td:

@@ -149,6 +149,50 @@ say — but only against a daemon whose `digest.run` accepts one; with the prese
 names above, any daemon will do. The provider contract is implemented by the
 memory daemon, not by this repository.
 
+### Default workflow permissions
+
+`workflow_permissions.py` manages two scopes. Normal `setup.sh` runs (including
+`--no-skills`) merge `Edit(//tmp/**)` and a marked `autoMode.allow` policy into
+user `settings.json` under `CLAUDE_CONFIG_DIR` (default `~/.claude`). Project
+installation merges seven exact `mcp__drsg-events__` allow entries into
+`.claude/settings.local.json`: `event_list`, `event_post`, `event_reply`,
+`event_done`, `event_take`, `commit_auth_post`, `commit_auth_apply`. No wildcard
+is added for future tools. Batch setup uses the same project installer.
+
+From this directory, after authorizing persistent configuration changes:
+
+```bash
+bash ../setup.sh --project /path/to/project --bin /path/to/drsg --no-skills
+# Or update just these permissions (no daemon or MCP registration changes):
+python3 workflow_permissions.py apply --user
+python3 workflow_permissions.py apply --project /path/to/project
+# Read-only checks:
+python3 workflow_permissions.py check --user
+python3 workflow_permissions.py check --project /path/to/project
+bash install.sh --audit
+```
+
+The temporary-workspace policy covers task-local scripts/results and non-sensitive
+aggregates/locator metadata from sources already authorized for analysis. It does
+not authorize new sensitive reads, raw sensitive copies, other tasks' file cleanup,
+network operations, deployment, publishing or a script's other side effects.
+The exact Edit rule is a path grant, not a content filter; the policy does not
+turn it into one. Existing hooks and safety rules still apply. Tool permissions
+never replace Event owner/lane checks or commit source/tree/branch/one-use checks.
+No blanket shell/interpreter allow is installed, and static tests do not prove
+how a live auto-mode classifier will judge a particular command.
+
+Other settings and ask/deny entries are preserved. Required allow duplicates and
+stale marked policy text are repaired; invalid configuration and symlink files
+are refused. New files use mode 0600; existing file modes are preserved. Known
+same-file ask/deny conflicts remain in place and cause exit 1 even after merging;
+exit 2 means invalid/unwritable configuration. `check` never writes. Audit L2/L4
+reports missing/duplicate rules, policy drift and known conflicts in these files,
+not the final merged permissions across managed/user/project scopes. Review
+conflicts manually; the installer never removes a restriction. Restart the
+session after deployment. Applying these changes to real projects is a separate
+deployment step, not part of running the isolated tests.
+
 ### Managed Compact instructions
 
 The bundle's `setup.sh` manages a `# Compact instructions` block in each

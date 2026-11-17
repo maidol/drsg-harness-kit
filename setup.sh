@@ -174,6 +174,9 @@ if [ -f "$HERE/claude/MAIN-BRANCH-WORKFLOW.md" ]; then
 fi
 echo "   $(find "$TOOLS" -maxdepth 1 -type f | wc -l | tr -d ' ') files in place"
 
+# Temporary-workspace permissions are default-on, including --no-skills.
+python3 "$TOOLS/workflow_permissions.py" apply --user
+
 # The managed main-branch rule is default-on and independent of --no-skills.
 CLAUDE_DIR="${CLAUDE_CONFIG_DIR:-$HOME/.claude}"
 MAIN_BRANCH_MARKER="$CLAUDE_DIR/.main-branch-workflow.disabled"
