@@ -11,6 +11,9 @@
 
 每条命令显式指定目录（`go -C`、`git -C`、`(cd … && …)`）；命令失败后不假定 `cd` 状态延续。`no such file or directory` 先 `pwd`。
 
+- **Auto mode 下的独立只读 Git 检查**：优先直接用 `git -C /absolute/path/to/repo status --short` 这类写法，不用 `git -C .`，不为批量检查额外套 `for`、`$(…)` 或子 Shell；多条独立检查同轮并行发。简单组合若已直接放行，不必强拆；不保证任意仓库或命令都免分类。
+- **不拆安全依赖**：提交前的分支、父提交和 tree 核对仍与提交绑定；不为减少分类调用而放宽权限或重试被拦的动作。
+
 ## 状态检查：只在边界做
 
 - Edit/Write 成功不重读；状态只在开工、阶段边界、提交前检查。按计划直接改；查待办用 `event_list`，找 Fact 按 external_key 或关键词。
